@@ -2,7 +2,7 @@ import { MarkerType } from '@xyflow/react';
 import type { EditorDocument } from './types';
 
 export const initialDocument: EditorDocument = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   title: 'Untitled concept map',
   updatedAt: Date.now(),
   nodes: [
@@ -10,12 +10,16 @@ export const initialDocument: EditorDocument = {
       id: 'research',
       type: 'concept',
       position: { x: 130, y: 210 },
+      draggable: true,
+      deletable: true,
       data: {
         kind: 'concept',
         name: 'Research',
         label: 'Research',
+        body: { type: 'doc', content: [{ type: 'paragraph' }] },
         eyebrow: 'Starting point',
         tone: 'indigo',
+        collapsed: false,
         opacity: 1,
         locked: false,
       },
@@ -24,12 +28,16 @@ export const initialDocument: EditorDocument = {
       id: 'explore',
       type: 'concept',
       position: { x: 450, y: 115 },
+      draggable: true,
+      deletable: true,
       data: {
         kind: 'concept',
         name: 'Explore tools',
         label: 'Explore tools',
+        body: { type: 'doc', content: [{ type: 'paragraph' }] },
         eyebrow: 'Next step',
         tone: 'ink',
+        collapsed: false,
         opacity: 1,
         locked: false,
       },
@@ -38,12 +46,16 @@ export const initialDocument: EditorDocument = {
       id: 'layers',
       type: 'concept',
       position: { x: 470, y: 340 },
+      draggable: true,
+      deletable: true,
       data: {
         kind: 'concept',
         name: 'Editable layers',
         label: 'Editable layers',
+        body: { type: 'doc', content: [{ type: 'paragraph' }] },
         eyebrow: 'Output',
         tone: 'mint',
+        collapsed: false,
         opacity: 1,
         locked: false,
       },
@@ -58,6 +70,7 @@ export const initialDocument: EditorDocument = {
       animated: false,
       style: { stroke: '#a9adb7', strokeWidth: 1.5 },
       markerEnd: { type: MarkerType.ArrowClosed },
+      data: { label: '', kind: 'default' },
     },
     {
       id: 'research-layers',
@@ -67,6 +80,7 @@ export const initialDocument: EditorDocument = {
       animated: false,
       style: { stroke: '#a9adb7', strokeWidth: 1.5 },
       markerEnd: { type: MarkerType.ArrowClosed },
+      data: { label: '', kind: 'default' },
     },
   ],
 };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildSvgDocument } from './export-svg';
+import { initialDocument } from './initial-document';
 import type { EditorNode } from './types';
 
 describe('buildSvgDocument', () => {
@@ -13,8 +14,22 @@ describe('buildSvgDocument', () => {
           kind: 'concept',
           name: 'Ideas & notes',
           label: 'Ideas & notes',
+          body: {
+            type: 'doc',
+            content: [{
+              type: 'bulletList',
+              content: [{
+                type: 'listItem',
+                content: [{
+                  type: 'paragraph',
+                  content: [{ type: 'text', text: 'Bold action', marks: [{ type: 'bold' }] }],
+                }],
+              }],
+            }],
+          },
           eyebrow: 'Start',
           tone: 'indigo',
+          collapsed: false,
           opacity: 1,
           locked: false,
         },
@@ -41,6 +56,7 @@ describe('buildSvgDocument', () => {
               strokeWidth: 0,
               opacity: 1,
               visible: true,
+              locked: false,
             },
             {
               id: 'hidden-path',
@@ -51,6 +67,7 @@ describe('buildSvgDocument', () => {
               strokeWidth: 0,
               opacity: 1,
               visible: false,
+              locked: false,
             },
           ],
         },
@@ -61,11 +78,23 @@ describe('buildSvgDocument', () => {
 
     expect(svg).toContain('<svg');
     expect(svg).toContain('Ideas &amp; notes');
+    expect(svg).toContain('Bold action');
+    expect(svg).toContain('font-weight="700"');
+    expect(svg).toContain('•');
     expect(svg).toContain('id="visible-path"');
     expect(svg).not.toContain('id="hidden-path"');
   });
 
   it('rejects an empty visible canvas', () => {
     expect(() => buildSvgDocument([], [])).toThrow('nothing visible');
+  });
+
+  it('exports connector labels and styles', () => {
+    const nodes = structuredClone(initialDocument.nodes);
+    const edges = structuredClone(initialDocument.edges);
+    edges[0].data = { label: 'supports & explains', kind: 'dashed' };
+    const svg = buildSvgDocument(nodes, edges);
+    expect(svg).toContain('supports &amp; explains');
+    expect(svg).toContain('stroke-dasharray="6 5"');
   });
 });

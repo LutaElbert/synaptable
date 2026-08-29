@@ -1,5 +1,10 @@
 import Editor from './editor/Editor';
+import ErrorBoundary from './editor/ErrorBoundary';
 
 export default function Home() {
-  return <Editor />;
+  return (
+    <ErrorBoundary>
+      <Editor />
+    </ErrorBoundary>
+  );
 }

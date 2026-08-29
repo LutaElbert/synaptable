@@ -9,7 +9,32 @@ export type VectorPathLayer = {
   strokeWidth: number;
   opacity: number;
   visible: boolean;
+  locked: boolean;
 };
+
+export type RichTextMark = {
+  type: 'bold' | 'italic' | 'underline' | 'strike' | 'link';
+  attrs?: { href?: string };
+};
+
+export type RichTextNode = {
+  type:
+    | 'doc'
+    | 'paragraph'
+    | 'text'
+    | 'hardBreak'
+    | 'bulletList'
+    | 'orderedList'
+    | 'listItem'
+    | 'taskList'
+    | 'taskItem';
+  attrs?: { checked?: boolean; start?: number };
+  marks?: RichTextMark[];
+  text?: string;
+  content?: RichTextNode[];
+};
+
+export type RichTextDocument = RichTextNode & { type: 'doc' };
 
 type BaseNodeData = Record<string, unknown> & {
   kind: 'concept' | 'raster' | 'vector';
@@ -21,8 +46,10 @@ type BaseNodeData = Record<string, unknown> & {
 export type ConceptNodeData = BaseNodeData & {
   kind: 'concept';
   label: string;
+  body: RichTextDocument;
   eyebrow: string;
   tone: 'ink' | 'indigo' | 'mint';
+  collapsed: boolean;
 };
 
 export type RasterNodeData = BaseNodeData & {
@@ -42,10 +69,15 @@ export type VectorNodeData = BaseNodeData & {
 
 export type EditorNodeData = ConceptNodeData | RasterNodeData | VectorNodeData;
 export type EditorNode = Node<EditorNodeData>;
-export type EditorEdge = Edge;
+export type ConnectorKind = 'default' | 'dashed' | 'emphasis';
+export type EditorEdgeData = Record<string, unknown> & {
+  label: string;
+  kind: ConnectorKind;
+};
+export type EditorEdge = Edge<EditorEdgeData>;
 
 export type EditorDocument = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   title: string;
   nodes: EditorNode[];
   edges: EditorEdge[];
