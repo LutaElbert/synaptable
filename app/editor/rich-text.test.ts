@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { richTextFromPlainText, richTextIsEmpty, richTextToPlainText, sanitizeLinkHref } from './rich-text';
+import {
+  conceptTitleFromPlainText,
+  replaceRichTextPlainText,
+  richTextFromPlainText,
+  richTextIsEmpty,
+  richTextToPlainText,
+  sanitizeLinkHref,
+} from './rich-text';
 import type { RichTextDocument } from './types';
 
 describe('rich text utilities', () => {
@@ -26,6 +33,13 @@ describe('rich text utilities', () => {
     };
     expect(richTextToPlainText(document)).toContain('• Idea');
     expect(richTextToPlainText(document)).toContain('[x] Done');
+  });
+
+  it('creates bold concept titles and preserves their leading marks during plain replacement', () => {
+    const title = conceptTitleFromPlainText('Original');
+    const replaced = replaceRichTextPlainText(title, 'Replacement');
+    expect(richTextToPlainText(replaced)).toBe('Replacement');
+    expect(replaced.content?.[0].content?.[0].marks).toEqual([{ type: 'bold' }]);
   });
 
   it('allows safe links and rejects executable or data URLs', () => {

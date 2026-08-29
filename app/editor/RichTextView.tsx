@@ -37,6 +37,12 @@ function renderNode(node: RichTextNode, key: string): ReactNode {
   return <Fragment key={key}>{children}</Fragment>;
 }
 
-export function RichTextView({ document }: { document: RichTextDocument }) {
-  return <div className="concept-rich-text">{renderNode(document, 'doc')}</div>;
+export function RichTextView({
+  document,
+  className = 'concept-rich-text',
+}: {
+  document: RichTextDocument;
+  className?: string;
+}) {
+  return <div className={className}>{renderNode(document, 'doc')}</div>;
 }

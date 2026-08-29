@@ -1,4 +1,4 @@
-import type { RichTextDocument, RichTextNode } from './types';
+import type { RichTextDocument, RichTextMark, RichTextNode } from './types';
 
 export const EMPTY_RICH_TEXT: RichTextDocument = {
   type: 'doc',
@@ -9,15 +9,34 @@ export function emptyRichText(): RichTextDocument {
   return structuredClone(EMPTY_RICH_TEXT);
 }
 
-export function richTextFromPlainText(value: string): RichTextDocument {
+export function richTextFromPlainText(value: string, marks?: RichTextMark[]): RichTextDocument {
   const lines = value.split(/\r?\n/);
   return {
     type: 'doc',
     content: lines.map((line) => ({
       type: 'paragraph',
-      content: line ? [{ type: 'text', text: line }] : undefined,
+      content: line ? [{ type: 'text', text: line, marks: marks?.length ? structuredClone(marks) : undefined }] : undefined,
     })),
   };
+}
+
+export function conceptTitleFromPlainText(value: string): RichTextDocument {
+  return richTextFromPlainText(value, [{ type: 'bold' }]);
+}
+
+export function replaceRichTextPlainText(
+  document: RichTextDocument,
+  value: string,
+): RichTextDocument {
+  const findMarks = (node: RichTextNode): RichTextMark[] | undefined => {
+    if (node.type === 'text') return node.marks;
+    for (const child of node.content ?? []) {
+      const marks = findMarks(child);
+      if (marks) return marks;
+    }
+    return undefined;
+  };
+  return richTextFromPlainText(value, findMarks(document));
 }
 
 function plainTextForNode(node: RichTextNode, depth = 0): string {

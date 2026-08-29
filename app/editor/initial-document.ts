@@ -1,8 +1,9 @@
 import { MarkerType } from '@xyflow/react';
+import { conceptTitleFromPlainText } from './rich-text';
 import type { EditorDocument } from './types';
 
 export const initialDocument: EditorDocument = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   title: 'Untitled concept map',
   updatedAt: Date.now(),
   nodes: [
@@ -16,6 +17,7 @@ export const initialDocument: EditorDocument = {
         kind: 'concept',
         name: 'Research',
         label: 'Research',
+        title: conceptTitleFromPlainText('Research'),
         body: { type: 'doc', content: [{ type: 'paragraph' }] },
         eyebrow: 'Starting point',
         tone: 'indigo',
@@ -34,6 +36,7 @@ export const initialDocument: EditorDocument = {
         kind: 'concept',
         name: 'Explore tools',
         label: 'Explore tools',
+        title: conceptTitleFromPlainText('Explore tools'),
         body: { type: 'doc', content: [{ type: 'paragraph' }] },
         eyebrow: 'Next step',
         tone: 'ink',
@@ -52,6 +55,7 @@ export const initialDocument: EditorDocument = {
         kind: 'concept',
         name: 'Editable layers',
         label: 'Editable layers',
+        title: conceptTitleFromPlainText('Editable layers'),
         body: { type: 'doc', content: [{ type: 'paragraph' }] },
         eyebrow: 'Output',
         tone: 'mint',

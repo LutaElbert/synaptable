@@ -14,6 +14,17 @@ function stressProject(nodeCount = 500, edgeCount = 800) {
       kind: 'concept',
       name: `Layer ${String(index + 1).padStart(3, '0')}`,
       label: `Layer ${String(index + 1).padStart(3, '0')}`,
+      title: {
+        type: 'doc',
+        content: [{
+          type: 'paragraph',
+          content: [{
+            type: 'text',
+            text: `Layer ${String(index + 1).padStart(3, '0')}`,
+            marks: [{ type: 'bold' }],
+          }],
+        }],
+      },
       body: { type: 'doc', content: [{ type: 'paragraph' }] },
       eyebrow: index % 2 ? 'Detail' : 'Topic',
       tone: index % 3 === 0 ? 'indigo' : index % 3 === 1 ? 'ink' : 'mint',
@@ -43,10 +54,10 @@ function stressProject(nodeCount = 500, edgeCount = 800) {
   }
   return JSON.stringify({
     format: 'synaptable-project',
-    version: 2,
+    version: 3,
     exportedAt: new Date(0).toISOString(),
     document: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       title: 'Stress graph',
       nodes,
       edges,

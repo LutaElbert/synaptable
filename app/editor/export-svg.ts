@@ -93,9 +93,11 @@ function layoutRichText(document: RichTextDocument, width: number) {
 
 function conceptContentHeight(node: EditorNode, width: number) {
   if (node.data.kind !== 'concept') return 0;
-  const lines = layoutRichText(node.data.body, width);
-  const hasBody = lines.some((line) => line.runs.some((run) => run.text.trim()));
-  return hasBody ? 70 + lines.length * 15 + 12 : 78;
+  const titleLines = layoutRichText(node.data.title, width);
+  const bodyLines = layoutRichText(node.data.body, width);
+  const hasBody = bodyLines.some((line) => line.runs.some((run) => run.text.trim()));
+  const titleExtra = Math.max(0, titleLines.length - 1) * 18;
+  return hasBody ? 70 + titleExtra + bodyLines.length * 15 + 12 : 78 + titleExtra;
 }
 
 function nodeSize(node: EditorNode) {
@@ -130,14 +132,18 @@ function renderRun(run: TextRun) {
 
 function renderConceptText(node: EditorNode, x: number, y: number, width: number, accent: string) {
   if (node.data.kind !== 'concept') return '';
-  const lines = layoutRichText(node.data.body, width);
-  const hasBody = lines.some((line) => line.runs.some((run) => run.text.trim()));
-  const title = `<text x="${x + 17}" y="${y + 51}" fill="${accent}" font-family="system-ui, sans-serif" font-size="15" font-weight="650">${xmlEscape(node.data.label)}</text>`;
+  const titleLines = layoutRichText(node.data.title, width);
+  const bodyLines = layoutRichText(node.data.body, width);
+  const hasBody = bodyLines.some((line) => line.runs.some((run) => run.text.trim()));
+  const title = titleLines.map((line, index) => (
+    `<text x="${x + 17}" y="${y + 51 + index * 18}" fill="${accent}" font-family="system-ui, sans-serif" font-size="15">${line.runs.map(renderRun).join('')}</text>`
+  )).join('\n    ');
   if (!hasBody) return title;
-  const body = lines.map((line, index) => {
+  const bodyOffset = Math.max(0, titleLines.length - 1) * 18;
+  const body = bodyLines.map((line, index) => {
     const lineX = x + 17 + line.indent * 13;
     const prefix = line.prefix ? `<tspan font-weight="650">${xmlEscape(`${line.prefix} `)}</tspan>` : '';
-    return `<text x="${lineX}" y="${y + 72 + index * 15}" fill="#4f535c" font-family="system-ui, sans-serif" font-size="10">${prefix}${line.runs.map(renderRun).join('')}</text>`;
+    return `<text x="${lineX}" y="${y + 72 + bodyOffset + index * 15}" fill="#4f535c" font-family="system-ui, sans-serif" font-size="10">${prefix}${line.runs.map(renderRun).join('')}</text>`;
   }).join('\n    ');
   return `${title}\n    ${body}`;
 }

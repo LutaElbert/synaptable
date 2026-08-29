@@ -17,14 +17,14 @@ import {
   Unlink,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { sanitizeLinkHref } from './rich-text';
 import type { RichTextDocument } from './types';
 
 type InlineConceptEditorProps = {
-  title: string;
+  title: RichTextDocument;
   body: RichTextDocument;
-  onTitleChange: (title: string) => void;
+  onTitleChange: (title: RichTextDocument) => void;
   onBodyChange: (body: RichTextDocument) => void;
   onCommit: () => void;
   onCancel: () => void;
@@ -63,10 +63,11 @@ export default function InlineConceptEditor({
   onCancel,
 }: InlineConceptEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const titleRef = useRef<HTMLInputElement>(null);
+  const didFocusTitleRef = useRef(false);
+  const [activeField, setActiveField] = useState<'title' | 'body'>('title');
   const [linkEditorOpen, setLinkEditorOpen] = useState(false);
   const [linkValue, setLinkValue] = useState('');
-  const editor = useEditor({
+  const bodyEditor = useEditor({
     immediatelyRender: false,
     extensions: [
       StarterKit.configure({
@@ -87,11 +88,59 @@ export default function InlineConceptEditor({
         'aria-label': 'Concept body',
       },
     },
+    onFocus: () => setActiveField('body'),
     onUpdate: ({ editor: current }) => onBodyChange(current.getJSON() as RichTextDocument),
   }, []);
 
+  const titleEditor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit.configure({
+        blockquote: false,
+        bulletList: false,
+        code: false,
+        codeBlock: false,
+        heading: false,
+        horizontalRule: false,
+        listItem: false,
+        orderedList: false,
+        link: { openOnClick: false, autolink: true, linkOnPaste: true },
+      }),
+    ],
+    content: title,
+    editorProps: {
+      attributes: {
+        class: 'concept-title-editor nodrag nowheel',
+        'aria-label': 'Concept title',
+      },
+      handleKeyDown: (_view, event) => {
+        if (event.key !== 'Enter') return false;
+        event.preventDefault();
+        bodyEditor?.commands.focus('start');
+        return true;
+      },
+      handleTextInput: (view, from, to, text) => {
+        const nextLength = view.state.doc.textContent.length - (to - from) + text.length;
+        return nextLength > 500;
+      },
+      handlePaste: (view, event) => {
+        const pasted = event.clipboardData?.getData('text/plain');
+        if (pasted === undefined) return false;
+        const singleLine = pasted.replace(/\s*\r?\n+\s*/g, ' ');
+        const { from, to } = view.state.selection;
+        const remaining = Math.max(0, 500 - (view.state.doc.textContent.length - (to - from)));
+        view.dispatch(view.state.tr.insertText(singleLine.slice(0, remaining), from, to));
+        return true;
+      },
+    },
+    onFocus: () => setActiveField('title'),
+    onUpdate: ({ editor: current }) => onTitleChange(current.getJSON() as RichTextDocument),
+  }, []);
+
+  const activeEditor = activeField === 'title' ? titleEditor : bodyEditor;
+
   const formatState = useEditorState({
-    editor,
+    editor: activeEditor,
     selector: ({ editor: current }) => ({
       bold: current?.isActive('bold') ?? false,
       italic: current?.isActive('italic') ?? false,
@@ -105,17 +154,19 @@ export default function InlineConceptEditor({
   });
 
   useEffect(() => {
-    titleRef.current?.focus();
-    titleRef.current?.select();
-  }, []);
+    if (!titleEditor || didFocusTitleRef.current) return;
+    didFocusTitleRef.current = true;
+    titleEditor.chain().focus().selectAll().run();
+  }, [titleEditor]);
 
-  const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
-    const next = event.relatedTarget;
-    if (next instanceof Node && event.currentTarget.contains(next)) return;
-    window.setTimeout(() => {
-      if (!containerRef.current?.contains(document.activeElement)) onCommit();
-    }, 0);
-  };
+  useEffect(() => {
+    const commitOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && !containerRef.current?.contains(target)) onCommit();
+    };
+    document.addEventListener('pointerdown', commitOnOutsidePointer, true);
+    return () => document.removeEventListener('pointerdown', commitOnOutsidePointer, true);
+  }, [onCommit]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape') {
@@ -142,39 +193,46 @@ export default function InlineConceptEditor({
   };
 
   const openLinkEditor = () => {
-    if (!editor) return;
-    setLinkValue(editor.getAttributes('link').href ?? 'https://');
+    if (!activeEditor) return;
+    setLinkValue(activeEditor.getAttributes('link').href ?? 'https://');
     setLinkEditorOpen(true);
   };
 
+  const closeLinkEditor = () => {
+    setLinkEditorOpen(false);
+    window.requestAnimationFrame(() => {
+      activeEditor?.commands.focus();
+    });
+  };
+
   const applyLink = () => {
-    if (!editor) return;
+    if (!activeEditor) return;
     const href = sanitizeLinkHref(linkValue);
     if (!href) return;
-    editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
-    setLinkEditorOpen(false);
+    activeEditor.chain().extendMarkRange('link').setLink({ href }).run();
+    closeLinkEditor();
   };
 
   return (
     <div
       ref={containerRef}
       className="inline-concept-editor nodrag nowheel"
-      onBlurCapture={handleBlur}
       onKeyDownCapture={handleKeyDown}
       onDoubleClick={(event) => event.stopPropagation()}
     >
-      <div className="formatting-bar" aria-label="Text formatting" onMouseDown={keepSelection}>
-        <FormatButton label="Bold" toggle active={formatState?.bold} onPress={() => editor?.chain().focus().toggleBold().run()}><Bold size={14} /></FormatButton>
-        <FormatButton label="Italic" toggle active={formatState?.italic} onPress={() => editor?.chain().focus().toggleItalic().run()}><Italic size={14} /></FormatButton>
-        <FormatButton label="Underline" toggle active={formatState?.underline} onPress={() => editor?.chain().focus().toggleUnderline().run()}><UnderlineIcon size={14} /></FormatButton>
-        <FormatButton label="Strikethrough" toggle active={formatState?.strike} onPress={() => editor?.chain().focus().toggleStrike().run()}><Strikethrough size={14} /></FormatButton>
+      <div className="formatting-bar" aria-label={`Text formatting for ${activeField}`} onMouseDown={keepSelection}>
+        <span className="formatting-context" aria-live="polite">{activeField === 'title' ? 'Title' : 'Body'}</span>
+        <FormatButton label="Bold" toggle active={formatState?.bold} onPress={() => activeEditor?.chain().focus().toggleBold().run()}><Bold size={14} /></FormatButton>
+        <FormatButton label="Italic" toggle active={formatState?.italic} onPress={() => activeEditor?.chain().focus().toggleItalic().run()}><Italic size={14} /></FormatButton>
+        <FormatButton label="Underline" toggle active={formatState?.underline} onPress={() => activeEditor?.chain().focus().toggleUnderline().run()}><UnderlineIcon size={14} /></FormatButton>
+        <FormatButton label="Strikethrough" toggle active={formatState?.strike} onPress={() => activeEditor?.chain().focus().toggleStrike().run()}><Strikethrough size={14} /></FormatButton>
         <span className="formatting-divider" aria-hidden="true" />
-        <FormatButton label="Bulleted list" toggle active={formatState?.bulletList} onPress={() => editor?.chain().focus().toggleBulletList().run()}><List size={14} /></FormatButton>
-        <FormatButton label="Numbered list" toggle active={formatState?.orderedList} onPress={() => editor?.chain().focus().toggleOrderedList().run()}><ListOrdered size={14} /></FormatButton>
-        <FormatButton label="Checklist" toggle active={formatState?.taskList} onPress={() => editor?.chain().focus().toggleTaskList().run()}><ListChecks size={14} /></FormatButton>
+        <FormatButton label="Bulleted list" toggle disabled={activeField === 'title'} active={formatState?.bulletList} onPress={() => bodyEditor?.chain().focus().toggleBulletList().run()}><List size={14} /></FormatButton>
+        <FormatButton label="Numbered list" toggle disabled={activeField === 'title'} active={formatState?.orderedList} onPress={() => bodyEditor?.chain().focus().toggleOrderedList().run()}><ListOrdered size={14} /></FormatButton>
+        <FormatButton label="Checklist" toggle disabled={activeField === 'title'} active={formatState?.taskList} onPress={() => bodyEditor?.chain().focus().toggleTaskList().run()}><ListChecks size={14} /></FormatButton>
         <span className="formatting-divider" aria-hidden="true" />
         <FormatButton label="Add or edit link" toggle active={formatState?.link} onPress={openLinkEditor}><Link2 size={14} /></FormatButton>
-        <FormatButton label="Remove link" disabled={!formatState?.link} onPress={() => editor?.chain().focus().unsetLink().run()}><Unlink size={14} /></FormatButton>
+        <FormatButton label="Remove link" disabled={!formatState?.link} onPress={() => activeEditor?.chain().focus().unsetLink().run()}><Unlink size={14} /></FormatButton>
         <FormatButton label="Finish editing" onPress={onCommit}><Check size={14} /></FormatButton>
         <FormatButton label="Cancel editing" onPress={onCancel}><X size={14} /></FormatButton>
       </div>
@@ -190,24 +248,11 @@ export default function InlineConceptEditor({
             onChange={(event) => setLinkValue(event.target.value)}
           />
           <button type="submit" disabled={!sanitizeLinkHref(linkValue)}>Apply</button>
-          <button type="button" onClick={() => setLinkEditorOpen(false)}>Cancel</button>
+          <button type="button" onClick={closeLinkEditor}>Cancel</button>
         </form>
       ) : null}
-      <input
-        ref={titleRef}
-        className="concept-title-editor"
-        aria-label="Concept title"
-        value={title}
-        maxLength={500}
-        onChange={(event) => onTitleChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            editor?.commands.focus('start');
-          }
-        }}
-      />
-      <EditorContent editor={editor} />
+      <EditorContent editor={titleEditor} />
+      <EditorContent editor={bodyEditor} />
       <span className="editing-hint">⌘/Ctrl + Enter to finish · Esc to cancel</span>
     </div>
   );

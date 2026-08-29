@@ -75,4 +75,4 @@ Deployment is intentionally a separate approval step. Completing local verificat
 
 ## Local data and recovery
 
-Browser storage can be cleared by the user, browser, device policy, or storage pressure. Use **Project backup and restore** to create local checkpoints and download a portable `.synaptable` file before changing devices or clearing site data. Version 1 project files are migrated automatically to the current rich-text document schema. See [PRIVACY.md](./PRIVACY.md).
+Browser storage can be cleared by the user, browser, device policy, or storage pressure. Use **Project backup and restore** to create local checkpoints and download a portable `.synaptable` file before changing devices or clearing site data. Version 1 and 2 project files are migrated automatically to the current rich-title document schema. See [PRIVACY.md](./PRIVACY.md).

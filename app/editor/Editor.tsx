@@ -21,6 +21,7 @@ import {
   type EdgeChange,
   type NodeChange,
   type NodeProps,
+  type ResizeParams,
 } from '@xyflow/react';
 import {
   ArrowDown,
@@ -93,7 +94,13 @@ import {
   saveLocalDocument,
   type LocalCheckpoint,
 } from './persistence';
-import { emptyRichText, richTextIsEmpty, richTextToPlainText } from './rich-text';
+import {
+  conceptTitleFromPlainText,
+  emptyRichText,
+  replaceRichTextPlainText,
+  richTextIsEmpty,
+  richTextToPlainText,
+} from './rich-text';
 import { RichTextView } from './RichTextView';
 import type {
   ConversionOptions,
@@ -111,6 +118,10 @@ type MobilePanel = 'layers' | 'inspector' | null;
 type Toast = { id: number; message: string; tone: 'info' | 'success' | 'error' };
 const MAX_FILES_PER_IMPORT = 12;
 const InlineConceptEditor = lazy(() => import('./InlineConceptEditor'));
+const RESIZE_OBSERVER_NOTIFICATIONS = new Set([
+  'ResizeObserver loop completed with undelivered notifications.',
+  'ResizeObserver loop limit exceeded',
+]);
 const CONCEPT_TEMPLATES = {
   idea: {
     name: 'New idea',
@@ -144,10 +155,10 @@ type NodeActionContextValue = {
   keepImage: (id: string) => void;
   vectorizeImage: (id: string, expandLayers?: boolean) => void;
   cancelVectorization: () => void;
-  recordResizeStart: () => void;
-  recordResizeEnd: () => void;
+  recordResizeStart: (id: string) => void;
+  recordResizeEnd: (id: string, dimensions: ResizeParams) => void;
   beginConceptEdit: (id: string) => void;
-  updateConceptTitle: (id: string, title: string) => void;
+  updateConceptTitle: (id: string, title: RichTextDocument) => void;
   updateConceptBody: (id: string, body: RichTextDocument) => void;
   commitConceptEdit: () => void;
   cancelConceptEdit: () => void;
@@ -192,8 +203,8 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
         isVisible={selected && !data.locked && !editing}
         minWidth={150}
         minHeight={68}
-        onResizeStart={actions.recordResizeStart}
-        onResizeEnd={actions.recordResizeEnd}
+        onResizeStart={() => actions.recordResizeStart(id)}
+        onResizeEnd={(_, dimensions) => actions.recordResizeEnd(id, dimensions)}
       />
       <article
         className={`concept-node tone-${data.tone} ${editing ? 'is-editing nodrag nowheel' : ''}`}
@@ -207,7 +218,7 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
         {editing ? (
           <Suspense fallback={<span className="editor-loading">Loading editor…</span>}>
             <InlineConceptEditor
-              title={data.label}
+              title={data.title}
               body={data.body}
               onTitleChange={(title) => actions.updateConceptTitle(id, title)}
               onBodyChange={(body) => actions.updateConceptBody(id, body)}
@@ -217,7 +228,9 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
           </Suspense>
         ) : (
           <>
-            <strong>{data.label || 'Untitled concept'}</strong>
+            {data.label
+              ? <RichTextView document={data.title} className="concept-title-rich-text" />
+              : <strong className="concept-title-placeholder">Untitled concept</strong>}
             {!richTextIsEmpty(data.body) ? <RichTextView document={data.body} /> : null}
           </>
         )}
@@ -273,8 +286,8 @@ function RasterNode({ id, data, selected }: NodeProps<EditorNode>) {
         minWidth={120}
         minHeight={80}
         keepAspectRatio
-        onResizeStart={actions.recordResizeStart}
-        onResizeEnd={actions.recordResizeEnd}
+        onResizeStart={() => actions.recordResizeStart(id)}
+        onResizeEnd={(_, dimensions) => actions.recordResizeEnd(id, dimensions)}
       />
       <figure className="raster-node" style={{ opacity: data.opacity }}>
         {/* The user-provided image is the content of this editable layer. */}
@@ -298,7 +311,7 @@ function RasterNode({ id, data, selected }: NodeProps<EditorNode>) {
   );
 }
 
-function VectorNode({ data, selected }: NodeProps<EditorNode>) {
+function VectorNode({ id, data, selected }: NodeProps<EditorNode>) {
   const actions = useNodeActions();
   if (data.kind !== 'vector') return null;
   const [minX, minY, width, height] = data.viewBox;
@@ -309,8 +322,8 @@ function VectorNode({ data, selected }: NodeProps<EditorNode>) {
         minWidth={120}
         minHeight={80}
         keepAspectRatio
-        onResizeStart={actions.recordResizeStart}
-        onResizeEnd={actions.recordResizeEnd}
+        onResizeStart={() => actions.recordResizeStart(id)}
+        onResizeEnd={(_, dimensions) => actions.recordResizeEnd(id, dimensions)}
       />
       <div className="vector-node" style={{ opacity: data.opacity }}>
         <svg
@@ -347,6 +360,19 @@ const nodeTypes = {
 
 function cloneSnapshot(nodes: EditorNode[], edges: EditorEdge[]): EditorSnapshot {
   return structuredClone({ nodes, edges });
+}
+
+function restoreNodeGeometry(node: EditorNode, origin: EditorNode): EditorNode {
+  const width = Number(origin.style?.width) || Number(origin.measured?.width);
+  const height = Number(origin.style?.height) || Number(origin.measured?.height);
+  return {
+    ...node,
+    position: structuredClone(origin.position),
+    style: width && height
+      ? { ...structuredClone(origin.style ?? {}), width, height }
+      : origin.style ? structuredClone(origin.style) : undefined,
+    measured: origin.measured ? structuredClone(origin.measured) : undefined,
+  };
 }
 
 function safeFileBase(fileName: string) {
@@ -438,6 +464,19 @@ function EditorInner() {
   const { screenToFlowPosition, fitView } = useReactFlow<EditorNode, EditorEdge>();
 
   useEffect(() => {
+    // React Flow can trigger these browser-generated notifications while its
+    // NodeResizer and internal measurements settle. The resize still completes;
+    // prevent dev overlays and error trackers from treating it as an app crash.
+    const handleResizeObserverNotification = (event: ErrorEvent) => {
+      if (!RESIZE_OBSERVER_NOTIFICATIONS.has(event.message)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener('error', handleResizeObserverNotification, true);
+    return () => window.removeEventListener('error', handleResizeObserverNotification, true);
+  }, []);
+
+  useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
   useEffect(() => {
@@ -493,7 +532,7 @@ function EditorInner() {
   }, [refreshHistoryState]);
 
   const getCurrentDocument = useCallback((): EditorDocument => ({
-    schemaVersion: 2,
+    schemaVersion: 3,
     title: titleRef.current,
     nodes: nodesRef.current.map((node) => ({ ...node, selected: false })),
     edges: edgesRef.current.map((edge) => ({ ...edge, selected: false })),
@@ -572,22 +611,7 @@ function EditorInner() {
   const handleNodesChange = useCallback(
     (changes: NodeChange<EditorNode>[]) => {
       if (changes.some((change) => change.type === 'remove')) recordHistory();
-      const committedDimensions = new Map<string, { width: number; height: number }>();
-      for (const change of changes) {
-        if (change.type === 'dimensions' && change.resizing === false && change.dimensions) {
-          committedDimensions.set(change.id, change.dimensions);
-        }
-      }
-      setNodes((current) => {
-        const next = applyNodeChanges(changes, current);
-        if (!committedDimensions.size) return next;
-        return next.map((node) => {
-          const dimensions = committedDimensions.get(node.id);
-          return dimensions
-            ? { ...node, style: { ...node.style, width: dimensions.width, height: dimensions.height } }
-            : node;
-        });
-      });
+      setNodes((current) => applyNodeChanges(changes, current));
       if (changes.some((change) => change.type === 'remove')) setSelectedPath(null);
     },
     [recordHistory],
@@ -877,6 +901,7 @@ function EditorInner() {
           kind: 'concept',
           name: 'New concept',
           label: 'New concept',
+          title: conceptTitleFromPlainText('New concept'),
           body: emptyRichText(),
           eyebrow: 'Concept',
           tone: 'ink',
@@ -905,6 +930,7 @@ function EditorInner() {
         kind: 'concept',
         name: template.name,
         label: template.name,
+        title: conceptTitleFromPlainText(template.name),
         body: structuredClone(template.body),
         eyebrow: template.eyebrow,
         tone: template.tone,
@@ -1048,6 +1074,7 @@ function EditorInner() {
         kind: 'concept',
         name: 'New concept',
         label: 'New concept',
+        title: conceptTitleFromPlainText('New concept'),
         body: emptyRichText(),
         eyebrow: relation === 'child' ? 'Child idea' : 'Related idea',
         tone: 'ink',
@@ -1075,7 +1102,8 @@ function EditorInner() {
     }, 60);
   }, [beginConceptEdit, fitView, recordHistory]);
 
-  const updateConceptTitle = useCallback((id: string, label: string) => {
+  const updateConceptTitle = useCallback((id: string, title: RichTextDocument) => {
+    const label = richTextToPlainText(title).slice(0, 500);
     setNodes((current) => current.map((node) => node.id === id && node.data.kind === 'concept'
       ? {
           ...node,
@@ -1083,6 +1111,7 @@ function EditorInner() {
             ...node.data,
             name: node.data.name === node.data.label ? label : node.data.name,
             label,
+            title,
           },
         }
       : node));
@@ -1095,12 +1124,23 @@ function EditorInner() {
   }, []);
 
   const commitConceptEdit = useCallback(() => {
-    if (conceptEditOriginRef.current) {
-      recordHistory(conceptEditOriginRef.current);
-      conceptEditOriginRef.current = null;
+    const id = editingConceptId;
+    const origin = conceptEditOriginRef.current;
+    if (origin && id) {
+      const originNode = origin.nodes.find((node) => node.id === id);
+      const currentNode = nodesRef.current.find((node) => node.id === id);
+      if (originNode && currentNode && JSON.stringify(originNode.data) !== JSON.stringify(currentNode.data)) {
+        recordHistory(origin);
+      }
+      if (originNode) {
+        setNodes((current) => current.map((node) => node.id === id
+          ? restoreNodeGeometry(node, originNode)
+          : node));
+      }
     }
+    conceptEditOriginRef.current = null;
     setEditingConceptId(null);
-  }, [recordHistory]);
+  }, [editingConceptId, recordHistory]);
 
   const cancelConceptEdit = useCallback(() => {
     const id = editingConceptId;
@@ -1450,11 +1490,29 @@ function EditorInner() {
           resizeOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
         }
       },
-      recordResizeEnd: () => {
+      recordResizeEnd: (id, dimensions) => {
         if (resizeOriginRef.current) {
           recordHistory(resizeOriginRef.current);
           resizeOriginRef.current = null;
         }
+        window.requestAnimationFrame(() => {
+          setNodes((current) => current.map((node) => {
+            if (node.id !== id) return node;
+            const width = Number(node.style?.width);
+            const height = Number(node.style?.height);
+            if (
+              Math.abs(width - dimensions.width) < 0.01
+              && Math.abs(height - dimensions.height) < 0.01
+              && Math.abs(node.position.x - dimensions.x) < 0.01
+              && Math.abs(node.position.y - dimensions.y) < 0.01
+            ) return node;
+            return {
+              ...node,
+              position: { x: dimensions.x, y: dimensions.y },
+              style: { ...node.style, width: dimensions.width, height: dimensions.height },
+            };
+          }));
+        });
       },
     }),
     [
@@ -2175,7 +2233,14 @@ function NodeInspector({
               maxLength={500}
               disabled={node.data.locked}
               onFocus={onEditStart}
-              onChange={(event) => updateData({ label: event.target.value, name: event.target.value }, false)}
+              onChange={(event) => updateData({
+                label: event.target.value,
+                name: event.target.value,
+                title: replaceRichTextPlainText(
+                  node.data.kind === 'concept' ? node.data.title : emptyRichText(),
+                  event.target.value,
+                ),
+              }, false)}
               onBlur={onEditEnd}
             />
           </label>

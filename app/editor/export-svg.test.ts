@@ -14,6 +14,17 @@ describe('buildSvgDocument', () => {
           kind: 'concept',
           name: 'Ideas & notes',
           label: 'Ideas & notes',
+          title: {
+            type: 'doc',
+            content: [{
+              type: 'paragraph',
+              content: [{
+                type: 'text',
+                text: 'Ideas & notes',
+                marks: [{ type: 'bold' }, { type: 'italic' }],
+              }],
+            }],
+          },
           body: {
             type: 'doc',
             content: [{
@@ -78,6 +89,7 @@ describe('buildSvgDocument', () => {
 
     expect(svg).toContain('<svg');
     expect(svg).toContain('Ideas &amp; notes');
+    expect(svg).toContain('font-style="italic"');
     expect(svg).toContain('Bold action');
     expect(svg).toContain('font-weight="700"');
     expect(svg).toContain('•');

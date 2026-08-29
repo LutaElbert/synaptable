@@ -23,6 +23,134 @@ test('double-click edits a canvas concept and cancel is a clean no-op', async ({
   expect(await research.getAttribute('style')).toContain(originalTransform!);
 });
 
+test('outside-click commits concept text without persisting temporary editor dimensions', async ({ page }) => {
+  await openEditor(page);
+  const research = canvasNode(page, 'Research');
+  const originalBox = await research.boundingBox();
+  const originalStyle = await research.getAttribute('style');
+  const originalTransform = originalStyle?.match(/transform:\s*[^;]+/)?.[0];
+  expect(originalBox).toBeTruthy();
+  expect(originalTransform).toBeTruthy();
+
+  await research.locator('.concept-node').dblclick();
+  await expect(page.getByLabel('Concept title')).toBeFocused();
+  const editingBox = await research.boundingBox();
+  expect(editingBox!.height).toBeGreaterThan(originalBox!.height + 40);
+  await page.getByLabel('Concept title').fill('Outside click commit');
+
+  await page.locator('.react-flow__pane').click({ position: { x: 24, y: 24 } });
+  await expect(page.getByLabel('Concept title')).toHaveCount(0);
+  const committed = canvasNode(page, 'Outside click commit');
+  await expect(committed.getByText('Outside click commit', { exact: true })).toBeVisible();
+  const committedBox = await committed.boundingBox();
+  expect(Math.abs(committedBox!.width - originalBox!.width)).toBeLessThan(2);
+  expect(Math.abs(committedBox!.height - originalBox!.height)).toBeLessThan(2);
+  expect(await committed.getAttribute('style')).toContain(originalTransform!);
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(canvasNode(page, 'Research').getByText('Research', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await waitForSaved(page);
+  await page.reload();
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  const restored = canvasNode(page, 'Outside click commit');
+  const restoredBox = await restored.boundingBox();
+  expect(Math.abs(restoredBox!.width - originalBox!.width)).toBeLessThan(2);
+  expect(Math.abs(restoredBox!.height - originalBox!.height)).toBeLessThan(2);
+});
+
+test('all formatting tools target the active title or body and can be toggled off', async ({ page }) => {
+  await openEditor(page);
+  const research = canvasNode(page, 'Research');
+  await research.locator('.concept-node').dblclick();
+  const title = page.getByLabel('Concept title');
+  const body = page.getByLabel('Concept body');
+  const bold = page.getByRole('button', { name: 'Bold', exact: true });
+  const italic = page.getByRole('button', { name: 'Italic', exact: true });
+  const underline = page.getByRole('button', { name: 'Underline', exact: true });
+  const strike = page.getByRole('button', { name: 'Strikethrough', exact: true });
+  const bullets = page.getByRole('button', { name: 'Bulleted list', exact: true });
+  const numbers = page.getByRole('button', { name: 'Numbered list', exact: true });
+  const checklist = page.getByRole('button', { name: 'Checklist', exact: true });
+  const addLink = page.getByRole('button', { name: 'Add or edit link', exact: true });
+  const removeLink = page.getByRole('button', { name: 'Remove link', exact: true });
+
+  await expect(page.locator('.formatting-context')).toHaveText('Title');
+  await expect(bold).toHaveAttribute('aria-pressed', 'true');
+  await expect(bullets).toBeDisabled();
+  await expect(numbers).toBeDisabled();
+  await expect(checklist).toBeDisabled();
+  await bold.click();
+  await italic.click();
+  await underline.click();
+  await strike.click();
+  await expect(bold).toHaveAttribute('aria-pressed', 'false');
+  await expect(italic).toHaveAttribute('aria-pressed', 'true');
+  await expect(underline).toHaveAttribute('aria-pressed', 'true');
+  await expect(strike).toHaveAttribute('aria-pressed', 'true');
+
+  await addLink.click();
+  await expect(page.getByLabel('Link URL')).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(title).toBeVisible();
+  await expect(page.getByLabel('Link URL')).toHaveCount(0);
+  await addLink.click();
+  await page.getByLabel('Link URL').fill('https://example.com/title');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(removeLink).toBeEnabled();
+  await removeLink.click();
+  await expect(removeLink).toBeDisabled();
+
+  await body.fill('Canvas behavior');
+  await body.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+  await expect(page.locator('.formatting-context')).toHaveText('Body');
+  await expect(bullets).toBeEnabled();
+  await bullets.click();
+  await expect(body.locator('ul:not([data-type="taskList"])')).toBeVisible();
+  await bullets.click();
+  await numbers.click();
+  await expect(body.locator('ol')).toBeVisible();
+  await numbers.click();
+  await checklist.click();
+  await expect(body.locator('ul[data-type="taskList"]')).toBeVisible();
+  await checklist.click();
+
+  await body.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+  await addLink.click();
+  await page.getByLabel('Link URL').fill('https://example.com/body');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(removeLink).toBeEnabled();
+  await removeLink.click();
+  await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
+
+  const renderedTitle = research.locator('.concept-title-rich-text');
+  await expect(renderedTitle.locator('strong')).toHaveCount(0);
+  await expect(renderedTitle.locator('em')).toHaveCount(1);
+  await expect(renderedTitle.locator('u')).toHaveCount(1);
+  await expect(renderedTitle.locator('s')).toHaveCount(1);
+  await expect(research.getByText('Canvas behavior', { exact: true })).toBeVisible();
+
+  await research.locator('.concept-node').dblclick();
+  await expect(title).toBeFocused();
+  await expect(bold).toHaveAttribute('aria-pressed', 'false');
+  await expect(italic).toHaveAttribute('aria-pressed', 'true');
+  await italic.click();
+  await underline.click();
+  await strike.click();
+  await bold.click();
+  await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
+  await expect(research.locator('.concept-title-rich-text strong')).toHaveCount(1);
+  await expect(research.locator('.concept-title-rich-text em')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(research.locator('.concept-title-rich-text em')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(research.locator('.concept-title-rich-text strong')).toHaveCount(1);
+  await waitForSaved(page);
+  await page.reload();
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  await expect(canvasNode(page, 'Research').locator('.concept-title-rich-text strong')).toHaveCount(1);
+});
+
 test('double-click and F2 rename a layer with commit, cancel, undo, and redo', async ({ page }) => {
   await openEditor(page);
   const researchLayer = page.getByRole('button', { name: 'Research', exact: true });
@@ -249,6 +377,8 @@ test('dragged layer position survives undo, redo, autosave, and reload', async (
 });
 
 test('resized layer dimensions are undoable and persist after reload', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
   await openEditor(page);
   const research = canvasNode(page, 'Research');
   await research.click();
@@ -283,4 +413,9 @@ test('resized layer dimensions are undoable and persist after reload', async ({ 
   const restoredStyle = await canvasNode(page, 'Research').getAttribute('style');
   expect(restoredStyle).toContain(`width: ${width}`);
   expect(restoredStyle).toContain(`height: ${height}`);
+  const unexpectedErrors = pageErrors.filter((message) => ![
+    'ResizeObserver loop completed with undelivered notifications.',
+    'ResizeObserver loop limit exceeded',
+  ].includes(message));
+  expect(unexpectedErrors).toEqual([]);
 });

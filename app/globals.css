@@ -384,11 +384,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   box-shadow: 0 9px 24px rgb(31 33 40 / 7%);
 }
 .concept-node > span:first-child { color: #646873; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; }
-.concept-node > strong { font-size: 14px; line-height: 1.2; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.concept-title-rich-text,
+.concept-title-placeholder { font-size: 14px; line-height: 1.2; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.concept-title-rich-text p { margin: 0; }
 .tone-indigo { border-color: #8883f7; background: #f7f6ff; box-shadow: 0 10px 27px rgb(74 67 184 / 10%); }
-.tone-indigo > strong { color: #4d47ce; }
+.tone-indigo > .concept-title-rich-text, .tone-indigo > .concept-title-placeholder { color: #4d47ce; }
 .tone-mint { border-color: #9acdb5; background: #f3fbf7; }
-.tone-mint > strong { color: #24795d; }
+.tone-mint > .concept-title-rich-text, .tone-mint > .concept-title-placeholder { color: #24795d; }
 .concept-node.is-editing {
   min-inline-size: 250px;
   min-block-size: 150px;
@@ -441,6 +443,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .inline-concept-editor { position: relative; display: grid; gap: 7px; min-inline-size: 216px; }
 .concept-title-editor {
   inline-size: 100%;
+  min-block-size: 1.65em;
   padding: 3px 4px;
   border: 1px solid transparent;
   border-radius: 5px;
@@ -451,7 +454,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   font-weight: 680;
   line-height: 1.25;
   letter-spacing: -.02em;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
+.concept-title-editor p { margin: 0; }
 .concept-title-editor:focus { border-color: color-mix(in srgb, var(--accent) 42%, white); outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent); }
 .concept-body-editor {
   min-block-size: 62px;
@@ -499,7 +505,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   border-radius: 10px;
   background: rgb(255 255 255 / 98%);
   box-shadow: var(--shadow-lg);
-  scrollbar-width: none;
+  scrollbar-width: thin;
+}
+.formatting-context {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 .formatting-bar button {
   display: grid;
@@ -537,6 +550,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .link-editor button { min-block-size: 31px; padding-inline: 8px; border: 1px solid var(--line); border-radius: 7px; background: white; font-size: 9px; }
 .editing-hint { color: #7b7f88 !important; font-size: 8px !important; font-weight: 500 !important; text-transform: none !important; letter-spacing: 0 !important; }
 .editor-loading { color: var(--muted) !important; font-size: 9px !important; text-transform: none !important; }
+
+@media (pointer: coarse) {
+  .formatting-bar button { inline-size: 40px; block-size: 40px; }
+}
 
 .raster-node, .vector-node {
   position: relative;
