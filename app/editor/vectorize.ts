@@ -7,6 +7,7 @@ import type {
 } from './types';
 
 const MAX_TRACE_DIMENSION = 1400;
+const TRACE_TIMEOUT_MS = 75_000;
 
 async function decodeImage(dataUrl: string): Promise<ImageBitmap | HTMLImageElement> {
   const blob = await fetch(dataUrl).then((response) => response.blob());
@@ -46,24 +47,32 @@ function runTraceWorker(
       name: 'synaptable-vectorizer',
     });
 
-    const stop = () => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', stop);
+      window.clearTimeout(timeout);
       worker.terminate();
-      reject(new DOMException('Vectorization cancelled.', 'AbortError'));
+      callback();
     };
+    const stop = () => finish(() => reject(new DOMException('Vectorization cancelled.', 'AbortError')));
+    const timeout = window.setTimeout(
+      () => finish(() => reject(new Error('Vectorization took too long and was stopped. Try the Poster preset.'))),
+      TRACE_TIMEOUT_MS,
+    );
 
     signal.addEventListener('abort', stop, { once: true });
     worker.onerror = () => {
-      signal.removeEventListener('abort', stop);
-      worker.terminate();
-      reject(new Error('The local vectorization worker stopped unexpectedly.'));
+      finish(() => reject(new Error('The local vectorization worker stopped unexpectedly.')));
     };
     worker.onmessage = (
       event: MessageEvent<{ ok: true; svg: string } | { ok: false; message: string }>,
     ) => {
-      signal.removeEventListener('abort', stop);
-      worker.terminate();
-      if (event.data.ok) resolve(event.data.svg);
-      else reject(new Error(event.data.message));
+      finish(() => {
+        if (event.data.ok) resolve(event.data.svg);
+        else reject(new Error(event.data.message));
+      });
     };
 
     const buffer = imageData.data.slice().buffer;
@@ -113,6 +122,7 @@ function parseSvg(svgString: string): VectorizationResult {
         Number.parseFloat(path.getAttribute('stroke-width') ?? path.style.strokeWidth) || 0,
       opacity: Number.parseFloat(path.getAttribute('opacity') ?? path.style.opacity) || 1,
       visible: true,
+      locked: false,
     }))
     .filter((path) => path.d.length > 0);
 
@@ -129,21 +139,25 @@ export async function vectorizeDataUrl(
   signal: AbortSignal,
 ): Promise<VectorizationResult> {
   const decoded = await decodeImage(dataUrl);
-  if (signal.aborted) throw new DOMException('Vectorization cancelled.', 'AbortError');
+  try {
+    if (signal.aborted) throw new DOMException('Vectorization cancelled.', 'AbortError');
 
-  const sourceWidth = decoded.width;
-  const sourceHeight = decoded.height;
-  const scale = Math.min(1, MAX_TRACE_DIMENSION / Math.max(sourceWidth, sourceHeight));
-  const width = Math.max(1, Math.round(sourceWidth * scale));
-  const height = Math.max(1, Math.round(sourceHeight * scale));
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) throw new Error('This browser does not support image tracing.');
-  context.drawImage(decoded, 0, 0, width, height);
-  if ('close' in decoded && typeof decoded.close === 'function') decoded.close();
-  const imageData = context.getImageData(0, 0, width, height);
-  const svg = await runTraceWorker(imageData, options, signal);
-  return parseSvg(svg);
+    const sourceWidth = decoded.width;
+    const sourceHeight = decoded.height;
+    const scale = Math.min(1, MAX_TRACE_DIMENSION / Math.max(sourceWidth, sourceHeight));
+    const width = Math.max(1, Math.round(sourceWidth * scale));
+    const height = Math.max(1, Math.round(sourceHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) throw new Error('This browser does not support image tracing.');
+    context.drawImage(decoded, 0, 0, width, height);
+    const imageData = context.getImageData(0, 0, width, height);
+    if (signal.aborted) throw new DOMException('Vectorization cancelled.', 'AbortError');
+    const svg = await runTraceWorker(imageData, options, signal);
+    return parseSvg(svg);
+  } finally {
+    if ('close' in decoded && typeof decoded.close === 'function') decoded.close();
+  }
 }

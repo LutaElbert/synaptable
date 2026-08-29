@@ -5,6 +5,7 @@ import {
   Controls,
   Handle,
   MiniMap,
+  MarkerType,
   NodeResizer,
   NodeToolbar,
   Panel,
@@ -31,6 +32,7 @@ import {
   Eye,
   EyeOff,
   Hand,
+  HardDrive,
   Image as ImageIcon,
   Layers3,
   LoaderCircle,
@@ -39,7 +41,9 @@ import {
   Plus,
   Redo2,
   RotateCcw,
+  Search,
   Shapes,
+  SlidersHorizontal,
   Sparkles,
   Square,
   Trash2,
@@ -52,6 +56,8 @@ import {
 } from 'lucide-react';
 import {
   createContext,
+  lazy,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -60,33 +66,85 @@ import {
   useState,
 } from 'react';
 import '@xyflow/react/dist/style.css';
+import {
+  downloadProjectBackup,
+  MAX_PROJECT_FILE_SIZE,
+  parseProjectBackup,
+  serializeProjectBackup,
+} from './document-file';
 import { buildSvgDocument, downloadSvg } from './export-svg';
+import { fileToDataUrl, validateImageFile } from './image-file';
 import { initialDocument } from './initial-document';
-import { clearLocalDocument, loadLocalDocument, saveLocalDocument } from './persistence';
-import { unconfiguredReconstructionProvider } from './reconstruction';
+import {
+  clearLocalDocument,
+  createLocalCheckpoint,
+  deleteLocalCheckpoint,
+  listLocalCheckpoints,
+  loadLocalDocument,
+  saveLocalDocument,
+  type LocalCheckpoint,
+} from './persistence';
+import { emptyRichText, richTextIsEmpty, richTextToPlainText } from './rich-text';
+import { RichTextView } from './RichTextView';
 import type {
   ConversionOptions,
   EditorDocument,
   EditorEdge,
   EditorNode,
+  RichTextDocument,
   VectorPathLayer,
 } from './types';
 import { vectorizeDataUrl } from './vectorize';
 
-const MAX_FILE_SIZE = 15 * 1024 * 1024;
-const ACCEPTED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
-
 type EditorSnapshot = Pick<EditorDocument, 'nodes' | 'edges'>;
 type ToolMode = 'select' | 'hand';
+type MobilePanel = 'layers' | 'inspector' | null;
 type Toast = { id: number; message: string; tone: 'info' | 'success' | 'error' };
+const MAX_FILES_PER_IMPORT = 12;
+const InlineConceptEditor = lazy(() => import('./InlineConceptEditor'));
+const CONCEPT_TEMPLATES = {
+  idea: {
+    name: 'New idea',
+    eyebrow: 'Idea',
+    tone: 'indigo' as const,
+    body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Describe the idea…' }] }] } as RichTextDocument,
+  },
+  task: {
+    name: 'Action items',
+    eyebrow: 'Task',
+    tone: 'mint' as const,
+    body: { type: 'doc', content: [{ type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: false }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'First action' }] }] }] }] } as RichTextDocument,
+  },
+  decision: {
+    name: 'Decision',
+    eyebrow: 'Decision',
+    tone: 'ink' as const,
+    body: { type: 'doc', content: [{ type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Option' }] }] }] }] } as RichTextDocument,
+  },
+  question: {
+    name: 'Open question',
+    eyebrow: 'Question',
+    tone: 'indigo' as const,
+    body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'What do we need to learn?' }] }] } as RichTextDocument,
+  },
+};
 
 type NodeActionContextValue = {
   convertingId: string | null;
+  editingConceptId: string | null;
   keepImage: (id: string) => void;
   vectorizeImage: (id: string, expandLayers?: boolean) => void;
-  rebuildDiagram: (id: string) => void;
+  cancelVectorization: () => void;
   recordResizeStart: () => void;
   recordResizeEnd: () => void;
+  beginConceptEdit: (id: string) => void;
+  updateConceptTitle: (id: string, title: string) => void;
+  updateConceptBody: (id: string, body: RichTextDocument) => void;
+  commitConceptEdit: () => void;
+  cancelConceptEdit: () => void;
+  toggleBranch: (id: string) => void;
+  hasChildren: (id: string) => boolean;
+  addConceptRelative: (id: string, relation: 'child' | 'sibling') => void;
 };
 
 const NodeActionContext = createContext<NodeActionContextValue | null>(null);
@@ -108,24 +166,66 @@ function CommonHandles() {
   );
 }
 
-function ConceptNode({ data, selected }: NodeProps<EditorNode>) {
+function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
   const actions = useNodeActions();
   if (data.kind !== 'concept') return null;
+  const editing = actions.editingConceptId === id;
   return (
     <>
+      <NodeToolbar isVisible={selected && !editing && !data.locked} position={Position.Top} offset={14}>
+        <div className="node-actionbar nodrag nowheel" aria-label="Concept actions">
+          <button type="button" onClick={() => actions.beginConceptEdit(id)}><TypeIcon size={14} /> Edit text</button>
+          <button type="button" onClick={() => actions.addConceptRelative(id, 'child')}><Plus size={14} /> Add child</button>
+          <button type="button" onClick={() => actions.addConceptRelative(id, 'sibling')}><Plus size={14} /> Add sibling</button>
+        </div>
+      </NodeToolbar>
       <NodeResizer
-        isVisible={selected && !data.locked}
+        isVisible={selected && !data.locked && !editing}
         minWidth={150}
         minHeight={68}
         onResizeStart={actions.recordResizeStart}
         onResizeEnd={actions.recordResizeEnd}
       />
       <article
-        className={`concept-node tone-${data.tone}`}
+        className={`concept-node tone-${data.tone} ${editing ? 'is-editing nodrag nowheel' : ''}`}
         style={{ opacity: data.opacity }}
+        onDoubleClick={(event) => {
+          event.stopPropagation();
+          if (!data.locked) actions.beginConceptEdit(id);
+        }}
       >
         <span>{data.eyebrow}</span>
-        <strong>{data.label}</strong>
+        {editing ? (
+          <Suspense fallback={<span className="editor-loading">Loading editor…</span>}>
+            <InlineConceptEditor
+              title={data.label}
+              body={data.body}
+              onTitleChange={(title) => actions.updateConceptTitle(id, title)}
+              onBodyChange={(body) => actions.updateConceptBody(id, body)}
+              onCommit={actions.commitConceptEdit}
+              onCancel={actions.cancelConceptEdit}
+            />
+          </Suspense>
+        ) : (
+          <>
+            <strong>{data.label || 'Untitled concept'}</strong>
+            {!richTextIsEmpty(data.body) ? <RichTextView document={data.body} /> : null}
+          </>
+        )}
+        {actions.hasChildren(id) ? (
+          <button
+            type="button"
+            className="branch-toggle nodrag nowheel"
+            aria-label={`${data.collapsed ? 'Expand' : 'Collapse'} branch from ${data.label}`}
+            aria-expanded={!data.collapsed}
+            onClick={(event) => {
+              event.stopPropagation();
+              actions.toggleBranch(id);
+            }}
+          >
+            {data.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+          </button>
+        ) : null}
       </article>
       <CommonHandles />
     </>
@@ -145,14 +245,10 @@ function RasterNode({ id, data, selected }: NodeProps<EditorNode>) {
           </button>
           <button
             type="button"
-            onClick={() => actions.vectorizeImage(id)}
-            disabled={isConverting}
+            onClick={() => isConverting ? actions.cancelVectorization() : actions.vectorizeImage(id)}
           >
-            {isConverting ? <LoaderCircle className="spin" size={14} /> : <Shapes size={14} />}
-            Vectorize
-          </button>
-          <button type="button" onClick={() => actions.rebuildDiagram(id)}>
-            <Sparkles size={14} /> Rebuild diagram
+            {isConverting ? <X size={14} /> : <Shapes size={14} />}
+            {isConverting ? 'Cancel' : 'Vectorize'}
           </button>
           <button
             type="button"
@@ -244,22 +340,6 @@ function cloneSnapshot(nodes: EditorNode[], edges: EditorEdge[]): EditorSnapshot
   return structuredClone({ nodes, edges });
 }
 
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error('Could not read the image.'));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function imageDimensions(file: File) {
-  const bitmap = await createImageBitmap(file);
-  const result = { width: bitmap.width, height: bitmap.height };
-  bitmap.close();
-  return result;
-}
-
 function safeFileBase(fileName: string) {
   return (
     fileName
@@ -268,6 +348,61 @@ function safeFileBase(fileName: string) {
       .replace(/^-+|-+$/g, '')
       .toLowerCase() || 'synaptable-export'
   );
+}
+
+function estimateSnapshotBytes(snapshot: EditorSnapshot) {
+  let characters = snapshot.edges.length * 280 + snapshot.nodes.length * 360;
+  for (const node of snapshot.nodes) {
+    characters += node.data.name.length;
+    if (node.data.kind === 'raster') characters += node.data.src.length;
+    if (node.data.kind === 'concept') {
+      characters += node.data.label.length + node.data.eyebrow.length + JSON.stringify(node.data.body).length;
+    }
+    if (node.data.kind === 'vector') {
+      for (const path of node.data.paths) {
+        characters += path.d.length + path.name.length + path.fill.length + path.stroke.length;
+      }
+    }
+  }
+  return characters * 2;
+}
+
+function trimHistory(history: EditorSnapshot[], maxEntries = 40, maxBytes = 48 * 1024 * 1024) {
+  let bytes = history.reduce((total, item) => total + estimateSnapshotBytes(item), 0);
+  while (history.length > maxEntries || (history.length > 1 && bytes > maxBytes)) {
+    const removed = history.shift();
+    if (removed) bytes -= estimateSnapshotBytes(removed);
+  }
+}
+
+function collapsedDescendantIds(nodes: EditorNode[], edges: EditorEdge[]) {
+  const hidden = new Set<string>();
+  const children = new Map<string, string[]>();
+  for (const edge of edges) {
+    const current = children.get(edge.source) ?? [];
+    current.push(edge.target);
+    children.set(edge.source, current);
+  }
+  const visit = (id: string, seen: Set<string>) => {
+    for (const child of children.get(id) ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      hidden.add(child);
+      visit(child, seen);
+    }
+  };
+  for (const node of nodes) {
+    if (node.data.kind === 'concept' && node.data.collapsed) visit(node.id, new Set([node.id]));
+  }
+  return hidden;
+}
+
+function connectorPresentation(kind: 'default' | 'dashed' | 'emphasis') {
+  return {
+    stroke: kind === 'emphasis' ? '#635bff' : '#a9adb7',
+    strokeWidth: kind === 'emphasis' ? 2.5 : 1.5,
+    strokeDasharray: kind === 'dashed' ? '6 5' : undefined,
+  };
 }
 
 function EditorInner() {
@@ -289,16 +424,30 @@ function EditorInner() {
   });
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const [exportOpen, setExportOpen] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
+  const [editingConceptId, setEditingConceptId] = useState<string | null>(null);
+  const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [conceptTemplate, setConceptTemplate] = useState<keyof typeof CONCEPT_TEMPLATES>('idea');
+  const [checkpoints, setCheckpoints] = useState<LocalCheckpoint[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const projectInputRef = useRef<HTMLInputElement>(null);
   const exportDialogRef = useRef<HTMLDialogElement>(null);
+  const backupDialogRef = useRef<HTMLDialogElement>(null);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
+  const titleRef = useRef(title);
   const pastRef = useRef<EditorSnapshot[]>([]);
   const futureRef = useRef<EditorSnapshot[]>([]);
   const dragOriginRef = useRef<EditorSnapshot | null>(null);
   const resizeOriginRef = useRef<EditorSnapshot | null>(null);
+  const fieldOriginRef = useRef<EditorSnapshot | null>(null);
+  const conceptEditOriginRef = useRef<EditorSnapshot | null>(null);
   const dragDepthRef = useRef(0);
   const conversionControllerRef = useRef<AbortController | null>(null);
+  const saveQueueRef = useRef(Promise.resolve());
+  const saveTicketRef = useRef(0);
   const { screenToFlowPosition, fitView } = useReactFlow<EditorNode, EditorEdge>();
 
   useEffect(() => {
@@ -307,6 +456,9 @@ function EditorInner() {
   useEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
+  useEffect(() => {
+    titleRef.current = title;
+  }, [title]);
 
   const announce = useCallback((message: string, tone: Toast['tone'] = 'info') => {
     const id = Date.now() + Math.random();
@@ -326,7 +478,7 @@ function EditorInner() {
 
   const recordHistory = useCallback((snapshot?: EditorSnapshot) => {
     pastRef.current.push(snapshot ?? cloneSnapshot(nodesRef.current, edgesRef.current));
-    if (pastRef.current.length > 60) pastRef.current.shift();
+    trimHistory(pastRef.current);
     futureRef.current = [];
     refreshHistoryState();
   }, [refreshHistoryState]);
@@ -335,6 +487,7 @@ function EditorInner() {
     const previous = pastRef.current.pop();
     if (!previous) return;
     futureRef.current.push(cloneSnapshot(nodesRef.current, edgesRef.current));
+    trimHistory(futureRef.current);
     setNodes(previous.nodes);
     setEdges(previous.edges);
     setSelectedPath(null);
@@ -345,52 +498,89 @@ function EditorInner() {
     const next = futureRef.current.pop();
     if (!next) return;
     pastRef.current.push(cloneSnapshot(nodesRef.current, edgesRef.current));
+    trimHistory(pastRef.current);
     setNodes(next.nodes);
     setEdges(next.edges);
     setSelectedPath(null);
     refreshHistoryState();
   }, [refreshHistoryState]);
 
+  const getCurrentDocument = useCallback((): EditorDocument => ({
+    schemaVersion: 2,
+    title: titleRef.current,
+    nodes: nodesRef.current.map((node) => ({ ...node, selected: false })),
+    edges: edgesRef.current.map((edge) => ({ ...edge, selected: false })),
+    updatedAt: Date.now(),
+  }), []);
+
+  const queueDocumentSave = useCallback((document: EditorDocument) => {
+    const ticket = ++saveTicketRef.current;
+    setSaveState('saving');
+    const nextSave = saveQueueRef.current
+      .catch(() => undefined)
+      .then(() => saveLocalDocument(document));
+    saveQueueRef.current = nextSave;
+    void nextSave
+      .then(() => {
+        if (ticket === saveTicketRef.current) setSaveState('saved');
+      })
+      .catch(() => {
+        if (ticket === saveTicketRef.current) setSaveState('error');
+      });
+    return nextSave;
+  }, []);
+
   useEffect(() => {
     let active = true;
-    loadLocalDocument()
-      .then((document) => {
-        if (!active || !document) return;
+    Promise.all([loadLocalDocument(), listLocalCheckpoints()])
+      .then(([document, storedCheckpoints]) => {
+        if (!active) return;
+        setCheckpoints(storedCheckpoints);
+        if (!document) return;
         setNodes(document.nodes.map((node) => ({ ...node, selected: false })));
         setEdges(document.edges.map((edge) => ({ ...edge, selected: false })));
         setTitle(document.title);
       })
-      .catch(() => setSaveState('error'))
+      .catch(() => {
+        setSaveState('error');
+        announce('The saved local project could not be opened. Use a backup or start a new project.', 'error');
+      })
       .finally(() => active && setHydrated(true));
     return () => {
       active = false;
     };
-  }, []);
+  }, [announce]);
 
   useEffect(() => {
     if (!hydrated) return;
-    const savingTimeout = window.setTimeout(() => setSaveState('saving'), 0);
-    const timeout = window.setTimeout(() => {
-      saveLocalDocument({
-        schemaVersion: 1,
-        title,
-        nodes: nodes.map((node) => ({ ...node, selected: false })),
-        edges: edges.map((edge) => ({ ...edge, selected: false })),
-        updatedAt: Date.now(),
-      })
-        .then(() => setSaveState('saved'))
-        .catch(() => setSaveState('error'));
-    }, 650);
+    const dirtyTimeout = window.setTimeout(() => setSaveState('saving'), 0);
+    const saveTimeout = window.setTimeout(() => {
+      void queueDocumentSave(getCurrentDocument());
+    }, 450);
     return () => {
-      window.clearTimeout(savingTimeout);
-      window.clearTimeout(timeout);
+      window.clearTimeout(dirtyTimeout);
+      window.clearTimeout(saveTimeout);
     };
-  }, [edges, hydrated, nodes, title]);
+  }, [edges, getCurrentDocument, hydrated, nodes, queueDocumentSave, title]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const saveWhenHidden = () => {
+      if (document.visibilityState === 'hidden') void queueDocumentSave(getCurrentDocument());
+    };
+    document.addEventListener('visibilitychange', saveWhenHidden);
+    return () => document.removeEventListener('visibilitychange', saveWhenHidden);
+  }, [getCurrentDocument, hydrated, queueDocumentSave]);
 
   useEffect(() => {
     if (exportOpen && !exportDialogRef.current?.open) exportDialogRef.current?.showModal();
     if (!exportOpen && exportDialogRef.current?.open) exportDialogRef.current.close();
   }, [exportOpen]);
+
+  useEffect(() => {
+    if (backupOpen && !backupDialogRef.current?.open) backupDialogRef.current?.showModal();
+    if (!backupOpen && backupDialogRef.current?.open) backupDialogRef.current.close();
+  }, [backupOpen]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<EditorNode>[]) => {
@@ -418,6 +608,9 @@ function EditorInner() {
             ...connection,
             type: 'smoothstep',
             style: { stroke: '#a9adb7', strokeWidth: 1.5 },
+            markerEnd: { type: MarkerType.ArrowClosed },
+            label: '',
+            data: { label: '', kind: 'default' },
           },
           current,
         ),
@@ -426,27 +619,53 @@ function EditorInner() {
     [recordHistory],
   );
 
-  const selectNode = useCallback((id: string) => {
+  const selectNode = useCallback((id: string, additive = false) => {
     setNodes((current) =>
-      current.map((node) => ({ ...node, selected: node.id === id })),
+      current.map((node) => ({
+        ...node,
+        selected: additive ? node.id === id ? !node.selected : node.selected : node.id === id,
+      })),
     );
     setSelectedPath(null);
   }, []);
 
+  const revealAndSelectNode = useCallback((id: string) => {
+    const ancestors = new Set<string>();
+    const queue = [id];
+    while (queue.length) {
+      const target = queue.shift()!;
+      for (const edge of edgesRef.current) {
+        if (edge.target !== target || ancestors.has(edge.source)) continue;
+        ancestors.add(edge.source);
+        queue.push(edge.source);
+      }
+    }
+    setNodes((current) => current.map((node) => ({
+      ...node,
+      selected: node.id === id,
+      data: node.data.kind === 'concept' && ancestors.has(node.id)
+        ? { ...node.data, collapsed: false }
+        : node.data,
+    })));
+    setSelectedPath(null);
+    window.setTimeout(() => fitView({ nodes: [{ id }], duration: 280, padding: 0.5, maxZoom: 1.4 }), 0);
+  }, [fitView]);
+
   const ingestFiles = useCallback(
     async (files: File[], clientPoint?: { x: number; y: number }) => {
-      const imageFiles = files.filter((file) => ACCEPTED_TYPES.has(file.type));
-      if (imageFiles.length === 0) {
+      if (files.length === 0) {
         announce('Use a PNG, JPEG, or WebP image.', 'error');
         return;
       }
-      const oversized = imageFiles.find((file) => file.size > MAX_FILE_SIZE);
-      if (oversized) {
-        announce(`${oversized.name} is larger than the 15 MB local limit.`, 'error');
+      if (files.length > MAX_FILES_PER_IMPORT) {
+        announce(`Add up to ${MAX_FILES_PER_IMPORT} images at a time.`, 'error');
         return;
       }
 
       try {
+        const imageFiles = await Promise.all(
+          files.map(async (file) => ({ file, dimensions: await validateImageFile(file) })),
+        );
         const fallbackPoint = screenToFlowPosition({
           x: window.innerWidth / 2,
           y: window.innerHeight / 2,
@@ -456,11 +675,9 @@ function EditorInner() {
           : fallbackPoint;
         const imported: EditorNode[] = [];
 
-        for (const [index, file] of imageFiles.entries()) {
-          const [src, dimensions] = await Promise.all([
-            fileToDataUrl(file),
-            imageDimensions(file),
-          ]);
+        for (const [index, item] of imageFiles.entries()) {
+          const { file, dimensions } = item;
+          const src = await fileToDataUrl(file);
           const scale = Math.min(1, 430 / dimensions.width, 310 / dimensions.height);
           const width = Math.max(120, Math.round(dimensions.width * scale));
           const height = Math.max(80, Math.round(dimensions.height * scale));
@@ -472,6 +689,8 @@ function EditorInner() {
               y: dropPoint.y - height / 2 + index * 28,
             },
             style: { width, height },
+            draggable: true,
+            deletable: true,
             data: {
               kind: 'raster',
               name: file.name,
@@ -504,7 +723,7 @@ function EditorInner() {
 
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
-      const target = event.target as HTMLElement | null;
+      const target = event.target instanceof Element ? event.target : null;
       if (target?.closest('input, textarea, [contenteditable="true"]')) return;
       const files = Array.from(event.clipboardData?.files ?? []);
       if (files.some((file) => file.type.startsWith('image/'))) {
@@ -520,7 +739,7 @@ function EditorInner() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isEditing = Boolean(target?.closest('input, textarea, [contenteditable="true"]'));
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+      if (!isEditing && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
         if (event.shiftKey) redo();
         else undo();
@@ -570,6 +789,8 @@ function EditorInner() {
             y: raster.position.y,
           },
           style: { width: rasterWidth, height: rasterHeight },
+          draggable: true,
+          deletable: true,
           data: {
             kind: 'vector',
             name: `${raster.data.name} vector`,
@@ -613,13 +834,9 @@ function EditorInner() {
     [announce, conversionOptions, convertingId, fitView, recordHistory],
   );
 
-  const rebuildDiagram = useCallback((id: string) => {
-    void id;
-    announce(
-      `${unconfiguredReconstructionProvider.name}. Local vectorization and layer extraction are available now.`,
-      'info',
-    );
-  }, [announce]);
+  const cancelVectorization = useCallback(() => {
+    conversionControllerRef.current?.abort();
+  }, []);
 
   const addConceptNode = useCallback(() => {
     const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
@@ -631,12 +848,16 @@ function EditorInner() {
         id,
         type: 'concept',
         position: { x: center.x - 94, y: center.y - 39 },
+        draggable: true,
+        deletable: true,
         data: {
           kind: 'concept',
           name: 'New concept',
           label: 'New concept',
+          body: emptyRichText(),
           eyebrow: 'Concept',
           tone: 'ink',
+          collapsed: false,
           opacity: 1,
           locked: false,
         },
@@ -645,7 +866,36 @@ function EditorInner() {
     ]);
   }, [recordHistory, screenToFlowPosition]);
 
-  const selectedNode = nodes.find((node) => node.selected) ?? null;
+  const addConceptFromTemplate = useCallback(() => {
+    const template = CONCEPT_TEMPLATES[conceptTemplate];
+    const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    const id = crypto.randomUUID();
+    recordHistory();
+    setNodes((current) => [...current.map((node) => ({ ...node, selected: false })), {
+      id,
+      type: 'concept',
+      position: { x: center.x - 110, y: center.y - 56 },
+      draggable: true,
+      deletable: true,
+      selected: true,
+      data: {
+        kind: 'concept',
+        name: template.name,
+        label: template.name,
+        body: structuredClone(template.body),
+        eyebrow: template.eyebrow,
+        tone: template.tone,
+        collapsed: false,
+        opacity: 1,
+        locked: false,
+      },
+    }]);
+    announce(`${template.eyebrow} template added.`, 'success');
+  }, [announce, conceptTemplate, recordHistory, screenToFlowPosition]);
+
+  const selectedNodes = nodes.filter((node) => node.selected);
+  const selectedNode = selectedNodes[0] ?? null;
+  const selectedEdge = edges.find((edge) => edge.selected) ?? null;
   const selectedVectorPath = useMemo(() => {
     if (!selectedPath) return null;
     const node = nodes.find((item) => item.id === selectedPath.nodeId);
@@ -661,6 +911,255 @@ function EditorInner() {
     },
     [recordHistory],
   );
+
+  const updateEdge = useCallback(
+    (id: string, updater: (edge: EditorEdge) => EditorEdge, shouldRecord = true) => {
+      if (shouldRecord) recordHistory();
+      setEdges((current) => current.map((edge) => edge.id === id ? updater(edge) : edge));
+    },
+    [recordHistory],
+  );
+
+  const updateSelectedNodes = useCallback((updater: (node: EditorNode) => EditorNode) => {
+    const selectedIds = new Set(nodesRef.current.filter((node) => node.selected && !node.data.locked).map((node) => node.id));
+    if (!selectedIds.size) return;
+    recordHistory();
+    setNodes((current) => current.map((node) => selectedIds.has(node.id) ? updater(node) : node));
+  }, [recordHistory]);
+
+  const alignSelectedNodes = useCallback((mode: 'left' | 'top' | 'horizontal' | 'vertical') => {
+    const selected = nodesRef.current.filter((node) => node.selected && !node.data.locked);
+    if (selected.length < 2) return;
+    if ((mode === 'horizontal' || mode === 'vertical') && selected.length < 3) return;
+    recordHistory();
+    if (mode === 'left' || mode === 'top') {
+      const target = mode === 'left'
+        ? Math.min(...selected.map((node) => node.position.x))
+        : Math.min(...selected.map((node) => node.position.y));
+      const ids = new Set(selected.map((node) => node.id));
+      setNodes((current) => current.map((node) => ids.has(node.id)
+        ? { ...node, position: { ...node.position, [mode === 'left' ? 'x' : 'y']: target } }
+        : node));
+      return;
+    }
+    const axis = mode === 'horizontal' ? 'x' : 'y';
+    const sorted = [...selected].sort((a, b) => a.position[axis] - b.position[axis]);
+    const start = sorted[0].position[axis];
+    const end = sorted.at(-1)!.position[axis];
+    const positions = new Map(sorted.map((node, index) => [node.id, start + ((end - start) * index) / (sorted.length - 1)]));
+    setNodes((current) => current.map((node) => positions.has(node.id)
+      ? { ...node, position: { ...node.position, [axis]: positions.get(node.id)! } }
+      : node));
+  }, [recordHistory]);
+
+  const deleteSelectedNodes = useCallback(() => {
+    const ids = new Set(nodesRef.current.filter((node) => node.selected && !node.data.locked).map((node) => node.id));
+    if (!ids.size) return;
+    recordHistory();
+    setNodes((current) => current.filter((node) => !ids.has(node.id)));
+    setEdges((current) => current.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)));
+  }, [recordHistory]);
+
+  const tidyDiagram = useCallback(() => {
+    const allNodes = nodesRef.current.filter((node) => !node.hidden);
+    if (allNodes.length < 2) return;
+    const nodeIds = new Set(allNodes.map((node) => node.id));
+    const incoming = new Map(allNodes.map((node) => [node.id, 0]));
+    const children = new Map<string, string[]>();
+    for (const edge of edgesRef.current) {
+      if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) continue;
+      incoming.set(edge.target, (incoming.get(edge.target) ?? 0) + 1);
+      children.set(edge.source, [...(children.get(edge.source) ?? []), edge.target]);
+    }
+    const roots = allNodes.filter((node) => (incoming.get(node.id) ?? 0) === 0);
+    const queue = (roots.length ? roots : [allNodes[0]]).map((node) => ({ id: node.id, depth: 0 }));
+    const depths = new Map<string, number>();
+    while (queue.length) {
+      const current = queue.shift()!;
+      if (depths.has(current.id)) continue;
+      depths.set(current.id, current.depth);
+      for (const child of children.get(current.id) ?? []) queue.push({ id: child, depth: current.depth + 1 });
+    }
+    for (const node of allNodes) if (!depths.has(node.id)) depths.set(node.id, 0);
+    const rows = new Map<number, string[]>();
+    for (const node of allNodes) {
+      const depth = depths.get(node.id) ?? 0;
+      rows.set(depth, [...(rows.get(depth) ?? []), node.id]);
+    }
+    const positions = new Map<string, { x: number; y: number }>();
+    for (const [depth, ids] of rows) {
+      ids.forEach((id, index) => positions.set(id, { x: 110 + depth * 310, y: 90 + index * 150 }));
+    }
+    recordHistory();
+    setNodes((current) => current.map((node) => node.data.locked || !positions.has(node.id)
+      ? node
+      : { ...node, position: positions.get(node.id)! }));
+    window.setTimeout(() => fitView({ duration: 320, padding: 0.22 }), 0);
+    announce('Diagram layout tidied.', 'success');
+  }, [announce, fitView, recordHistory]);
+
+  const beginConceptEdit = useCallback((id: string) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'concept' || node.data.locked) return;
+    if (editingConceptId === id) return;
+    if (conceptEditOriginRef.current) {
+      recordHistory(conceptEditOriginRef.current);
+    }
+    conceptEditOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
+    setNodes((current) => current.map((item) => item.id === id ? {
+      ...item,
+      style: {
+        ...item.style,
+        width: Math.max(250, Number(item.style?.width) || Number(item.measured?.width) || 220),
+        height: Math.max(170, Number(item.style?.height) || Number(item.measured?.height) || 78),
+      },
+    } : item));
+    setEditingConceptId(id);
+    selectNode(id);
+  }, [editingConceptId, recordHistory, selectNode]);
+
+  const addConceptRelative = useCallback((id: string, relation: 'child' | 'sibling') => {
+    const source = nodesRef.current.find((node) => node.id === id);
+    if (!source || source.data.locked) return;
+    const incoming = edgesRef.current.find((edge) => edge.target === id);
+    const parentId = relation === 'sibling' ? incoming?.source : id;
+    const siblings = parentId
+      ? edgesRef.current.filter((edge) => edge.source === parentId).map((edge) => edge.target)
+      : [];
+    const reference = relation === 'child'
+      ? source
+      : parentId
+        ? nodesRef.current.find((node) => node.id === parentId) ?? source
+        : source;
+    const newId = crypto.randomUUID();
+    const nextNode: EditorNode = {
+      id: newId,
+      type: 'concept',
+      position: {
+        x: relation === 'child' || parentId ? reference.position.x + 290 : source.position.x + 32,
+        y: relation === 'child'
+          ? source.position.y + siblings.length * 116
+          : parentId
+            ? reference.position.y + siblings.length * 116
+            : source.position.y + 116,
+      },
+      style: { width: 250, height: 170 },
+      draggable: true,
+      deletable: true,
+      selected: true,
+      data: {
+        kind: 'concept',
+        name: 'New concept',
+        label: 'New concept',
+        body: emptyRichText(),
+        eyebrow: relation === 'child' ? 'Child idea' : 'Related idea',
+        tone: 'ink',
+        collapsed: false,
+        opacity: 1,
+        locked: false,
+      },
+    };
+    recordHistory();
+    setNodes((current) => [...current.map((node) => ({ ...node, selected: false })), nextNode]);
+    if (parentId) {
+      setEdges((current) => [...current, {
+        id: crypto.randomUUID(),
+        source: parentId,
+        target: newId,
+        type: 'smoothstep',
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: { stroke: '#a9adb7', strokeWidth: 1.5 },
+        data: { label: '', kind: 'default' },
+      }]);
+    }
+    window.setTimeout(() => {
+      fitView({ nodes: [{ id: newId }], duration: 220, padding: 0.65, maxZoom: 1.4 });
+      beginConceptEdit(newId);
+    }, 60);
+  }, [beginConceptEdit, fitView, recordHistory]);
+
+  const updateConceptTitle = useCallback((id: string, label: string) => {
+    setNodes((current) => current.map((node) => node.id === id && node.data.kind === 'concept'
+      ? {
+          ...node,
+          data: {
+            ...node.data,
+            name: node.data.name === node.data.label ? label : node.data.name,
+            label,
+          },
+        }
+      : node));
+  }, []);
+
+  const updateConceptBody = useCallback((id: string, body: RichTextDocument) => {
+    setNodes((current) => current.map((node) => node.id === id && node.data.kind === 'concept'
+      ? { ...node, data: { ...node.data, body } }
+      : node));
+  }, []);
+
+  const commitConceptEdit = useCallback(() => {
+    if (conceptEditOriginRef.current) {
+      recordHistory(conceptEditOriginRef.current);
+      conceptEditOriginRef.current = null;
+    }
+    setEditingConceptId(null);
+  }, [recordHistory]);
+
+  const cancelConceptEdit = useCallback(() => {
+    const origin = conceptEditOriginRef.current;
+    if (origin) {
+      setNodes(origin.nodes);
+      setEdges(origin.edges);
+      conceptEditOriginRef.current = null;
+    }
+    setEditingConceptId(null);
+  }, []);
+
+  const beginFieldEdit = useCallback(() => {
+    if (!fieldOriginRef.current) {
+      fieldOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
+    }
+  }, []);
+
+  const endFieldEdit = useCallback(() => {
+    if (!fieldOriginRef.current) return;
+    recordHistory(fieldOriginRef.current);
+    fieldOriginRef.current = null;
+  }, [recordHistory]);
+
+  const cancelFieldEdit = useCallback(() => {
+    if (fieldOriginRef.current) {
+      setNodes(fieldOriginRef.current.nodes);
+      setEdges(fieldOriginRef.current.edges);
+      fieldOriginRef.current = null;
+    }
+    setRenamingLayerId(null);
+  }, []);
+
+  useEffect(() => {
+    const beginFromKeyboard = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input, textarea, button, [contenteditable="true"]')) return;
+      const selected = nodesRef.current.find((node) => node.selected);
+      if (!selected || selected.data.kind !== 'concept' || selected.data.locked) return;
+      if (event.key === 'Tab' && target?.closest('.react-flow__node')) {
+        event.preventDefault();
+        addConceptRelative(selected.id, 'child');
+        return;
+      }
+      if (event.key === 'Enter' && event.shiftKey) {
+        event.preventDefault();
+        addConceptRelative(selected.id, 'sibling');
+        return;
+      }
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      beginConceptEdit(selected.id);
+    };
+    window.addEventListener('keydown', beginFromKeyboard);
+    return () => window.removeEventListener('keydown', beginFromKeyboard);
+  }, [addConceptRelative, beginConceptEdit]);
 
   const updateSelectedPath = useCallback(
     (updater: (path: VectorPathLayer) => VectorPathLayer, shouldRecord = true) => {
@@ -684,6 +1183,71 @@ function EditorInner() {
     [recordHistory, selectedPath],
   );
 
+  const updatePathById = useCallback((nodeId: string, pathId: string, updater: (path: VectorPathLayer) => VectorPathLayer) => {
+    updateNode(nodeId, (node) => {
+      if (node.data.kind !== 'vector') return node;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          paths: node.data.paths.map((path) => path.id === pathId ? updater(path) : path),
+        },
+      };
+    });
+  }, [updateNode]);
+
+  const moveSelectedPath = useCallback((direction: -1 | 1) => {
+    if (!selectedPath) return;
+    recordHistory();
+    setNodes((current) => current.map((node) => {
+      if (node.id !== selectedPath.nodeId || node.data.kind !== 'vector') return node;
+      const index = node.data.paths.findIndex((path) => path.id === selectedPath.pathId);
+      const nextIndex = Math.max(0, Math.min(node.data.paths.length - 1, index + direction));
+      if (index < 0 || index === nextIndex || node.data.paths[index].locked) return node;
+      const paths = [...node.data.paths];
+      const [path] = paths.splice(index, 1);
+      paths.splice(nextIndex, 0, path);
+      return { ...node, data: { ...node.data, paths } };
+    }));
+  }, [recordHistory, selectedPath]);
+
+  const duplicateSelectedPath = useCallback(() => {
+    if (!selectedPath) return;
+    const selectedNode = nodesRef.current.find((node) => node.id === selectedPath.nodeId);
+    const selected = selectedNode?.data.kind === 'vector'
+      ? selectedNode.data.paths.find((path) => path.id === selectedPath.pathId)
+      : null;
+    if (!selected || selected.locked) return;
+    const newPathId = crypto.randomUUID();
+    recordHistory();
+    setNodes((current) => current.map((node) => {
+      if (node.id !== selectedPath.nodeId || node.data.kind !== 'vector') return node;
+      const index = node.data.paths.findIndex((path) => path.id === selectedPath.pathId);
+      const original = node.data.paths[index];
+      if (!original || original.locked) return node;
+      const copy = { ...structuredClone(original), id: newPathId, name: `${original.name} copy`, locked: false };
+      const paths = [...node.data.paths];
+      paths.splice(index + 1, 0, copy);
+      return { ...node, data: { ...node.data, paths } };
+    }));
+    setSelectedPath({ nodeId: selectedPath.nodeId, pathId: newPathId });
+  }, [recordHistory, selectedPath]);
+
+  const deleteSelectedPath = useCallback(() => {
+    if (!selectedPath) return;
+    const node = nodesRef.current.find((item) => item.id === selectedPath.nodeId);
+    if (!node || node.data.kind !== 'vector') return;
+    const index = node.data.paths.findIndex((path) => path.id === selectedPath.pathId);
+    if (index < 0 || node.data.paths[index].locked) return;
+    recordHistory();
+    const remaining = node.data.paths.filter((path) => path.id !== selectedPath.pathId);
+    setNodes((current) => current.map((item) => item.id === node.id && item.data.kind === 'vector'
+      ? { ...item, data: { ...item.data, paths: remaining } }
+      : item));
+    const next = remaining[Math.min(index, remaining.length - 1)];
+    setSelectedPath(next ? { nodeId: node.id, pathId: next.id } : null);
+  }, [recordHistory, selectedPath]);
+
   const toggleNodeVisibility = useCallback((id: string) => {
     updateNode(id, (node) => ({ ...node, hidden: !node.hidden }));
   }, [updateNode]);
@@ -692,6 +1256,7 @@ function EditorInner() {
     updateNode(id, (node) => ({
       ...node,
       draggable: node.data.locked,
+      deletable: node.data.locked,
       data: { ...node.data, locked: !node.data.locked },
     }));
   }, [updateNode]);
@@ -703,7 +1268,13 @@ function EditorInner() {
       id: crypto.randomUUID(),
       position: { x: selectedNode.position.x + 28, y: selectedNode.position.y + 28 },
       selected: true,
-      data: { ...structuredClone(selectedNode.data), name: `${selectedNode.data.name} copy` },
+      draggable: true,
+      deletable: true,
+      data: {
+        ...structuredClone(selectedNode.data),
+        name: `${selectedNode.data.name} copy`,
+        locked: false,
+      },
     };
     recordHistory();
     setNodes((current) => [
@@ -713,7 +1284,7 @@ function EditorInner() {
   }, [recordHistory, selectedNode]);
 
   const deleteSelected = useCallback(() => {
-    if (!selectedNode) return;
+    if (!selectedNode || selectedNode.data.locked) return;
     recordHistory();
     setNodes((current) => current.filter((node) => node.id !== selectedNode.id));
     setEdges((current) =>
@@ -737,22 +1308,99 @@ function EditorInner() {
 
   const resetDocument = useCallback(async () => {
     if (!window.confirm('Start a new local document? This clears the current canvas on this device.')) return;
-    conversionControllerRef.current?.abort();
-    await clearLocalDocument();
-    pastRef.current = [];
-    futureRef.current = [];
-    setNodes(structuredClone(initialDocument.nodes));
-    setEdges(structuredClone(initialDocument.edges));
-    setTitle(initialDocument.title);
-    setSelectedPath(null);
-    refreshHistoryState();
-    announce('New local document created.', 'success');
+    try {
+      conversionControllerRef.current?.abort();
+      await clearLocalDocument();
+      pastRef.current = [];
+      futureRef.current = [];
+      setNodes(structuredClone(initialDocument.nodes));
+      setEdges(structuredClone(initialDocument.edges));
+      setTitle(initialDocument.title);
+      setSelectedPath(null);
+      refreshHistoryState();
+      announce('New local document created.', 'success');
+    } catch {
+      announce('The local project could not be cleared. Download a backup before trying again.', 'error');
+    }
   }, [announce, refreshHistoryState]);
 
   const openExport = useCallback(() => setExportOpen(true), []);
+  const openBackup = useCallback(() => setBackupOpen(true), []);
+  const performBackup = useCallback(() => {
+    try {
+      downloadProjectBackup(
+        serializeProjectBackup(getCurrentDocument()),
+        safeFileBase(titleRef.current),
+      );
+      announce('Project backup downloaded.', 'success');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'Project backup failed.', 'error');
+    }
+  }, [announce, getCurrentDocument]);
+
+  const createCheckpoint = useCallback(async () => {
+    try {
+      await createLocalCheckpoint(getCurrentDocument());
+      setCheckpoints(await listLocalCheckpoints());
+      announce('Local checkpoint created.', 'success');
+    } catch {
+      announce('The checkpoint could not be created.', 'error');
+    }
+  }, [announce, getCurrentDocument]);
+
+  const restoreCheckpoint = useCallback(async (checkpoint: LocalCheckpoint) => {
+    if (!window.confirm(`Restore “${checkpoint.title}” from ${new Date(checkpoint.createdAt).toLocaleString()}?`)) return;
+    recordHistory();
+    const restored = structuredClone(checkpoint.document);
+    setNodes(restored.nodes);
+    setEdges(restored.edges);
+    setTitle(restored.title);
+    setSelectedPath(null);
+    await queueDocumentSave(restored);
+    setBackupOpen(false);
+    window.setTimeout(() => fitView({ duration: 300, padding: 0.22 }), 0);
+    announce('Checkpoint restored.', 'success');
+  }, [announce, fitView, queueDocumentSave, recordHistory]);
+
+  const removeCheckpoint = useCallback(async (id: string) => {
+    try {
+      await deleteLocalCheckpoint(id);
+      setCheckpoints((current) => current.filter((checkpoint) => checkpoint.id !== id));
+      announce('Checkpoint deleted.');
+    } catch {
+      announce('The checkpoint could not be deleted.', 'error');
+    }
+  }, [announce]);
+
+  const restoreProject = useCallback(async (file: File) => {
+    try {
+      if (file.size > MAX_PROJECT_FILE_SIZE) throw new Error('The project backup is larger than 40 MB.');
+      const restored = parseProjectBackup(await file.text());
+      if (!window.confirm(`Replace the current canvas with “${restored.title}”?`)) return;
+      conversionControllerRef.current?.abort();
+      pastRef.current = [];
+      futureRef.current = [];
+      setNodes(restored.nodes);
+      setEdges(restored.edges);
+      setTitle(restored.title);
+      setSelectedPath(null);
+      setExpandedVectors(new Set());
+      refreshHistoryState();
+      await queueDocumentSave(restored);
+      setBackupOpen(false);
+      window.setTimeout(() => fitView({ duration: 300, padding: 0.22 }), 60);
+      announce('Project backup restored.', 'success');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The project backup could not be restored.', 'error');
+    }
+  }, [announce, fitView, queueDocumentSave, refreshHistoryState]);
+
   const performExport = useCallback(() => {
     try {
-      const svg = buildSvgDocument(nodesRef.current, edgesRef.current);
+      const collapsed = collapsedDescendantIds(nodesRef.current, edgesRef.current);
+      const exportNodes = nodesRef.current.map((node) => collapsed.has(node.id) ? { ...node, hidden: true } : node);
+      const exportEdges = edgesRef.current.filter((edge) => !collapsed.has(edge.source) && !collapsed.has(edge.target));
+      const svg = buildSvgDocument(exportNodes, exportEdges);
       downloadSvg(svg, safeFileBase(title));
       setExportOpen(false);
       announce('Editable SVG exported.', 'success');
@@ -761,12 +1409,29 @@ function EditorInner() {
     }
   }, [announce, title]);
 
+  const hasChildren = useCallback((id: string) => edgesRef.current.some((edge) => edge.source === id), []);
+
+  const toggleBranch = useCallback((id: string) => {
+    updateNode(id, (node) => node.data.kind === 'concept'
+      ? { ...node, data: { ...node.data, collapsed: !node.data.collapsed } }
+      : node);
+  }, [updateNode]);
+
   const nodeActionValue = useMemo<NodeActionContextValue>(
     () => ({
       convertingId,
+      editingConceptId,
       keepImage,
       vectorizeImage,
-      rebuildDiagram,
+      cancelVectorization,
+      beginConceptEdit,
+      updateConceptTitle,
+      updateConceptBody,
+      commitConceptEdit,
+      cancelConceptEdit,
+      toggleBranch,
+      hasChildren,
+      addConceptRelative,
       recordResizeStart: () => {
         if (!resizeOriginRef.current) {
           resizeOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
@@ -779,14 +1444,54 @@ function EditorInner() {
         }
       },
     }),
-    [convertingId, keepImage, rebuildDiagram, recordHistory, vectorizeImage],
+    [
+      beginConceptEdit,
+      addConceptRelative,
+      cancelConceptEdit,
+      cancelVectorization,
+      commitConceptEdit,
+      convertingId,
+      editingConceptId,
+      hasChildren,
+      keepImage,
+      recordHistory,
+      toggleBranch,
+      updateConceptBody,
+      updateConceptTitle,
+      vectorizeImage,
+    ],
   );
 
-  const layerNodes = [...nodes].reverse();
+  const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
+  const layerNodes = [...nodes].reverse().filter((node) => {
+    if (!normalizedSearch) return true;
+    const searchable = [
+      node.data.name,
+      node.data.kind === 'concept' ? node.data.label : '',
+      node.data.kind === 'concept' ? node.data.eyebrow : '',
+      node.data.kind === 'concept' ? richTextToPlainText(node.data.body) : '',
+    ].join(' ').toLocaleLowerCase();
+    return searchable.includes(normalizedSearch);
+  });
+  const collapsedNodeIds = useMemo(() => collapsedDescendantIds(nodes, edges), [edges, nodes]);
+  const canvasNodes = useMemo(
+    () => nodes.map((node) => collapsedNodeIds.has(node.id) ? { ...node, hidden: true } : node),
+    [collapsedNodeIds, nodes],
+  );
+  const canvasEdges = useMemo(
+    () => edges.filter((edge) => !collapsedNodeIds.has(edge.source) && !collapsedNodeIds.has(edge.target)),
+    [collapsedNodeIds, edges],
+  );
 
   return (
     <NodeActionContext.Provider value={nodeActionValue}>
-      <main className="editor-shell" aria-label="SynapTable diagram editor">
+      <main
+        className="editor-shell"
+        aria-label="SynapTable diagram editor"
+        aria-busy={!hydrated}
+        data-ready={hydrated ? 'true' : 'false'}
+        data-save-state={saveState}
+      >
         <a href="#canvas-workspace" className="skip-link">Skip to canvas</a>
         <header className="topbar">
           <div className="brand" aria-label="SynapTable">
@@ -796,12 +1501,33 @@ function EditorInner() {
           <label className="document-title">
             <span className={`status-dot status-${saveState}`} aria-hidden="true" />
             <span className="visually-hidden">Document title</span>
-            <input value={title} onChange={(event) => setTitle(event.target.value)} />
-            <span className="save-label">
+            <input value={title} maxLength={120} onChange={(event) => setTitle(event.target.value)} />
+            <span className="save-label" aria-live="polite">
               {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save failed' : 'Saved on device'}
             </span>
           </label>
           <div className="topbar-actions">
+            <button
+              type="button"
+              className="icon-button mobile-layers-button"
+              aria-label="Open layers panel"
+              aria-expanded={mobilePanel === 'layers'}
+              onClick={() => setMobilePanel((current) => current === 'layers' ? null : 'layers')}
+            >
+              <Layers3 size={16} />
+            </button>
+            <button
+              type="button"
+              className="icon-button mobile-inspector-button"
+              aria-label="Open properties panel"
+              aria-expanded={mobilePanel === 'inspector'}
+              onClick={() => setMobilePanel((current) => current === 'inspector' ? null : 'inspector')}
+            >
+              <SlidersHorizontal size={16} />
+            </button>
+            <button type="button" className="icon-button backup-button" aria-label="Project backup and restore" onClick={openBackup}>
+              <HardDrive size={16} />
+            </button>
             <button type="button" className="ghost-button new-button" onClick={() => void resetDocument()}>
               <RotateCcw size={14} /> New
             </button>
@@ -811,16 +1537,44 @@ function EditorInner() {
             <button type="button" className="icon-button" aria-label="Redo" onClick={redo} disabled={!historyState.canRedo}>
               <Redo2 size={16} />
             </button>
-            <button type="button" className="primary-button" onClick={openExport}>
-              <Download size={14} /> Export SVG
+            <button type="button" className="primary-button" aria-label="Export SVG" onClick={openExport}>
+              <Download size={14} /> <span className="button-label">Export SVG</span>
             </button>
           </div>
         </header>
 
-        <aside className="panel layers-panel" aria-labelledby="layers-title">
+        <aside className={`panel layers-panel ${mobilePanel === 'layers' ? 'panel-open' : ''}`} aria-labelledby="layers-title">
           <div className="panel-heading">
             <div><span className="eyebrow">Document</span><h1 id="layers-title">Layers</h1></div>
-            <button type="button" className="icon-button" aria-label="Add concept layer" onClick={addConceptNode}><Plus size={16} /></button>
+            <div className="panel-heading-actions">
+              <button type="button" className="icon-button" aria-label="Add concept layer" onClick={addConceptNode}><Plus size={16} /></button>
+              <button type="button" className="icon-button panel-close-button" aria-label="Close layers panel" onClick={() => setMobilePanel(null)}><X size={16} /></button>
+            </div>
+          </div>
+          <div className="layer-search">
+            <Search size={13} aria-hidden="true" />
+            <label htmlFor="layer-search-input" className="visually-hidden">Search layers and concept text</label>
+            <input
+              id="layer-search-input"
+              type="search"
+              placeholder="Search layers and notes"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && layerNodes[0]) revealAndSelectNode(layerNodes[0].id);
+              }}
+            />
+            {normalizedSearch ? <span aria-live="polite">{layerNodes.length}</span> : null}
+          </div>
+          <div className="template-picker">
+            <label htmlFor="concept-template">Quick template</label>
+            <select id="concept-template" value={conceptTemplate} onChange={(event) => setConceptTemplate(event.target.value as keyof typeof CONCEPT_TEMPLATES)}>
+              <option value="idea">Idea</option>
+              <option value="task">Task checklist</option>
+              <option value="decision">Decision</option>
+              <option value="question">Open question</option>
+            </select>
+            <button type="button" onClick={addConceptFromTemplate}><Plus size={12} /> Add</button>
           </div>
           <ul className="layer-list" aria-label="Canvas layers">
             {layerNodes.map((node) => {
@@ -841,12 +1595,53 @@ function EditorInner() {
                         })}
                       >{expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>
                     ) : <span className="layer-indent" />}
-                    <button type="button" className="layer-main" onClick={() => selectNode(node.id)}>
-                      <span className="layer-icon" aria-hidden="true">
-                        {node.data.kind === 'raster' ? <ImageIcon size={12} /> : node.data.kind === 'vector' ? <Shapes size={12} /> : <Square size={11} />}
-                      </span>
-                      <span className="layer-name">{node.data.name}</span>
-                    </button>
+                    {renamingLayerId === node.id ? (
+                      <div className="layer-main layer-renaming">
+                        <span className="layer-icon" aria-hidden="true">
+                          {node.data.kind === 'raster' ? <ImageIcon size={12} /> : node.data.kind === 'vector' ? <Shapes size={12} /> : <Square size={11} />}
+                        </span>
+                        <input
+                          aria-label="Layer name"
+                          value={node.data.name}
+                          maxLength={240}
+                          autoFocus
+                          onChange={(event) => updateNode(node.id, (current) => ({
+                            ...current,
+                            data: { ...current.data, name: event.target.value },
+                          }), false)}
+                          onBlur={() => {
+                            endFieldEdit();
+                            setRenamingLayerId(null);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') event.currentTarget.blur();
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              cancelFieldEdit();
+                            }
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="layer-main"
+                        aria-pressed={node.selected === true}
+                        onClick={(event) => event.metaKey || event.ctrlKey || event.shiftKey
+                          ? selectNode(node.id, true)
+                          : revealAndSelectNode(node.id)}
+                        onDoubleClick={() => {
+                          if (node.data.locked) return;
+                          beginFieldEdit();
+                          setRenamingLayerId(node.id);
+                        }}
+                      >
+                        <span className="layer-icon" aria-hidden="true">
+                          {node.data.kind === 'raster' ? <ImageIcon size={12} /> : node.data.kind === 'vector' ? <Shapes size={12} /> : <Square size={11} />}
+                        </span>
+                        <span className="layer-name">{node.data.name}</span>
+                      </button>
+                    )}
                     <button type="button" className="layer-control" aria-label={`${node.hidden ? 'Show' : 'Hide'} ${node.data.name}`} onClick={() => toggleNodeVisibility(node.id)}>
                       {node.hidden ? <EyeOff size={13} /> : <Eye size={13} />}
                     </button>
@@ -858,18 +1653,26 @@ function EditorInner() {
                     <ul className="path-list" aria-label={`${node.data.name} paths`}>
                       {node.data.paths.map((path) => (
                         <li key={path.id}>
-                          <button
-                            type="button"
-                            className={`path-row ${selectedPath?.pathId === path.id ? 'active' : ''}`}
-                            onClick={() => {
-                              selectNode(node.id);
-                              setSelectedPath({ nodeId: node.id, pathId: path.id });
-                            }}
-                          >
-                            <span className="path-swatch" style={{ background: path.fill === 'none' ? 'transparent' : path.fill }} />
-                            <span>{path.name}</span>
-                            <span>{path.visible ? '' : 'Hidden'}</span>
-                          </button>
+                          <div className={`path-layer-row ${selectedPath?.pathId === path.id ? 'active' : ''}`}>
+                            <button
+                              type="button"
+                              className="path-row"
+                              aria-pressed={selectedPath?.pathId === path.id}
+                              onClick={() => {
+                                selectNode(node.id);
+                                setSelectedPath({ nodeId: node.id, pathId: path.id });
+                              }}
+                            >
+                              <span className="path-swatch" style={{ background: path.fill === 'none' ? 'transparent' : path.fill }} />
+                              <span>{path.name}</span>
+                            </button>
+                            <button type="button" className="path-control" aria-label={`${path.visible ? 'Hide' : 'Show'} ${path.name}`} onClick={() => updatePathById(node.id, path.id, (current) => ({ ...current, visible: !current.visible }))}>
+                              {path.visible ? <Eye size={11} /> : <EyeOff size={11} />}
+                            </button>
+                            <button type="button" className="path-control" aria-label={`${path.locked ? 'Unlock' : 'Lock'} ${path.name}`} onClick={() => updatePathById(node.id, path.id, (current) => ({ ...current, locked: !current.locked }))}>
+                              {path.locked ? <Lock size={10} /> : <Unlock size={10} />}
+                            </button>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -888,6 +1691,7 @@ function EditorInner() {
           id="canvas-workspace"
           className={`canvas-region ${dragActive ? 'drag-active' : ''}`}
           aria-label="Canvas workspace"
+          tabIndex={-1}
           onDragEnter={(event) => {
             event.preventDefault();
             dragDepthRef.current += 1;
@@ -910,8 +1714,8 @@ function EditorInner() {
           }}
         >
           <ReactFlow<EditorNode, EditorEdge>
-            nodes={nodes}
-            edges={edges}
+            nodes={canvasNodes}
+            edges={canvasEdges}
             nodeTypes={nodeTypes}
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
@@ -953,9 +1757,9 @@ function EditorInner() {
               <button type="button" className={`tool ${toolMode === 'select' ? 'active' : ''}`} aria-label="Select tool, V" aria-pressed={toolMode === 'select'} onClick={() => setToolMode('select')}><MousePointer2 size={16} /></button>
               <button type="button" className={`tool ${toolMode === 'hand' ? 'active' : ''}`} aria-label="Hand tool, H" aria-pressed={toolMode === 'hand'} onClick={() => setToolMode('hand')}><Hand size={16} /></button>
               <span className="toolbar-divider" />
-              <button type="button" className="tool" aria-label="Add text concept" onClick={addConceptNode}><TypeIcon size={16} /></button>
-              <button type="button" className="tool" aria-label="Add shape" onClick={addConceptNode}><Square size={16} /></button>
+              <button type="button" className="tool" aria-label="Add concept" onClick={addConceptNode}><TypeIcon size={16} /></button>
               <button type="button" className="tool" aria-label="Connect nodes by dragging their handles" onClick={() => announce('Drag from a node handle to another node to create a connector.')}><Waypoints size={16} /></button>
+              <button type="button" className="tool" aria-label="Tidy diagram layout" onClick={tidyDiagram}><Sparkles size={16} /></button>
               <button type="button" className="tool" aria-label="Import image" onClick={() => fileInputRef.current?.click()}><Upload size={16} /></button>
             </Panel>
             <Panel position="bottom-center" className="drop-prompt">
@@ -985,16 +1789,56 @@ function EditorInner() {
           />
         </section>
 
-        <aside className="panel inspector-panel" aria-labelledby="inspector-title">
+        <aside className={`panel inspector-panel ${mobilePanel === 'inspector' ? 'panel-open' : ''}`} aria-labelledby="inspector-title">
           <div className="panel-heading">
             <div><span className="eyebrow">Selection</span><h2 id="inspector-title">Properties</h2></div>
-            {selectedNode ? <span className="selection-kind">{selectedNode.data.kind}</span> : null}
+            <div className="panel-heading-actions">
+              {selectedNodes.length > 1
+                ? <span className="selection-kind">{selectedNodes.length} layers</span>
+                : selectedEdge
+                  ? <span className="selection-kind">connector</span>
+                  : selectedNode
+                    ? <span className="selection-kind">{selectedNode.data.kind}</span>
+                    : null}
+              <button type="button" className="icon-button panel-close-button" aria-label="Close properties panel" onClick={() => setMobilePanel(null)}><X size={16} /></button>
+            </div>
           </div>
           {selectedVectorPath ? (
             <PathInspector
               path={selectedVectorPath.path}
               onUpdate={updateSelectedPath}
               onClose={() => setSelectedPath(null)}
+              onEditStart={beginFieldEdit}
+              onEditEnd={endFieldEdit}
+              onMove={moveSelectedPath}
+              onDuplicate={duplicateSelectedPath}
+              onDelete={deleteSelectedPath}
+            />
+          ) : selectedEdge ? (
+            <EdgeInspector
+              edge={selectedEdge}
+              onUpdate={(updater, shouldRecord) => updateEdge(selectedEdge.id, (edge) => {
+                const next = updater(edge);
+                const kind = next.data?.kind ?? 'default';
+                const label = next.data?.label ?? '';
+                return { ...next, label, style: connectorPresentation(kind) };
+              }, shouldRecord)}
+              onEditStart={beginFieldEdit}
+              onEditEnd={endFieldEdit}
+              onDelete={() => {
+                recordHistory();
+                setEdges((current) => current.filter((edge) => edge.id !== selectedEdge.id));
+              }}
+            />
+          ) : selectedNodes.length > 1 ? (
+            <MultiSelectionInspector
+              count={selectedNodes.length}
+              onTone={(tone) => updateSelectedNodes((node) => node.data.kind === 'concept'
+                ? { ...node, data: { ...node.data, tone } }
+                : node)}
+              onOpacity={(opacity) => updateSelectedNodes((node) => ({ ...node, data: { ...node.data, opacity } }))}
+              onAlign={alignSelectedNodes}
+              onDelete={deleteSelectedNodes}
             />
           ) : selectedNode ? (
             <NodeInspector
@@ -1003,10 +1847,13 @@ function EditorInner() {
               onConversionOptionsChange={setConversionOptions}
               onUpdate={updateNode}
               onVectorize={() => void vectorizeImage(selectedNode.id)}
-              onRebuild={() => rebuildDiagram(selectedNode.id)}
+              onCancelVectorize={cancelVectorization}
               onDuplicate={duplicateSelected}
               onDelete={deleteSelected}
               onMove={(direction) => moveLayer(selectedNode.id, direction)}
+              onEditStart={beginFieldEdit}
+              onEditEnd={endFieldEdit}
+              onEditConcept={() => beginConceptEdit(selectedNode.id)}
               converting={convertingId === selectedNode.id}
             />
           ) : (
@@ -1017,6 +1864,8 @@ function EditorInner() {
             </div>
           )}
         </aside>
+
+        {mobilePanel ? <button type="button" className="panel-scrim" aria-label="Close side panel" onClick={() => setMobilePanel(null)} /> : null}
 
         <div className="toast-region" aria-live="polite" aria-atomic="false">
           {toasts.map((toast) => (
@@ -1051,6 +1900,65 @@ function EditorInner() {
             </div>
           </form>
         </dialog>
+
+        <dialog
+          ref={backupDialogRef}
+          className="export-dialog backup-dialog"
+          aria-labelledby="backup-title"
+          onClose={() => setBackupOpen(false)}
+        >
+          <form method="dialog">
+            <div className="dialog-icon"><HardDrive size={19} /></div>
+            <div className="dialog-copy">
+              <span className="eyebrow">Local project</span>
+              <h2 id="backup-title">Backup and restore</h2>
+              <p>Your canvas is stored only in this browser. Download a portable backup before clearing browser data or changing devices.</p>
+            </div>
+            <div className="backup-actions">
+              <button type="button" className="primary-button" onClick={performBackup}>
+                <Download size={14} /> Download backup
+              </button>
+              <button type="button" className="secondary-button" onClick={() => projectInputRef.current?.click()}>
+                <Upload size={14} /> Restore backup
+              </button>
+            </div>
+            <p className="backup-warning">Restoring a valid backup replaces the current canvas after confirmation.</p>
+            <section className="checkpoint-section" aria-labelledby="checkpoint-title">
+              <div className="checkpoint-heading">
+                <div><span className="eyebrow">On this device</span><h3 id="checkpoint-title">Version checkpoints</h3></div>
+                <button type="button" className="secondary-button" onClick={() => void createCheckpoint()}><Plus size={13} /> Save checkpoint</button>
+              </div>
+              {checkpoints.length ? (
+                <ul className="checkpoint-list">
+                  {checkpoints.map((checkpoint) => (
+                    <li key={checkpoint.id}>
+                      <button type="button" className="checkpoint-main" onClick={() => void restoreCheckpoint(checkpoint)}>
+                        <strong>{checkpoint.title}</strong>
+                        <span>{new Date(checkpoint.createdAt).toLocaleString()}</span>
+                      </button>
+                      <button type="button" className="checkpoint-delete" aria-label={`Delete checkpoint ${checkpoint.title}`} onClick={() => void removeCheckpoint(checkpoint.id)}><Trash2 size={13} /></button>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="checkpoint-empty">No checkpoints yet. Save one before a major edit.</p>}
+            </section>
+            <div className="dialog-actions">
+              <button type="button" className="secondary-button" onClick={() => setBackupOpen(false)}>Close</button>
+            </div>
+            <input
+              ref={projectInputRef}
+              className="visually-hidden"
+              type="file"
+              aria-label="Choose a SynapTable project backup"
+              accept=".synaptable,application/json"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void restoreProject(file);
+                event.target.value = '';
+              }}
+            />
+          </form>
+        </dialog>
       </main>
     </NodeActionContext.Provider>
   );
@@ -1062,12 +1970,123 @@ type NodeInspectorProps = {
   onConversionOptionsChange: (options: ConversionOptions) => void;
   onUpdate: (id: string, updater: (node: EditorNode) => EditorNode, shouldRecord?: boolean) => void;
   onVectorize: () => void;
-  onRebuild: () => void;
+  onCancelVectorize: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
   onMove: (direction: -1 | 1) => void;
+  onEditStart: () => void;
+  onEditEnd: () => void;
+  onEditConcept: () => void;
   converting: boolean;
 };
+
+function EdgeInspector({
+  edge,
+  onUpdate,
+  onEditStart,
+  onEditEnd,
+  onDelete,
+}: {
+  edge: EditorEdge;
+  onUpdate: (updater: (edge: EditorEdge) => EditorEdge, shouldRecord?: boolean) => void;
+  onEditStart: () => void;
+  onEditEnd: () => void;
+  onDelete: () => void;
+}) {
+  const data = edge.data ?? { label: '', kind: 'default' as const };
+  return (
+    <>
+      <div className="inspector-section">
+        <label className="stacked-field">
+          <span>Connector label</span>
+          <input
+            value={data.label}
+            maxLength={240}
+            placeholder="Describe the relationship"
+            onFocus={onEditStart}
+            onChange={(event) => onUpdate((current) => ({
+              ...current,
+              label: event.target.value,
+              data: { ...(current.data ?? { kind: 'default' }), label: event.target.value },
+            }), false)}
+            onBlur={onEditEnd}
+          />
+        </label>
+        <label className="stacked-field">
+          <span>Connector style</span>
+          <select
+            value={data.kind}
+            onFocus={onEditStart}
+            onChange={(event) => {
+              const kind = event.target.value as 'default' | 'dashed' | 'emphasis';
+              onUpdate((current) => ({
+                ...current,
+                data: { ...(current.data ?? { label: '' }), kind },
+              }), false);
+            }}
+            onBlur={onEditEnd}
+          >
+            <option value="default">Default</option>
+            <option value="dashed">Dashed</option>
+            <option value="emphasis">Emphasis</option>
+          </select>
+        </label>
+      </div>
+      <div className="inspector-actions single-action">
+        <button type="button" className="danger" onClick={onDelete}><Trash2 size={14} /> Delete connector</button>
+      </div>
+    </>
+  );
+}
+
+function MultiSelectionInspector({
+  count,
+  onTone,
+  onOpacity,
+  onAlign,
+  onDelete,
+}: {
+  count: number;
+  onTone: (tone: 'ink' | 'indigo' | 'mint') => void;
+  onOpacity: (opacity: number) => void;
+  onAlign: (mode: 'left' | 'top' | 'horizontal' | 'vertical') => void;
+  onDelete: () => void;
+}) {
+  return (
+    <>
+      <div className="multi-selection-summary">
+        <Layers3 size={19} />
+        <div><strong>{count} layers selected</strong><span>Changes apply to unlocked layers.</span></div>
+      </div>
+      <div className="inspector-section">
+        <span className="section-label">Concept style</span>
+        <div className="segmented-actions">
+          <button type="button" onClick={() => onTone('ink')}>Ink</button>
+          <button type="button" onClick={() => onTone('indigo')}>Indigo</button>
+          <button type="button" onClick={() => onTone('mint')}>Mint</button>
+        </div>
+        <span className="section-label section-label-spaced">Opacity</span>
+        <div className="segmented-actions">
+          <button type="button" onClick={() => onOpacity(1)}>100%</button>
+          <button type="button" onClick={() => onOpacity(.75)}>75%</button>
+          <button type="button" onClick={() => onOpacity(.5)}>50%</button>
+        </div>
+      </div>
+      <div className="inspector-section">
+        <span className="section-label">Arrange</span>
+        <div className="arrange-actions">
+          <button type="button" onClick={() => onAlign('left')}>Align left</button>
+          <button type="button" onClick={() => onAlign('top')}>Align top</button>
+          <button type="button" onClick={() => onAlign('horizontal')} disabled={count < 3}>Distribute ↔</button>
+          <button type="button" onClick={() => onAlign('vertical')} disabled={count < 3}>Distribute ↕</button>
+        </div>
+      </div>
+      <div className="inspector-actions single-action">
+        <button type="button" className="danger" onClick={onDelete}><Trash2 size={14} /> Delete unlocked layers</button>
+      </div>
+    </>
+  );
+}
 
 function NodeInspector({
   node,
@@ -1075,10 +2094,13 @@ function NodeInspector({
   onConversionOptionsChange,
   onUpdate,
   onVectorize,
-  onRebuild,
+  onCancelVectorize,
   onDuplicate,
   onDelete,
   onMove,
+  onEditStart,
+  onEditEnd,
+  onEditConcept,
   converting,
 }: NodeInspectorProps) {
   const updateData = (data: Partial<EditorNode['data']>, shouldRecord = true) =>
@@ -1098,8 +2120,11 @@ function NodeInspector({
           <span>Name</span>
           <input
             value={node.data.name}
+            maxLength={240}
+            disabled={node.data.locked}
+            onFocus={onEditStart}
             onChange={(event) => updateData({ name: event.target.value }, false)}
-            onBlur={() => updateData({ name: node.data.name })}
+            onBlur={onEditEnd}
           />
         </label>
         {node.data.kind === 'concept' ? (
@@ -1107,27 +2132,63 @@ function NodeInspector({
             <span>Label</span>
             <input
               value={node.data.label}
+              maxLength={500}
+              disabled={node.data.locked}
+              onFocus={onEditStart}
               onChange={(event) => updateData({ label: event.target.value, name: event.target.value }, false)}
+              onBlur={onEditEnd}
             />
           </label>
+        ) : null}
+        {node.data.kind === 'concept' ? (
+          <>
+            <label className="stacked-field">
+              <span>Eyebrow</span>
+              <input
+                value={node.data.eyebrow}
+                maxLength={160}
+                disabled={node.data.locked}
+                onFocus={onEditStart}
+                onChange={(event) => updateData({ eyebrow: event.target.value }, false)}
+                onBlur={onEditEnd}
+              />
+            </label>
+            <label className="stacked-field">
+              <span>Style</span>
+              <select
+                value={node.data.tone}
+                disabled={node.data.locked}
+                onFocus={onEditStart}
+                onChange={(event) => updateData({ tone: event.target.value as 'ink' | 'indigo' | 'mint' }, false)}
+                onBlur={onEditEnd}
+              >
+                <option value="ink">Ink</option>
+                <option value="indigo">Indigo</option>
+                <option value="mint">Mint</option>
+              </select>
+            </label>
+            <button type="button" className="secondary-button edit-content-button" disabled={node.data.locked} onClick={onEditConcept}>
+              <TypeIcon size={13} /> Edit rich text
+            </button>
+          </>
         ) : null}
       </div>
       <div className="inspector-section">
         <span className="section-label">Position</span>
         <div className="field-grid">
-          <label>X <input type="number" value={Math.round(node.position.x)} onChange={(event) => onUpdate(node.id, (current) => ({ ...current, position: { ...current.position, x: Number(event.target.value) } }), false)} /></label>
-          <label>Y <input type="number" value={Math.round(node.position.y)} onChange={(event) => onUpdate(node.id, (current) => ({ ...current, position: { ...current.position, y: Number(event.target.value) } }), false)} /></label>
+          <label>X <input type="number" value={Math.round(node.position.x)} disabled={node.data.locked} onFocus={onEditStart} onChange={(event) => onUpdate(node.id, (current) => ({ ...current, position: { ...current.position, x: Number(event.target.value) } }), false)} onBlur={onEditEnd} /></label>
+          <label>Y <input type="number" value={Math.round(node.position.y)} disabled={node.data.locked} onFocus={onEditStart} onChange={(event) => onUpdate(node.id, (current) => ({ ...current, position: { ...current.position, y: Number(event.target.value) } }), false)} onBlur={onEditEnd} /></label>
         </div>
       </div>
       <div className="inspector-section">
         <span className="section-label">Appearance</span>
         <label className="full-field">
           <span>Opacity</span>
-          <input type="range" min="0" max="100" value={Math.round(node.data.opacity * 100)} onChange={(event) => updateData({ opacity: Number(event.target.value) / 100 }, false)} />
+          <input type="range" min="0" max="100" value={Math.round(node.data.opacity * 100)} disabled={node.data.locked} onFocus={onEditStart} onChange={(event) => updateData({ opacity: Number(event.target.value) / 100 }, false)} onBlur={onEditEnd} />
           <output>{Math.round(node.data.opacity * 100)}%</output>
         </label>
         <label className="toggle-field">
-          <input type="checkbox" checked={node.data.locked} onChange={() => onUpdate(node.id, (current) => ({ ...current, draggable: current.data.locked, data: { ...current.data, locked: !current.data.locked } }))} />
+          <input type="checkbox" checked={node.data.locked} onChange={() => onUpdate(node.id, (current) => ({ ...current, draggable: current.data.locked, deletable: current.data.locked, data: { ...current.data, locked: !current.data.locked } }))} />
           <span>Lock layer</span>
         </label>
       </div>
@@ -1147,9 +2208,13 @@ function NodeInspector({
             <input type="range" min="2" max="32" value={conversionOptions.colors} onChange={(event) => onConversionOptionsChange({ ...conversionOptions, colors: Number(event.target.value) })} />
             <output>{conversionOptions.colors}</output>
           </label>
+          <label className="full-field">
+            <span>Smoothing</span>
+            <input type="range" min="0" max="5" value={conversionOptions.despeckle} onChange={(event) => onConversionOptionsChange({ ...conversionOptions, despeckle: Number(event.target.value) })} />
+            <output>{conversionOptions.despeckle}</output>
+          </label>
           <div className="conversion-actions">
-            <button type="button" className="primary-button" onClick={onVectorize} disabled={converting}>{converting ? <LoaderCircle className="spin" size={14} /> : <Shapes size={14} />} Vectorize</button>
-            <button type="button" className="secondary-button" onClick={onRebuild}><Sparkles size={14} /> Rebuild diagram</button>
+            <button type="button" className={converting ? 'secondary-button' : 'primary-button'} onClick={converting ? onCancelVectorize : onVectorize}>{converting ? <X size={14} /> : <Shapes size={14} />} {converting ? 'Cancel tracing' : 'Vectorize'}</button>
           </div>
           <p className="privacy-hint"><Check size={12} /> Vectorization runs on this device.</p>
         </div>
@@ -1164,7 +2229,7 @@ function NodeInspector({
         <button type="button" aria-label="Move layer up" onClick={() => onMove(1)}><ArrowUp size={14} /></button>
         <button type="button" aria-label="Move layer down" onClick={() => onMove(-1)}><ArrowDown size={14} /></button>
         <button type="button" aria-label="Duplicate layer" onClick={onDuplicate}><Copy size={14} /></button>
-        <button type="button" className="danger" aria-label="Delete layer" onClick={onDelete}><Trash2 size={14} /></button>
+        <button type="button" className="danger" aria-label="Delete layer" onClick={onDelete} disabled={node.data.locked}><Trash2 size={14} /></button>
       </div>
     </>
   );
@@ -1174,10 +2239,20 @@ function PathInspector({
   path,
   onUpdate,
   onClose,
+  onEditStart,
+  onEditEnd,
+  onMove,
+  onDuplicate,
+  onDelete,
 }: {
   path: VectorPathLayer;
   onUpdate: (updater: (path: VectorPathLayer) => VectorPathLayer, shouldRecord?: boolean) => void;
   onClose: () => void;
+  onEditStart: () => void;
+  onEditEnd: () => void;
+  onMove: (direction: -1 | 1) => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
 }) {
   return (
     <>
@@ -1188,22 +2263,32 @@ function PathInspector({
       <div className="inspector-section">
         <label className="stacked-field">
           <span>Name</span>
-          <input value={path.name} onChange={(event) => onUpdate((current) => ({ ...current, name: event.target.value }), false)} />
+          <input value={path.name} maxLength={240} disabled={path.locked} onFocus={onEditStart} onChange={(event) => onUpdate((current) => ({ ...current, name: event.target.value }), false)} onBlur={onEditEnd} />
         </label>
         <label className="color-field">
           <span>Fill</span>
-          <input type="color" value={path.fill === 'none' ? '#000000' : path.fill} onChange={(event) => onUpdate((current) => ({ ...current, fill: event.target.value }), false)} />
+          <input type="color" value={path.fill === 'none' ? '#000000' : path.fill} disabled={path.locked} onFocus={onEditStart} onChange={(event) => onUpdate((current) => ({ ...current, fill: event.target.value }), false)} onBlur={onEditEnd} />
           <code>{path.fill}</code>
         </label>
         <label className="full-field">
           <span>Opacity</span>
-          <input type="range" min="0" max="100" value={Math.round(path.opacity * 100)} onChange={(event) => onUpdate((current) => ({ ...current, opacity: Number(event.target.value) / 100 }), false)} />
+          <input type="range" min="0" max="100" value={Math.round(path.opacity * 100)} disabled={path.locked} onFocus={onEditStart} onChange={(event) => onUpdate((current) => ({ ...current, opacity: Number(event.target.value) / 100 }), false)} onBlur={onEditEnd} />
           <output>{Math.round(path.opacity * 100)}%</output>
         </label>
         <label className="toggle-field">
           <input type="checkbox" checked={path.visible} onChange={() => onUpdate((current) => ({ ...current, visible: !current.visible }))} />
           <span>Visible on canvas</span>
         </label>
+        <label className="toggle-field">
+          <input type="checkbox" checked={path.locked} onChange={() => onUpdate((current) => ({ ...current, locked: !current.locked }))} />
+          <span>Lock path</span>
+        </label>
+      </div>
+      <div className="inspector-actions">
+        <button type="button" aria-label="Move path up" onClick={() => onMove(-1)} disabled={path.locked}><ArrowUp size={14} /></button>
+        <button type="button" aria-label="Move path down" onClick={() => onMove(1)} disabled={path.locked}><ArrowDown size={14} /></button>
+        <button type="button" aria-label="Duplicate path" onClick={onDuplicate} disabled={path.locked}><Copy size={14} /></button>
+        <button type="button" className="danger" aria-label="Delete path" onClick={onDelete} disabled={path.locked}><Trash2 size={14} /></button>
       </div>
     </>
   );

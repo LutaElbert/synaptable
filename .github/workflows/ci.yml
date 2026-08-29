@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --audit-level=high
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Test the built Cloudflare Worker
+        run: |
+          npx wrangler dev --config dist/server/wrangler.json --port 8787 > /tmp/synaptable-wrangler.log 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid"' EXIT
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error http://localhost:8787/ > /dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              cat /tmp/synaptable-wrangler.log
+              exit 1
+            fi
+            sleep 1
+          done
+          PLAYWRIGHT_BASE_URL=http://localhost:8787 npm run test:e2e
