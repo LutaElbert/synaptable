@@ -232,6 +232,11 @@ test('edits rich concept text directly with formatting, commit, cancel, undo, an
   await page.getByLabel('Concept title').fill('Discard this');
   await page.getByLabel('Concept title').press('Escape');
   await expect(researchNode.getByText('Research plan', { exact: true })).toBeVisible();
+
+  await researchNode.locator('.concept-node').dblclick();
+  await page.getByLabel('Concept title').fill('Discard with button');
+  await page.getByRole('button', { name: 'Cancel editing', exact: true }).click();
+  await expect(researchNode.getByText('Research plan', { exact: true })).toBeVisible();
   await expect(page.locator('main[data-save-state="saved"]')).toBeVisible();
 
   await page.reload();
