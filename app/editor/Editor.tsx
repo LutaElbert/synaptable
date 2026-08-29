@@ -12,6 +12,7 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
@@ -66,6 +67,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
 } from 'react';
 import '@xyflow/react/dist/style.css';
 import {
@@ -114,6 +116,7 @@ import { vectorizeDataUrl } from './vectorize';
 
 type EditorSnapshot = Pick<EditorDocument, 'nodes' | 'edges'>;
 type ToolMode = 'select' | 'hand';
+type SelectionOperation = 'replace' | 'add' | 'subtract';
 type MobilePanel = 'layers' | 'inspector' | null;
 type Toast = { id: number; message: string; tone: 'info' | 'success' | 'error' };
 const MAX_FILES_PER_IMPORT = 12;
@@ -362,6 +365,33 @@ function cloneSnapshot(nodes: EditorNode[], edges: EditorEdge[]): EditorSnapshot
   return structuredClone({ nodes, edges });
 }
 
+type PersistableEditorState = {
+  title: string;
+  nodes: EditorNode[];
+  edges: EditorEdge[];
+};
+
+const TRANSIENT_ELEMENT_KEYS = new Set(['selected', 'dragging', 'measured', 'resizing']);
+
+function persistableElementEqual(left: EditorNode | EditorEdge, right: EditorNode | EditorEdge) {
+  const leftRecord = left as unknown as Record<string, unknown>;
+  const rightRecord = right as unknown as Record<string, unknown>;
+  const keys = new Set([...Object.keys(leftRecord), ...Object.keys(rightRecord)]);
+  for (const key of keys) {
+    if (TRANSIENT_ELEMENT_KEYS.has(key)) continue;
+    if (!Object.is(leftRecord[key], rightRecord[key])) return false;
+  }
+  return true;
+}
+
+function persistableEditorStateEqual(left: PersistableEditorState, right: PersistableEditorState) {
+  if (left.title !== right.title || left.nodes.length !== right.nodes.length || left.edges.length !== right.edges.length) {
+    return false;
+  }
+  return left.nodes.every((node, index) => persistableElementEqual(node, right.nodes[index]))
+    && left.edges.every((edge, index) => persistableElementEqual(edge, right.edges[index]));
+}
+
 function restoreNodeGeometry(node: EditorNode, origin: EditorNode): EditorNode {
   const width = Number(origin.style?.width) || Number(origin.measured?.width);
   const height = Number(origin.style?.height) || Number(origin.measured?.height);
@@ -423,6 +453,8 @@ function EditorInner() {
   const [edges, setEdges] = useState<EditorEdge[]>(initialDocument.edges);
   const [title, setTitle] = useState(initialDocument.title);
   const [toolMode, setToolMode] = useState<ToolMode>('select');
+  const [temporaryPanActive, setTemporaryPanActive] = useState(false);
+  const [viewportZoom, setViewportZoom] = useState(1);
   const [dragActive, setDragActive] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
@@ -444,6 +476,7 @@ function EditorInner() {
   const [searchQuery, setSearchQuery] = useState('');
   const [conceptTemplate, setConceptTemplate] = useState<keyof typeof CONCEPT_TEMPLATES>('idea');
   const [checkpoints, setCheckpoints] = useState<LocalCheckpoint[]>([]);
+  const [autosaveRevision, setAutosaveRevision] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
   const exportDialogRef = useRef<HTMLDialogElement>(null);
@@ -457,11 +490,22 @@ function EditorInner() {
   const resizeOriginRef = useRef<EditorSnapshot | null>(null);
   const fieldOriginRef = useRef<EditorSnapshot | null>(null);
   const conceptEditOriginRef = useRef<EditorSnapshot | null>(null);
+  const layerSelectionAnchorRef = useRef<string | null>(null);
+  const selectionOriginRef = useRef<Set<string>>(new Set());
+  const selectionOperationRef = useRef<SelectionOperation>('replace');
   const dragDepthRef = useRef(0);
   const conversionControllerRef = useRef<AbortController | null>(null);
   const saveQueueRef = useRef(Promise.resolve());
   const saveTicketRef = useRef(0);
-  const { screenToFlowPosition, fitView } = useReactFlow<EditorNode, EditorEdge>();
+  const autosaveInputRef = useRef<PersistableEditorState>({ title, nodes, edges });
+  const {
+    screenToFlowPosition,
+    fitView,
+    getViewport,
+    setCenter,
+    zoomIn,
+    zoomOut,
+  } = useReactFlow<EditorNode, EditorEdge>();
 
   useEffect(() => {
     // React Flow can trigger these browser-generated notifications while its
@@ -485,6 +529,14 @@ function EditorInner() {
   useEffect(() => {
     titleRef.current = title;
   }, [title]);
+  useEffect(() => {
+    const next = { title, nodes, edges };
+    const previous = autosaveInputRef.current;
+    autosaveInputRef.current = next;
+    if (!persistableEditorStateEqual(previous, next)) {
+      setAutosaveRevision((current) => current + 1);
+    }
+  }, [edges, nodes, title]);
 
   const announce = useCallback((message: string, tone: Toast['tone'] = 'info') => {
     const id = Date.now() + Math.random();
@@ -587,7 +639,7 @@ function EditorInner() {
       window.clearTimeout(dirtyTimeout);
       window.clearTimeout(saveTimeout);
     };
-  }, [edges, getCurrentDocument, hydrated, nodes, queueDocumentSave, title]);
+  }, [autosaveRevision, getCurrentDocument, hydrated, queueDocumentSave]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -673,6 +725,7 @@ function EditorInner() {
         selected: additive ? node.id === id ? !node.selected : node.selected : node.id === id,
       })),
     );
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
     setSelectedPath(null);
   }, []);
 
@@ -694,6 +747,7 @@ function EditorInner() {
         ? { ...node.data, collapsed: false }
         : node.data,
     })));
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
     setSelectedPath(null);
     window.setTimeout(() => fitView({ nodes: [{ id }], duration: 280, padding: 0.5, maxZoom: 1.4 }), 0);
   }, [fitView]);
@@ -782,23 +836,118 @@ function EditorInner() {
     return () => window.removeEventListener('paste', onPaste);
   }, [ingestFiles]);
 
+  const selectAllVisibleLayers = useCallback(() => {
+    const collapsed = collapsedDescendantIds(nodesRef.current, edgesRef.current);
+    const selectableIds = new Set(
+      nodesRef.current
+        .filter((node) => !node.hidden && !node.data.locked && !collapsed.has(node.id))
+        .map((node) => node.id),
+    );
+    setNodes((current) => current.map((node) => ({
+      ...node,
+      selected: selectableIds.has(node.id),
+    })));
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    setSelectedPath(null);
+    layerSelectionAnchorRef.current = selectableIds.values().next().value ?? null;
+    announce(
+      selectableIds.size
+        ? `${selectableIds.size} ${selectableIds.size === 1 ? 'layer' : 'layers'} selected.`
+        : 'There are no visible unlocked layers to select.',
+    );
+  }, [announce]);
+
+  const clearCanvasSelection = useCallback(() => {
+    setNodes((current) => current.map((node) => node.selected ? { ...node, selected: false } : node));
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    setSelectedPath(null);
+    layerSelectionAnchorRef.current = null;
+  }, []);
+
+  const handleSelectionStart = useCallback((event: ReactMouseEvent) => {
+    selectionOriginRef.current = new Set(
+      nodesRef.current.filter((node) => node.selected).map((node) => node.id),
+    );
+    selectionOperationRef.current = event.altKey
+      ? 'subtract'
+      : event.shiftKey
+        ? 'add'
+        : 'replace';
+    setSelectedPath(null);
+  }, []);
+
+  const handleSelectionEnd = useCallback(() => {
+    const origin = selectionOriginRef.current;
+    const operation = selectionOperationRef.current;
+    setNodes((current) => {
+      const marqueeIds = new Set(current.filter((node) => node.selected).map((node) => node.id));
+      return current.map((node) => ({
+        ...node,
+        selected: operation === 'replace'
+          ? marqueeIds.has(node.id) && !node.data.locked
+          : operation === 'add'
+            ? origin.has(node.id) || (marqueeIds.has(node.id) && !node.data.locked)
+            : origin.has(node.id) && !(marqueeIds.has(node.id) && !node.data.locked),
+      }));
+    });
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    layerSelectionAnchorRef.current = null;
+    selectionOriginRef.current = new Set();
+    selectionOperationRef.current = 'replace';
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isEditing = Boolean(target?.closest('input, textarea, [contenteditable="true"]'));
+      const isInteractive = Boolean(target?.closest('input, textarea, select, button, a[href], [contenteditable="true"]'));
+      if (target?.closest('dialog[open]')) return;
+
+      if (!isInteractive && event.code === 'Space' && !event.repeat) {
+        event.preventDefault();
+        setTemporaryPanActive(true);
+        return;
+      }
+
+      if (event.defaultPrevented) return;
+
       if (!isEditing && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
         if (event.shiftKey) redo();
         else undo();
-      } else if (!isEditing && event.key.toLowerCase() === 'v') {
+      } else if (!isEditing && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        selectAllVisibleLayers();
+      } else if (!isEditing && event.key === 'Escape') {
+        clearCanvasSelection();
+      } else if (!isEditing && !event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'v') {
         setToolMode('select');
-      } else if (!isEditing && event.key.toLowerCase() === 'h') {
+      } else if (!isEditing && !event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'h') {
         setToolMode('hand');
+      } else if (!isEditing && !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === '+' || event.key === '=')) {
+        event.preventDefault();
+        void zoomIn({ duration: 140 });
+      } else if (!isEditing && !event.metaKey && !event.ctrlKey && !event.altKey && event.key === '-') {
+        event.preventDefault();
+        void zoomOut({ duration: 140 });
+      } else if (!isEditing && !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === '0' || event.key === 'Home')) {
+        event.preventDefault();
+        void fitView({ duration: 220, padding: 0.22 });
       }
     };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code === 'Space') setTemporaryPanActive(false);
+    };
+    const onWindowBlur = () => setTemporaryPanActive(false);
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [redo, undo]);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onWindowBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onWindowBlur);
+    };
+  }, [clearCanvasSelection, fitView, redo, selectAllVisibleLayers, undo, zoomIn, zoomOut]);
 
   useEffect(
     () => () => conversionControllerRef.current?.abort(),
@@ -885,8 +1034,8 @@ function EditorInner() {
     conversionControllerRef.current?.abort();
   }, []);
 
-  const addConceptNode = useCallback(() => {
-    const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const addConceptAt = useCallback((screenPoint: { x: number; y: number }, editAfterCreate = false) => {
+    const center = screenToFlowPosition(screenPoint);
     const id = crypto.randomUUID();
     recordHistory();
     setNodes((current) => [
@@ -912,7 +1061,17 @@ function EditorInner() {
         selected: true,
       },
     ]);
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    setSelectedPath(null);
+    layerSelectionAnchorRef.current = id;
+    if (editAfterCreate) {
+      window.requestAnimationFrame(() => setEditingConceptId(id));
+    }
   }, [recordHistory, screenToFlowPosition]);
+
+  const addConceptNode = useCallback(() => {
+    addConceptAt({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  }, [addConceptAt]);
 
   const addConceptFromTemplate = useCallback(() => {
     const template = CONCEPT_TEMPLATES[conceptTemplate];
@@ -974,6 +1133,57 @@ function EditorInner() {
     if (!selectedIds.size) return;
     recordHistory();
     setNodes((current) => current.map((node) => selectedIds.has(node.id) ? updater(node) : node));
+  }, [recordHistory]);
+
+  const duplicateSelectedNodes = useCallback(() => {
+    const selected = nodesRef.current.filter((node) => node.selected && !node.data.locked);
+    if (!selected.length) return;
+    const idMap = new Map(selected.map((node) => [node.id, crypto.randomUUID()]));
+    const copies = selected.map((node): EditorNode => ({
+      ...structuredClone(node),
+      id: idMap.get(node.id)!,
+      position: { x: node.position.x + 28, y: node.position.y + 28 },
+      selected: true,
+      draggable: true,
+      deletable: true,
+      data: {
+        ...structuredClone(node.data),
+        name: `${node.data.name} copy`,
+        locked: false,
+      },
+    }));
+    const copiedEdges = edgesRef.current
+      .filter((edge) => idMap.has(edge.source) && idMap.has(edge.target))
+      .map((edge): EditorEdge => ({
+        ...structuredClone(edge),
+        id: crypto.randomUUID(),
+        source: idMap.get(edge.source)!,
+        target: idMap.get(edge.target)!,
+        selected: false,
+      }));
+    recordHistory();
+    setNodes((current) => [
+      ...current.map((node) => ({ ...node, selected: false })),
+      ...copies,
+    ]);
+    setEdges((current) => [
+      ...current.map((edge) => edge.selected ? { ...edge, selected: false } : edge),
+      ...copiedEdges,
+    ]);
+    layerSelectionAnchorRef.current = copies[0]?.id ?? null;
+    announce(`${copies.length} ${copies.length === 1 ? 'layer' : 'layers'} duplicated.`, 'success');
+  }, [announce, recordHistory]);
+
+  const setSelectedNodesLocked = useCallback((locked: boolean) => {
+    const selectedIds = new Set(nodesRef.current.filter((node) => node.selected && node.data.locked !== locked).map((node) => node.id));
+    if (!selectedIds.size) return;
+    recordHistory();
+    setNodes((current) => current.map((node) => selectedIds.has(node.id) ? {
+      ...node,
+      draggable: !locked,
+      deletable: !locked,
+      data: { ...node.data, locked },
+    } : node));
   }, [recordHistory]);
 
   const alignSelectedNodes = useCallback((mode: 'left' | 'top' | 'horizontal' | 'vertical') => {
@@ -1194,6 +1404,7 @@ function EditorInner() {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest('input, textarea, button, [contenteditable="true"]')) return;
+      if (!target?.closest('.react-flow__node')) return;
       const selected = nodesRef.current.find((node) => node.selected);
       if (!selected || selected.data.kind !== 'concept' || selected.data.locked) return;
       if (event.key === 'Tab' && target?.closest('.react-flow__node')) {
@@ -1544,9 +1755,37 @@ function EditorInner() {
     ].join(' ').toLocaleLowerCase();
     return searchable.includes(normalizedSearch);
   });
+  const handleLayerSelection = useCallback((event: ReactMouseEvent<HTMLButtonElement>, id: string) => {
+    const anchorId = layerSelectionAnchorRef.current;
+    if (event.shiftKey && anchorId) {
+      const anchorIndex = layerNodes.findIndex((node) => node.id === anchorId);
+      const targetIndex = layerNodes.findIndex((node) => node.id === id);
+      if (anchorIndex >= 0 && targetIndex >= 0) {
+        const start = Math.min(anchorIndex, targetIndex);
+        const end = Math.max(anchorIndex, targetIndex);
+        const rangeIds = new Set(layerNodes.slice(start, end + 1).map((node) => node.id));
+        setNodes((current) => current.map((node) => ({ ...node, selected: rangeIds.has(node.id) })));
+        setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+        setSelectedPath(null);
+        return;
+      }
+    }
+
+    if (event.metaKey || event.ctrlKey) {
+      if (!anchorId) layerSelectionAnchorRef.current = id;
+      selectNode(id, true);
+      return;
+    }
+
+    layerSelectionAnchorRef.current = id;
+    revealAndSelectNode(id);
+  }, [layerNodes, revealAndSelectNode, selectNode]);
   const collapsedNodeIds = useMemo(() => collapsedDescendantIds(nodes, edges), [edges, nodes]);
   const canvasNodes = useMemo(
-    () => nodes.map((node) => collapsedNodeIds.has(node.id) ? { ...node, hidden: true } : node),
+    () => nodes.map((node) => ({
+      ...node,
+      hidden: Boolean(node.hidden || collapsedNodeIds.has(node.id)),
+    })),
     [collapsedNodeIds, nodes],
   );
   const canvasEdges = useMemo(
@@ -1717,9 +1956,7 @@ function EditorInner() {
                         className="layer-main"
                         data-layer-id={node.id}
                         aria-pressed={node.selected === true}
-                        onClick={(event) => event.metaKey || event.ctrlKey || event.shiftKey
-                          ? selectNode(node.id, true)
-                          : revealAndSelectNode(node.id)}
+                        onClick={(event) => handleLayerSelection(event, node.id)}
                         onKeyDown={(event) => {
                           if (event.key !== 'F2' || node.data.locked) return;
                           event.preventDefault();
@@ -1785,7 +2022,7 @@ function EditorInner() {
 
         <section
           id="canvas-workspace"
-          className={`canvas-region ${dragActive ? 'drag-active' : ''}`}
+          className={`canvas-region tool-${toolMode} ${dragActive ? 'drag-active' : ''} ${temporaryPanActive ? 'temporary-pan' : ''}`}
           aria-label="Canvas workspace"
           tabIndex={-1}
           onDragEnter={(event) => {
@@ -1808,6 +2045,12 @@ function EditorInner() {
             setDragActive(false);
             void ingestFiles(Array.from(event.dataTransfer.files), { x: event.clientX, y: event.clientY });
           }}
+          onDoubleClick={(event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (toolMode !== 'select' || !target?.classList.contains('react-flow__pane')) return;
+            event.preventDefault();
+            addConceptAt({ x: event.clientX, y: event.clientY }, true);
+          }}
         >
           <ReactFlow<EditorNode, EditorEdge>
             nodes={canvasNodes}
@@ -1827,16 +2070,34 @@ function EditorInner() {
                 dragOriginRef.current = null;
               }
             }}
+            onSelectionStart={handleSelectionStart}
+            onSelectionEnd={handleSelectionEnd}
             onPaneClick={() => setSelectedPath(null)}
+            onMove={(_, viewport) => setViewportZoom(viewport.zoom)}
             fitView
             fitViewOptions={{ padding: 0.22 }}
             minZoom={0.15}
             maxZoom={4}
-            panOnDrag={toolMode === 'hand'}
-            nodesDraggable={toolMode === 'select'}
+            panOnDrag={toolMode === 'hand' ? true : [1]}
+            panActivationKeyCode="Space"
+            panOnScroll
+            zoomOnScroll={false}
+            zoomActivationKeyCode={['Meta', 'Control']}
+            zoomOnPinch
+            zoomOnDoubleClick={false}
+            selectionOnDrag={toolMode === 'select'}
+            selectionMode={SelectionMode.Partial}
+            selectionKeyCode={['Meta', 'Control']}
+            multiSelectionKeyCode={['Meta', 'Control', 'Shift']}
+            paneClickDistance={5}
+            nodeClickDistance={3}
+            autoPanOnSelection
+            autoPanOnNodeDrag
+            autoPanOnConnect
+            nodesDraggable={toolMode === 'select' && !temporaryPanActive}
             nodesFocusable
             edgesFocusable
-            selectNodesOnDrag={toolMode === 'select'}
+            selectNodesOnDrag={toolMode === 'select' && !temporaryPanActive}
             deleteKeyCode={['Backspace', 'Delete']}
             ariaLabelConfig={{
               'controls.ariaLabel': 'Canvas controls',
@@ -1852,13 +2113,30 @@ function EditorInner() {
               nodeColor={(node) => node.type === 'raster' ? '#d8dbe2' : node.type === 'vector' ? '#635bff' : '#8a8e98'}
             />
             <Panel position="top-center" className="canvas-toolbar" aria-label="Canvas tools">
-              <button type="button" className={`tool ${toolMode === 'select' ? 'active' : ''}`} aria-label="Select tool, V" aria-pressed={toolMode === 'select'} onClick={() => setToolMode('select')}><MousePointer2 size={16} /></button>
-              <button type="button" className={`tool ${toolMode === 'hand' ? 'active' : ''}`} aria-label="Hand tool, H" aria-pressed={toolMode === 'hand'} onClick={() => setToolMode('hand')}><Hand size={16} /></button>
+              <button type="button" className={`tool ${toolMode === 'select' && !temporaryPanActive ? 'active' : ''}`} aria-label="Select tool, V" aria-pressed={toolMode === 'select' && !temporaryPanActive} title="Select layers (V) · Drag empty canvas to select" onClick={() => setToolMode('select')}><MousePointer2 size={16} /></button>
+              <button type="button" className={`tool ${toolMode === 'hand' || temporaryPanActive ? 'active' : ''}`} aria-label="Hand tool, H" aria-pressed={toolMode === 'hand' || temporaryPanActive} title="Pan canvas (H) · Hold Space from Select" onClick={() => setToolMode('hand')}><Hand size={16} /></button>
               <span className="toolbar-divider" />
               <button type="button" className="tool" aria-label="Add concept" onClick={addConceptNode}><TypeIcon size={16} /></button>
               <button type="button" className="tool" aria-label="Connect nodes by dragging their handles" onClick={() => announce('Drag from a node handle to another node to create a connector.')}><Waypoints size={16} /></button>
               <button type="button" className="tool" aria-label="Tidy diagram layout" onClick={tidyDiagram}><Sparkles size={16} /></button>
               <button type="button" className="tool" aria-label="Import image" onClick={() => fileInputRef.current?.click()}><Upload size={16} /></button>
+            </Panel>
+            <Panel position="bottom-right" className="zoom-readout">
+              <button
+                type="button"
+                aria-label={`Reset zoom to 100%, currently ${Math.round(viewportZoom * 100)}%`}
+                title="Reset zoom to 100%"
+                onClick={() => {
+                  const viewport = getViewport();
+                  const canvasBounds = document.querySelector<HTMLElement>('.canvas-region .react-flow')?.getBoundingClientRect();
+                  const center = screenToFlowPosition({
+                    x: canvasBounds ? canvasBounds.left + canvasBounds.width / 2 : window.innerWidth / 2,
+                    y: canvasBounds ? canvasBounds.top + canvasBounds.height / 2 : window.innerHeight / 2,
+                  });
+                  void setCenter(center.x, center.y, { zoom: 1, duration: 180 });
+                  if (viewport.zoom === 1) setViewportZoom(1);
+                }}
+              >{Math.round(viewportZoom * 100)}%</button>
             </Panel>
             <Panel position="bottom-center" className="drop-prompt">
               <span className="upload-symbol" aria-hidden="true"><Upload size={16} /></span>
@@ -1936,6 +2214,9 @@ function EditorInner() {
                 : node)}
               onOpacity={(opacity) => updateSelectedNodes((node) => ({ ...node, data: { ...node.data, opacity } }))}
               onAlign={alignSelectedNodes}
+              onDuplicate={duplicateSelectedNodes}
+              onLock={() => setSelectedNodesLocked(true)}
+              onUnlock={() => setSelectedNodesLocked(false)}
               onDelete={deleteSelectedNodes}
             />
           ) : selectedNode ? (
@@ -2142,12 +2423,18 @@ function MultiSelectionInspector({
   onTone,
   onOpacity,
   onAlign,
+  onDuplicate,
+  onLock,
+  onUnlock,
   onDelete,
 }: {
   count: number;
   onTone: (tone: 'ink' | 'indigo' | 'mint') => void;
   onOpacity: (opacity: number) => void;
   onAlign: (mode: 'left' | 'top' | 'horizontal' | 'vertical') => void;
+  onDuplicate: () => void;
+  onLock: () => void;
+  onUnlock: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -2179,7 +2466,12 @@ function MultiSelectionInspector({
           <button type="button" onClick={() => onAlign('vertical')} disabled={count < 3}>Distribute ↕</button>
         </div>
       </div>
-      <div className="inspector-actions single-action">
+      <div className="multi-selection-actions">
+        <button type="button" onClick={onDuplicate}><Copy size={13} /> Duplicate</button>
+        <button type="button" onClick={onLock}><Lock size={13} /> Lock</button>
+        <button type="button" onClick={onUnlock}><Unlock size={13} /> Unlock</button>
+      </div>
+      <div className="inspector-actions single-action multi-selection-delete">
         <button type="button" className="danger" onClick={onDelete}><Trash2 size={14} /> Delete unlocked layers</button>
       </div>
     </>

@@ -363,11 +363,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 }
 .canvas-region .react-flow { background: var(--canvas); }
 .canvas-region .react-flow__renderer { cursor: default; }
-.canvas-region .react-flow__pane.draggable { cursor: grab; }
+.canvas-region.tool-select .react-flow__pane { cursor: crosshair; }
+.canvas-region.tool-hand .react-flow__pane,
+.canvas-region.temporary-pan .react-flow__pane { cursor: grab; }
 .canvas-region .react-flow__pane.dragging { cursor: grabbing; }
 .canvas-region .react-flow__node { border-radius: 15px; }
 .canvas-region .react-flow__node.selected { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 17%, transparent); }
 .canvas-region .react-flow__node:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 36%, transparent); outline-offset: 4px; }
+.canvas-region .react-flow__selection {
+  border: 1.5px solid var(--accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 72%) inset;
+}
 
 .concept-node {
   position: relative;
@@ -711,6 +719,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   box-shadow: var(--shadow-sm);
   color: #555962;
 }
+.zoom-readout.react-flow__panel { margin: 0 58px 15px 0; }
+.zoom-readout button {
+  min-inline-size: 54px;
+  min-block-size: 44px;
+  padding-inline: 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: var(--shadow-sm);
+  color: #555962;
+  font-size: 9px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.zoom-readout button:hover { border-color: color-mix(in srgb, var(--accent) 38%, white); color: var(--accent); }
 .react-flow__minimap { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: rgb(255 255 255 / 88%); box-shadow: var(--shadow-sm); }
 
 .inspector-section { padding: 16px 17px; border-block-end: 1px solid var(--line); }
@@ -800,6 +823,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .arrange-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-block-start: 8px; }
 .segmented-actions button, .arrange-actions button { min-block-size: 32px; padding-inline: 7px; border: 1px solid var(--line); border-radius: 8px; background: white; color: #555962; font-size: 9px; }
 .segmented-actions button:hover, .arrange-actions button:hover { border-color: color-mix(in srgb, var(--accent) 38%, white); background: var(--accent-soft); color: var(--accent); }
+.multi-selection-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 13px 17px 0; }
+.multi-selection-actions button { display: flex; align-items: center; justify-content: center; gap: 5px; min-block-size: 32px; padding-inline: 6px; border: 1px solid var(--line); border-radius: 8px; background: white; color: #555962; font-size: 9px; }
+.multi-selection-actions button:hover { border-color: color-mix(in srgb, var(--accent) 38%, white); background: var(--accent-soft); color: var(--accent); }
+.multi-selection-delete { padding-block-start: 7px; }
 .canvas-region .react-flow__attribution a {
   display: inline-flex;
   align-items: center;
