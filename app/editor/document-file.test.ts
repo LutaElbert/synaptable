@@ -53,6 +53,56 @@ describe('SynapTable project backups', () => {
     expect(() => validateEditorDocument(duplicate)).toThrow('duplicate layer ids');
   });
 
+  it.each([
+    {
+      name: 'duplicate connector ids',
+      message: 'duplicate connector ids',
+      mutate(document: typeof initialDocument) {
+        document.edges[1].id = document.edges[0].id;
+      },
+    },
+    {
+      name: 'missing connector endpoints',
+      message: 'missing layer',
+      mutate(document: typeof initialDocument) {
+        document.edges[0].target = 'missing-layer';
+      },
+    },
+    {
+      name: 'self-connections',
+      message: 'layer to itself',
+      mutate(document: typeof initialDocument) {
+        document.edges[0].target = document.edges[0].source;
+      },
+    },
+    {
+      name: 'duplicate directed connectors',
+      message: 'duplicate directed connectors',
+      mutate(document: typeof initialDocument) {
+        document.edges[1].source = document.edges[0].source;
+        document.edges[1].target = document.edges[0].target;
+      },
+    },
+  ])('rejects $name in portable backups', ({ message, mutate }) => {
+    const document = structuredClone(initialDocument);
+    mutate(document);
+    const envelope = JSON.stringify({
+      format: 'synaptable-project',
+      version: 2,
+      document,
+    });
+    expect(() => parseProjectBackup(envelope)).toThrow(message);
+  });
+
+  it('repairs invalid local graph edges without losing valid layers', () => {
+    const local = structuredClone(initialDocument);
+    local.edges.push({ ...structuredClone(local.edges[0]), id: 'duplicate-pair' });
+    local.edges.push({ ...structuredClone(local.edges[0]), id: 'orphan', target: 'missing-layer' });
+    const repaired = validateEditorDocument(local);
+    expect(repaired.nodes).toHaveLength(local.nodes.length);
+    expect(repaired.edges).toHaveLength(initialDocument.edges.length);
+  });
+
   it('rejects unsupported project envelopes', () => {
     expect(() => parseProjectBackup('{"format":"another-app","version":1}')).toThrow(
       'not a supported SynapTable',

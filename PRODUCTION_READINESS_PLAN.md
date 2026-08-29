@@ -12,8 +12,8 @@ Phases 1–5 are implemented and verified locally. Deployment phases 6–7 have 
 
 - Vinext reports 100% compatibility with zero partial or hard issues.
 - The production Cloudflare Worker build succeeds and runs locally through Wrangler with enforced security headers.
-- Thirteen unit tests pass for rich-text validation/utilities, schema migration, SVG export, and import/project validation.
-- Twenty-four production-Worker end-to-end checks pass across Chromium, Firefox, and WebKit. They cover browse/drop/paste import, corrupt-file rejection, local vectorization, individual path editing, direct rich-text editing, connector creation and labeling, search, branches, checkpoints, bulk arrangement, layer operations, undo/redo, backup/restore, persistence, SVG download, and mobile panels.
+- Twenty-eight unit tests pass for rich-text validation/utilities, schema migration, SVG export, project validation and repair, connection rules, cyclic graphs, cascade deletion, collapse, and deterministic tidy behavior.
+- Seventy production-Worker end-to-end checks pass across Chromium, Firefox, and WebKit. They cover browse/drop/paste import, corrupt-file rejection, local vectorization, individual path editing, double-click and keyboard layer editing, rich-text editing, connection validation and reconnection, locked layers, cascade deletion, focus restoration, search, branches, checkpoints, bulk arrangement, undo/redo, backup/restore, drag/resize persistence, SVG download, accessibility, and mobile panels. The 500-layer/800-connector stress scenario passes in Chromium and is intentionally skipped in the other two engines.
 - The automated workflow confirms that the local-only editor makes no off-origin requests.
 - Mobile Lighthouse scores 98 performance and 100 accessibility, best practices, SEO, and agentic browsing; LCP is 2.2 seconds, CLS is 0, and total blocking time is 0 milliseconds in the local test profile.
 - `npm audit` reports zero vulnerabilities.
@@ -35,6 +35,7 @@ Phases 1–5 are implemented and verified locally. Deployment phases 6–7 have 
 - Cloudflare Worker configuration, immutable asset caching, security headers, CI, privacy documentation, and deployment scripts are present.
 - IndexedDB autosave, validated backup/restore, cancellable Web Worker vectorization, layer/path editing, undo/redo, connector creation, and SVG export are implemented.
 - Automated unit and cross-browser end-to-end coverage protects the release-critical workflows.
+- The layer and connector behavior contract, test matrix, and local evidence are recorded in `LAYER_CONNECTION_TEST_PLAN.md`.
 - Schema-v2 rich concept content, version-1 migration, lazy-loaded single-editor operation, local checkpoints, templates, search, branch collapse, quick-add, bulk arrangement, connector labels/styles, and rich editable-SVG export are implemented.
 
 ## Definition of done

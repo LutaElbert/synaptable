@@ -8,6 +8,7 @@ import type {
   RichTextNode,
   VectorPathLayer,
 } from './types';
+import { graphIntegrityIssues } from './graph-rules';
 import { emptyRichText, sanitizeLinkHref } from './rich-text';
 
 export const PROJECT_FORMAT = 'synaptable-project';
@@ -321,7 +322,10 @@ function parseEdge(value: unknown, index: number): EditorEdge {
   };
 }
 
-export function validateEditorDocument(value: unknown): EditorDocument {
+export function validateEditorDocument(
+  value: unknown,
+  options: { strictGraph?: boolean } = {},
+): EditorDocument {
   if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2)) {
     throw new Error('This project uses an unsupported document version.');
   }
@@ -336,9 +340,36 @@ export function validateEditorDocument(value: unknown): EditorDocument {
   const nodes = value.nodes.map((node, index) => parseNode(node, index, sourceVersion));
   const nodeIds = new Set(nodes.map((node) => node.id));
   if (nodeIds.size !== nodes.length) throw new Error('This project contains duplicate layer ids.');
-  const edges = value.edges.map(parseEdge).filter(
-    (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target),
-  );
+  const parsedEdges = value.edges.map(parseEdge);
+  const graphIssues = graphIntegrityIssues(nodes, parsedEdges);
+  if (options.strictGraph && graphIssues.length) {
+    const issue = graphIssues[0];
+    if (issue.kind === 'duplicate-connector-id') {
+      throw new Error('This project contains duplicate connector ids.');
+    }
+    if (issue.kind === 'missing-endpoint') {
+      throw new Error('This project contains a connector with a missing layer.');
+    }
+    if (issue.kind === 'self-connection') {
+      throw new Error('This project contains a connector from a layer to itself.');
+    }
+    if (issue.kind === 'duplicate-connection') {
+      throw new Error('This project contains duplicate directed connectors.');
+    }
+  }
+  const edgeIds = new Set<string>();
+  const directedPairs = new Set<string>();
+  const edges = parsedEdges.filter((edge) => {
+    const pair = `${edge.source}\u0000${edge.target}`;
+    const valid = nodeIds.has(edge.source)
+      && nodeIds.has(edge.target)
+      && edge.source !== edge.target
+      && !edgeIds.has(edge.id)
+      && !directedPairs.has(pair);
+    edgeIds.add(edge.id);
+    directedPairs.add(pair);
+    return valid;
+  });
 
   return {
     schemaVersion: 2,
@@ -373,7 +404,7 @@ export function parseProjectBackup(source: string): EditorDocument {
   if (!isRecord(value) || value.format !== PROJECT_FORMAT || (value.version !== 1 && value.version !== 2)) {
     throw new Error('This is not a supported SynapTable project backup.');
   }
-  return validateEditorDocument(value.document);
+  return validateEditorDocument(value.document, { strictGraph: true });
 }
 
 export function downloadProjectBackup(source: string, fileName: string) {

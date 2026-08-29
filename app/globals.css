@@ -226,7 +226,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   gap: 6px;
   margin: 7px 9px 0;
 }
-.template-picker label { grid-column: 1 / -1; color: #7c8089; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.template-picker label { grid-column: 1 / -1; color: var(--muted); font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
 .template-picker select { min-inline-size: 0; block-size: 31px; padding-inline: 7px; border: 1px solid var(--line); border-radius: 8px; background: white; color: #4f535c; font-size: 9px; }
 .template-picker button { display: flex; align-items: center; gap: 4px; min-block-size: 31px; padding-inline: 9px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--accent); font-size: 9px; font-weight: 680; }
 

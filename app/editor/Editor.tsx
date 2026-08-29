@@ -15,6 +15,7 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  reconnectEdge,
   useReactFlow,
   type Connection,
   type EdgeChange,
@@ -74,6 +75,14 @@ import {
 } from './document-file';
 import { buildSvgDocument, downloadSvg } from './export-svg';
 import { fileToDataUrl, validateImageFile } from './image-file';
+import {
+  canConnect,
+  collapsedDescendantIds,
+  connectionIssue,
+  connectionIssueMessage,
+  removeNodesAndConnections,
+  tidyGraphPositions,
+} from './graph-rules';
 import { initialDocument } from './initial-document';
 import {
   clearLocalDocument,
@@ -375,28 +384,6 @@ function trimHistory(history: EditorSnapshot[], maxEntries = 40, maxBytes = 48 *
   }
 }
 
-function collapsedDescendantIds(nodes: EditorNode[], edges: EditorEdge[]) {
-  const hidden = new Set<string>();
-  const children = new Map<string, string[]>();
-  for (const edge of edges) {
-    const current = children.get(edge.source) ?? [];
-    current.push(edge.target);
-    children.set(edge.source, current);
-  }
-  const visit = (id: string, seen: Set<string>) => {
-    for (const child of children.get(id) ?? []) {
-      if (seen.has(child)) continue;
-      seen.add(child);
-      hidden.add(child);
-      visit(child, seen);
-    }
-  };
-  for (const node of nodes) {
-    if (node.data.kind === 'concept' && node.data.collapsed) visit(node.id, new Set([node.id]));
-  }
-  return hidden;
-}
-
 function connectorPresentation(kind: 'default' | 'dashed' | 'emphasis') {
   return {
     stroke: kind === 'emphasis' ? '#635bff' : '#a9adb7',
@@ -585,7 +572,22 @@ function EditorInner() {
   const handleNodesChange = useCallback(
     (changes: NodeChange<EditorNode>[]) => {
       if (changes.some((change) => change.type === 'remove')) recordHistory();
-      setNodes((current) => applyNodeChanges(changes, current));
+      const committedDimensions = new Map<string, { width: number; height: number }>();
+      for (const change of changes) {
+        if (change.type === 'dimensions' && change.resizing === false && change.dimensions) {
+          committedDimensions.set(change.id, change.dimensions);
+        }
+      }
+      setNodes((current) => {
+        const next = applyNodeChanges(changes, current);
+        if (!committedDimensions.size) return next;
+        return next.map((node) => {
+          const dimensions = committedDimensions.get(node.id);
+          return dimensions
+            ? { ...node, style: { ...node.style, width: dimensions.width, height: dimensions.height } }
+            : node;
+        });
+      });
       if (changes.some((change) => change.type === 'remove')) setSelectedPath(null);
     },
     [recordHistory],
@@ -601,11 +603,17 @@ function EditorInner() {
 
   const handleConnect = useCallback(
     (connection: Connection) => {
+      const issue = connectionIssue(nodesRef.current, edgesRef.current, connection);
+      if (issue) {
+        announce(connectionIssueMessage(issue), 'error');
+        return;
+      }
       recordHistory();
       setEdges((current) =>
         addEdge(
           {
             ...connection,
+            id: crypto.randomUUID(),
             type: 'smoothstep',
             style: { stroke: '#a9adb7', strokeWidth: 1.5 },
             markerEnd: { type: MarkerType.ArrowClosed },
@@ -616,7 +624,22 @@ function EditorInner() {
         ),
       );
     },
-    [recordHistory],
+    [announce, recordHistory],
+  );
+
+  const handleReconnect = useCallback((edge: EditorEdge, connection: Connection) => {
+    const issue = connectionIssue(nodesRef.current, edgesRef.current, connection, edge.id);
+    if (issue) {
+      announce(connectionIssueMessage(issue), 'error');
+      return;
+    }
+    recordHistory();
+    setEdges((current) => reconnectEdge(edge, connection, current, { shouldReplaceId: false }));
+  }, [announce, recordHistory]);
+
+  const isValidConnection = useCallback(
+    (connection: Connection | EditorEdge) => canConnect(nodesRef.current, edgesRef.current, connection),
+    [],
   );
 
   const selectNode = useCallback((id: string, additive = false) => {
@@ -956,40 +979,14 @@ function EditorInner() {
     const ids = new Set(nodesRef.current.filter((node) => node.selected && !node.data.locked).map((node) => node.id));
     if (!ids.size) return;
     recordHistory();
-    setNodes((current) => current.filter((node) => !ids.has(node.id)));
-    setEdges((current) => current.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)));
+    const next = removeNodesAndConnections(nodesRef.current, edgesRef.current, ids);
+    setNodes(next.nodes);
+    setEdges(next.edges);
   }, [recordHistory]);
 
   const tidyDiagram = useCallback(() => {
-    const allNodes = nodesRef.current.filter((node) => !node.hidden);
-    if (allNodes.length < 2) return;
-    const nodeIds = new Set(allNodes.map((node) => node.id));
-    const incoming = new Map(allNodes.map((node) => [node.id, 0]));
-    const children = new Map<string, string[]>();
-    for (const edge of edgesRef.current) {
-      if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) continue;
-      incoming.set(edge.target, (incoming.get(edge.target) ?? 0) + 1);
-      children.set(edge.source, [...(children.get(edge.source) ?? []), edge.target]);
-    }
-    const roots = allNodes.filter((node) => (incoming.get(node.id) ?? 0) === 0);
-    const queue = (roots.length ? roots : [allNodes[0]]).map((node) => ({ id: node.id, depth: 0 }));
-    const depths = new Map<string, number>();
-    while (queue.length) {
-      const current = queue.shift()!;
-      if (depths.has(current.id)) continue;
-      depths.set(current.id, current.depth);
-      for (const child of children.get(current.id) ?? []) queue.push({ id: child, depth: current.depth + 1 });
-    }
-    for (const node of allNodes) if (!depths.has(node.id)) depths.set(node.id, 0);
-    const rows = new Map<number, string[]>();
-    for (const node of allNodes) {
-      const depth = depths.get(node.id) ?? 0;
-      rows.set(depth, [...(rows.get(depth) ?? []), node.id]);
-    }
-    const positions = new Map<string, { x: number; y: number }>();
-    for (const [depth, ids] of rows) {
-      ids.forEach((id, index) => positions.set(id, { x: 110 + depth * 310, y: 90 + index * 150 }));
-    }
+    const positions = tidyGraphPositions(nodesRef.current, edgesRef.current);
+    if (positions.size < 2) return;
     recordHistory();
     setNodes((current) => current.map((node) => node.data.locked || !positions.has(node.id)
       ? node
@@ -1106,6 +1103,7 @@ function EditorInner() {
   }, [recordHistory]);
 
   const cancelConceptEdit = useCallback(() => {
+    const id = editingConceptId;
     const origin = conceptEditOriginRef.current;
     if (origin) {
       setNodes(origin.nodes);
@@ -1113,7 +1111,14 @@ function EditorInner() {
       conceptEditOriginRef.current = null;
     }
     setEditingConceptId(null);
-  }, []);
+    if (id) {
+      window.setTimeout(() => {
+        const node = [...document.querySelectorAll<HTMLElement>('.react-flow__node')]
+          .find((element) => element.dataset.id === id);
+        node?.focus();
+      }, 0);
+    }
+  }, [editingConceptId]);
 
   const beginFieldEdit = useCallback(() => {
     if (!fieldOriginRef.current) {
@@ -1128,13 +1133,21 @@ function EditorInner() {
   }, [recordHistory]);
 
   const cancelFieldEdit = useCallback(() => {
+    const id = renamingLayerId;
     if (fieldOriginRef.current) {
       setNodes(fieldOriginRef.current.nodes);
       setEdges(fieldOriginRef.current.edges);
       fieldOriginRef.current = null;
     }
     setRenamingLayerId(null);
-  }, []);
+    if (id) {
+      window.setTimeout(() => {
+        const layer = [...document.querySelectorAll<HTMLElement>('[data-layer-id]')]
+          .find((element) => element.dataset.layerId === id);
+        layer?.focus();
+      }, 0);
+    }
+  }, [renamingLayerId]);
 
   useEffect(() => {
     const beginFromKeyboard = (event: KeyboardEvent) => {
@@ -1479,8 +1492,16 @@ function EditorInner() {
     [collapsedNodeIds, nodes],
   );
   const canvasEdges = useMemo(
-    () => edges.filter((edge) => !collapsedNodeIds.has(edge.source) && !collapsedNodeIds.has(edge.target)),
-    [collapsedNodeIds, edges],
+    () => {
+      const nodeNames = new Map(nodes.map((node) => [node.id, node.data.name]));
+      return edges
+        .filter((edge) => !collapsedNodeIds.has(edge.source) && !collapsedNodeIds.has(edge.target))
+        .map((edge) => ({
+          ...edge,
+          ariaLabel: `Connector from ${nodeNames.get(edge.source) ?? edge.source} to ${nodeNames.get(edge.target) ?? edge.target}${edge.data?.label ? `: ${edge.data.label}` : ''}`,
+        }));
+    },
+    [collapsedNodeIds, edges, nodes],
   );
 
   return (
@@ -1576,7 +1597,10 @@ function EditorInner() {
             </select>
             <button type="button" onClick={addConceptFromTemplate}><Plus size={12} /> Add</button>
           </div>
-          <ul className="layer-list" aria-label="Canvas layers">
+          <p id="layer-list-instructions" className="visually-hidden">
+            Double-click an unlocked layer or press F2 while it is focused to rename it.
+          </p>
+          <ul className="layer-list" aria-label="Canvas layers" aria-describedby="layer-list-instructions">
             {layerNodes.map((node) => {
               const expanded = expandedVectors.has(node.id);
               return (
@@ -1614,7 +1638,14 @@ function EditorInner() {
                             setRenamingLayerId(null);
                           }}
                           onKeyDown={(event) => {
-                            if (event.key === 'Enter') event.currentTarget.blur();
+                            if (event.key === 'Enter') {
+                              event.currentTarget.blur();
+                              window.setTimeout(() => {
+                                const layer = [...document.querySelectorAll<HTMLElement>('[data-layer-id]')]
+                                  .find((element) => element.dataset.layerId === node.id);
+                                layer?.focus();
+                              }, 0);
+                            }
                             if (event.key === 'Escape') {
                               event.preventDefault();
                               cancelFieldEdit();
@@ -1626,10 +1657,17 @@ function EditorInner() {
                       <button
                         type="button"
                         className="layer-main"
+                        data-layer-id={node.id}
                         aria-pressed={node.selected === true}
                         onClick={(event) => event.metaKey || event.ctrlKey || event.shiftKey
                           ? selectNode(node.id, true)
                           : revealAndSelectNode(node.id)}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'F2' || node.data.locked) return;
+                          event.preventDefault();
+                          beginFieldEdit();
+                          setRenamingLayerId(node.id);
+                        }}
                         onDoubleClick={() => {
                           if (node.data.locked) return;
                           beginFieldEdit();
@@ -1720,6 +1758,8 @@ function EditorInner() {
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
             onConnect={handleConnect}
+            onReconnect={handleReconnect}
+            isValidConnection={isValidConnection}
             onNodeDragStart={() => {
               dragOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
             }}

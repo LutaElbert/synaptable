@@ -1,33 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
-
-async function createDiagramPng(page: Page): Promise<Buffer> {
-  const bytes = await page.evaluate<number[]>(async () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 240;
-    canvas.height = 160;
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('Canvas is unavailable.');
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = '#1f2937';
-    context.lineWidth = 6;
-    context.beginPath();
-    context.moveTo(75, 80);
-    context.lineTo(165, 80);
-    context.stroke();
-    context.fillStyle = '#635bff';
-    context.fillRect(20, 45, 70, 70);
-    context.fillStyle = '#22a06b';
-    context.beginPath();
-    context.arc(190, 80, 35, 0, Math.PI * 2);
-    context.fill();
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((value) => value ? resolve(value) : reject(new Error('PNG encoding failed.')), 'image/png');
-    });
-    return Array.from(new Uint8Array(await blob.arrayBuffer()));
-  });
-  return Buffer.from(bytes);
-}
+import { expect, test } from '@playwright/test';
+import { createDiagramPng } from './helpers';
 
 test('imports, vectorizes, persists, backs up, and exports locally', async ({ page, baseURL }) => {
   const externalRequests: string[] = [];
@@ -65,6 +37,18 @@ test('imports, vectorizes, persists, backs up, and exports locally', async ({ pa
   await expect(pathInspector.getByRole('button', { name: 'Duplicate path' })).toBeDisabled();
   await pathInspector.getByLabel('Lock path').uncheck();
   await pathInspector.getByRole('button', { name: 'Duplicate path' }).click();
+  await expect(pathList.getByRole('button', { name: 'Primary shape copy', exact: true })).toBeVisible();
+  await pathList.getByRole('button', { name: 'Primary shape', exact: true }).click();
+  await pathList.getByRole('button', { name: 'Hide Primary shape', exact: true }).click();
+  await expect(pathList.getByRole('button', { name: 'Show Primary shape', exact: true })).toBeVisible();
+  await pathList.getByRole('button', { name: 'Show Primary shape', exact: true }).click();
+  await pathInspector.getByRole('button', { name: 'Move path down' }).click();
+  await expect(pathList.locator('.path-row').nth(1)).toContainText('Primary shape');
+  await pathInspector.getByRole('button', { name: 'Move path up' }).click();
+  await pathList.getByRole('button', { name: 'Primary shape copy', exact: true }).click();
+  await pathInspector.getByRole('button', { name: 'Delete path' }).click();
+  await expect(pathList.getByRole('button', { name: 'Primary shape copy', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(pathList.getByRole('button', { name: 'Primary shape copy', exact: true })).toBeVisible();
   await expect(page.locator('main[data-save-state="saved"]')).toBeVisible();
 
@@ -125,6 +109,7 @@ test('edits, hides, locks, duplicates, deletes, undoes, and redoes layers', asyn
 
   await inspector.getByRole('button', { name: 'Duplicate layer' }).click();
   await expect(page.getByRole('button', { name: 'Launch plan copy', exact: true })).toBeVisible();
+  await expect(page.locator('.react-flow__edge')).toHaveCount(edgeCount + 1);
 
   const lockLayer = inspector.getByLabel('Lock layer');
   await lockLayer.check();
@@ -309,7 +294,8 @@ test('bulk-arranges selected layers and edits connector labels and styles', asyn
   await expect(page.getByText('Diagram layout tidied.')).toBeVisible();
 
   const edge = page.locator('.react-flow__edge').first();
-  await edge.locator('.react-flow__edge-path').click({ force: true });
+  await edge.focus();
+  await edge.press('Enter');
   const inspector = page.locator('.inspector-panel');
   await expect(inspector.getByText('Connector label', { exact: true })).toBeVisible();
   await inspector.getByLabel('Connector label').fill('supports research');

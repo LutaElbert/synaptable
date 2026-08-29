@@ -37,6 +37,7 @@ Open `http://localhost:3000`.
 ## Editing shortcuts
 
 - `Enter` edits the selected concept.
+- Double-click a layer name or press `F2` to rename it; `Enter` commits and `Escape` cancels.
 - `Tab` adds a child when a canvas node has keyboard focus.
 - `Shift+Enter` adds a sibling when a canvas node has keyboard focus.
 - `Cmd/Ctrl+Enter` finishes rich-text editing; `Escape` cancels it.
@@ -57,7 +58,7 @@ npm run test:e2e
 npm audit
 ```
 
-`npm run test:e2e` starts or reuses the local development server. CI builds the app first and runs the same workflow against the local Cloudflare Worker in Chromium, Firefox, and WebKit. The suite covers direct rich-text editing, migration, search, branch operations, checkpoints, bulk arrangement, connector editing, vectorization, backup/restore, persistence, export, and mobile panels.
+`npm run test:e2e` starts or reuses the local development server. CI builds the app first and runs the same workflow against the local Cloudflare Worker in Chromium, Firefox, and WebKit. The suite covers double-click and keyboard layer editing, direct rich-text editing, migration, connection validation and reconnection, locked-layer behavior, cascade deletion, search, branch operations, checkpoints, bulk arrangement, vectorization, backup/restore, drag/resize persistence, accessibility, export, and mobile panels. See [LAYER_CONNECTION_TEST_PLAN.md](./LAYER_CONNECTION_TEST_PLAN.md) for the graph behavior contract and regression matrix.
 
 ## Cloudflare Workers
 
