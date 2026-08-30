@@ -176,7 +176,7 @@ test('edits rich concept text directly with formatting, commit, cancel, undo, an
   const body = page.locator('.concept-body-editor');
   await body.fill('First milestone');
   await body.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
-  await page.getByRole('button', { name: 'Bold', exact: true }).click();
+  await body.press(process.platform === 'darwin' ? 'Meta+B' : 'Control+B');
   await page.getByRole('button', { name: 'Bulleted list', exact: true }).click();
   await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
 

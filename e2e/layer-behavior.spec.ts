@@ -13,6 +13,13 @@ async function dragResizeControl(page: Page, node: Locator, selector: string, de
   await page.mouse.up();
 }
 
+async function flowNodeSize(node: Locator) {
+  return node.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { width: Number.parseFloat(style.width), height: Number.parseFloat(style.height) };
+  });
+}
+
 test('double-click edits a canvas concept and cancel is a clean no-op', async ({ page }) => {
   await openEditor(page);
   const research = canvasNode(page, 'Research');
@@ -39,6 +46,7 @@ test('outside-click commits concept text and only grows geometry when committed 
   await openEditor(page);
   const research = canvasNode(page, 'Research');
   const originalBox = await research.boundingBox();
+  const originalSize = await flowNodeSize(research);
   const originalStyle = await research.getAttribute('style');
   const originalTransform = originalStyle?.match(/transform:\s*[^;]+/)?.[0];
   expect(originalBox).toBeTruthy();
@@ -54,9 +62,9 @@ test('outside-click commits concept text and only grows geometry when committed 
   await expect(page.getByLabel('Concept title')).toHaveCount(0);
   const committed = canvasNode(page, 'Outside click commit');
   await expect(committed.getByText('Outside click commit', { exact: true })).toBeVisible();
-  const committedBox = await committed.boundingBox();
-  expect(Math.abs(committedBox!.width - originalBox!.width)).toBeLessThan(2);
-  expect(committedBox!.height).toBeGreaterThanOrEqual(originalBox!.height - 2);
+  const committedSize = await flowNodeSize(committed);
+  expect(Math.abs(committedSize.width - originalSize.width)).toBeLessThan(2);
+  expect(committedSize.height).toBeGreaterThanOrEqual(originalSize.height - 2);
   const cardBox = await committed.locator('.concept-node').boundingBox();
   const titleBox = await committed.locator('.concept-title-rich-text').boundingBox();
   expect(cardBox).toBeTruthy();
@@ -71,9 +79,9 @@ test('outside-click commits concept text and only grows geometry when committed 
   await page.reload();
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
   const restored = canvasNode(page, 'Outside click commit');
-  const restoredBox = await restored.boundingBox();
-  expect(Math.abs(restoredBox!.width - originalBox!.width)).toBeLessThan(2);
-  expect(Math.abs(restoredBox!.height - committedBox!.height)).toBeLessThan(2);
+  const restoredSize = await flowNodeSize(restored);
+  expect(Math.abs(restoredSize.width - originalSize.width)).toBeLessThan(2);
+  expect(Math.abs(restoredSize.height - committedSize.height)).toBeLessThan(2);
 });
 
 test('all formatting tools target the active title or body and can be toggled off', async ({ page }) => {
@@ -195,25 +203,21 @@ test('checklist content auto-sizes its layer and removes the trailing empty row 
     'Eighth action item',
   ];
   await body.fill(items[0]);
-  for (const item of items.slice(1)) {
-    await page.keyboard.press('Enter');
-    await page.keyboard.type(item);
+  const editingParagraphs = body.locator(':scope > p');
+  await expect(editingParagraphs).toHaveCount(1);
+  for (const [index, item] of items.slice(1).entries()) {
+    await body.press('End');
+    await body.press('Enter');
+    await expect(editingParagraphs).toHaveCount(index + 2);
+    await body.pressSequentially(item);
+    await expect(editingParagraphs.last()).toHaveText(item);
   }
+  await body.press('End');
+  await body.press('Enter');
+  await expect(editingParagraphs).toHaveCount(items.length + 1);
   await body.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
   await page.getByRole('button', { name: 'Checklist', exact: true }).click();
   const editingTaskItems = body.locator('ul[data-type="taskList"] > li[data-checked]');
-  await expect(editingTaskItems).toHaveCount(items.length);
-  await body.evaluate((editor) => {
-    const paragraph = editor.querySelector('ul[data-type="taskList"] > li[data-checked]:last-child p');
-    if (!paragraph) throw new Error('The final checklist paragraph is missing.');
-    const range = document.createRange();
-    range.selectNodeContents(paragraph);
-    range.collapse(false);
-    const selection = window.getSelection();
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-  });
-  await page.keyboard.press('Enter');
   await expect(editingTaskItems).toHaveCount(items.length + 1);
 
   await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
@@ -648,34 +652,42 @@ test('resized layer dimensions are undoable and persist after reload', async ({ 
   await openEditor(page);
   const research = canvasNode(page, 'Research');
   await research.click();
-  const originalBox = await research.boundingBox();
+  const originalSize = await flowNodeSize(research);
   const resizeHandle = research.locator('.react-flow__resize-control.handle.bottom.right');
   const handleBox = await resizeHandle.boundingBox();
-  expect(originalBox).toBeTruthy();
   expect(handleBox).toBeTruthy();
-  await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
+  const resizeStart = {
+    x: handleBox!.x + handleBox!.width / 2,
+    y: handleBox!.y + handleBox!.height / 2,
+  };
+  await page.mouse.move(resizeStart.x, resizeStart.y);
   await page.mouse.down();
-  await page.mouse.move(handleBox!.x + handleBox!.width / 2 + 70, handleBox!.y + handleBox!.height / 2 + 45, { steps: 10 });
+  for (let step = 1; step <= 10; step += 1) {
+    await page.mouse.move(resizeStart.x + 7 * step, resizeStart.y + 4.5 * step);
+    await page.waitForTimeout(20);
+  }
+  await page.waitForTimeout(100);
   await page.mouse.up();
-  const resizedBox = await research.boundingBox();
-  expect(resizedBox!.width).toBeGreaterThan(originalBox!.width + 30);
-  expect(resizedBox!.height).toBeGreaterThan(originalBox!.height + 20);
+  const resizedSize = await flowNodeSize(research);
+  expect(resizedSize.width).toBeGreaterThan(originalSize.width + 30);
+  expect(resizedSize.height).toBeGreaterThan(originalSize.height + 20);
+  await waitForSaved(page);
 
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
-  const undoneBox = await research.boundingBox();
-  expect(Math.abs(undoneBox!.width - originalBox!.width)).toBeLessThan(2);
-  expect(Math.abs(undoneBox!.height - originalBox!.height)).toBeLessThan(2);
+  const undoneSize = await flowNodeSize(research);
+  expect(Math.abs(undoneSize.width - originalSize.width)).toBeLessThan(2);
+  expect(Math.abs(undoneSize.height - originalSize.height)).toBeLessThan(2);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
-  const redoneBox = await research.boundingBox();
-  expect(Math.abs(redoneBox!.width - resizedBox!.width)).toBeLessThan(2);
-  expect(Math.abs(redoneBox!.height - resizedBox!.height)).toBeLessThan(2);
+  const redoneSize = await flowNodeSize(research);
+  expect(Math.abs(redoneSize.width - resizedSize.width)).toBeLessThan(2);
+  expect(Math.abs(redoneSize.height - resizedSize.height)).toBeLessThan(2);
   await waitForSaved(page);
 
   await page.reload();
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
-  const restoredBox = await canvasNode(page, 'Research').boundingBox();
-  expect(Math.abs(restoredBox!.width - resizedBox!.width)).toBeLessThan(2);
-  expect(Math.abs(restoredBox!.height - resizedBox!.height)).toBeLessThan(2);
+  const restoredSize = await flowNodeSize(canvasNode(page, 'Research'));
+  expect(Math.abs(restoredSize.width - resizedSize.width)).toBeLessThan(2);
+  expect(Math.abs(restoredSize.height - resizedSize.height)).toBeLessThan(2);
   const unexpectedErrors = pageErrors.filter((message) => ![
     'ResizeObserver loop completed with undelivered notifications.',
     'ResizeObserver loop limit exceeded',

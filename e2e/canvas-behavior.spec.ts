@@ -201,13 +201,13 @@ test('select all respects editing and locked layers and supports bulk actions', 
   await openEditor(page);
   const title = page.locator('.document-title input');
   await title.click();
-  await page.keyboard.press('Meta+a');
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
   await page.keyboard.type('Selection-safe title');
   await expect(title).toHaveValue('Selection-safe title');
   await expect(page.locator('.react-flow__node.selected')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Lock Research', exact: true }).click();
-  await page.keyboard.press('Meta+a');
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
   await expect(page.locator('.inspector-panel').getByText('2 layers selected', { exact: true }).first()).toBeVisible();
   await expect(canvasNode(page, 'Research')).not.toHaveClass(/selected/);
 

@@ -3,6 +3,8 @@ import { expect, type Locator, type Page } from '@playwright/test';
 export async function openEditor(page: Page) {
   await page.goto('/');
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  await expect(page.locator('.react-flow__node')).toHaveCount(3);
+  await expect(page.locator('.react-flow__edge')).toHaveCount(2);
 }
 
 export function canvasNode(page: Page, name: string): Locator {
@@ -28,10 +30,10 @@ export async function connectLayers(page: Page, sourceName: string, targetName: 
 
 export async function waitForSaved(page: Page) {
   const workspace = page.locator('main[data-ready="true"]');
-  // Autosave is intentionally debounced for 450 ms. Wait past the debounce
-  // so an already-running save cannot satisfy this assertion before the
-  // latest document mutation has been queued.
-  await page.waitForTimeout(500);
+  // Observe the save cycle triggered by the latest mutation. Checking only for
+  // "saved" can accidentally accept the previous revision before React has
+  // scheduled the 450 ms autosave debounce.
+  await expect(workspace).toHaveAttribute('data-save-state', 'saving');
   await expect(workspace).toHaveAttribute('data-save-state', 'saved');
 }
 

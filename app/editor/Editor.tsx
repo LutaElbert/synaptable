@@ -68,6 +68,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -201,6 +202,7 @@ type NodeActionContextValue = {
   vectorizeImage: (id: string, expandLayers?: boolean) => void;
   cancelVectorization: () => void;
   recordResizeStart: (id: string) => void;
+  recordResize: (id: string, dimensions: ResizeParams) => void;
   recordResizeEnd: (id: string, dimensions: ResizeParams) => void;
   beginConceptEdit: (id: string) => void;
   updateConceptTitle: (id: string, title: RichTextDocument) => void;
@@ -252,6 +254,7 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
         minWidth={CONCEPT_MIN_WIDTH}
         minHeight={CONCEPT_MIN_HEIGHT}
         onResizeStart={() => actions.recordResizeStart(id)}
+        onResize={(_, dimensions) => actions.recordResize(id, dimensions)}
         onResizeEnd={(_, dimensions) => actions.recordResizeEnd(id, dimensions)}
       />
       <article
@@ -347,6 +350,7 @@ function RasterNode({ id, data, selected }: NodeProps<EditorNode>) {
         minHeight={80}
         keepAspectRatio
         onResizeStart={() => actions.recordResizeStart(id)}
+        onResize={(_, dimensions) => actions.recordResize(id, dimensions)}
         onResizeEnd={(_, dimensions) => actions.recordResizeEnd(id, dimensions)}
       />
       <figure className="raster-node" style={{ opacity: data.opacity }}>
@@ -385,6 +389,7 @@ function VectorNode({ id, data, selected }: NodeProps<EditorNode>) {
         minHeight={80}
         keepAspectRatio
         onResizeStart={() => actions.recordResizeStart(id)}
+        onResize={(_, dimensions) => actions.recordResize(id, dimensions)}
         onResizeEnd={(_, dimensions) => actions.recordResizeEnd(id, dimensions)}
       />
       <div className="vector-node" style={{ opacity: data.opacity }}>
@@ -579,13 +584,13 @@ function EditorInner() {
     return () => window.removeEventListener('error', handleResizeObserverNotification, true);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     titleRef.current = title;
   }, [title]);
   useEffect(() => {
@@ -1794,37 +1799,32 @@ function EditorInner() {
           resizeOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
         }
       },
-      recordResizeEnd: (id, dimensions) => {
-        const origin = resizeOriginRef.current;
-        const originNode = origin?.nodes.find((node) => node.id === id);
-        const originSize = originNode ? editorNodeDimensions(originNode) : null;
-        const changed = Boolean(originNode && originSize && (
-          Math.abs(originSize.width - dimensions.width) >= 0.01
-          || Math.abs(originSize.height - dimensions.height) >= 0.01
-          || Math.abs(originNode.position.x - dimensions.x) >= 0.01
-          || Math.abs(originNode.position.y - dimensions.y) >= 0.01
-        ));
-        if (origin && changed) recordHistory(origin);
-        resizeOriginRef.current = null;
-        if (!changed) return;
-        window.requestAnimationFrame(() => {
-          setNodes((current) => current.map((node) => {
-            if (node.id !== id) return node;
-            const width = Number(node.style?.width);
-            const height = Number(node.style?.height);
-            if (
-              Math.abs(width - dimensions.width) < 0.01
-              && Math.abs(height - dimensions.height) < 0.01
-              && Math.abs(node.position.x - dimensions.x) < 0.01
-              && Math.abs(node.position.y - dimensions.y) < 0.01
-            ) return node;
-            return {
+      recordResize: (id, dimensions) => {
+        if (!resizeOriginRef.current) return;
+        const resizedNodes = nodesRef.current.map((node) => node.id === id
+          ? {
               ...node,
               position: { x: dimensions.x, y: dimensions.y },
               style: { ...node.style, width: dimensions.width, height: dimensions.height },
-            };
-          }));
-        });
+            }
+          : node);
+        nodesRef.current = resizedNodes;
+        setNodes(resizedNodes);
+      },
+      recordResizeEnd: (id) => {
+        const origin = resizeOriginRef.current;
+        const originNode = origin?.nodes.find((node) => node.id === id);
+        const currentNode = nodesRef.current.find((node) => node.id === id);
+        const originSize = originNode ? editorNodeDimensions(originNode) : null;
+        const currentSize = currentNode ? editorNodeDimensions(currentNode) : null;
+        const changed = Boolean(originNode && originSize && currentNode && currentSize && (
+          Math.abs(originSize.width - currentSize.width) >= 0.01
+          || Math.abs(originSize.height - currentSize.height) >= 0.01
+          || Math.abs(originNode.position.x - currentNode.position.x) >= 0.01
+          || Math.abs(originNode.position.y - currentNode.position.y) >= 0.01
+        ));
+        if (origin && changed) recordHistory(origin);
+        resizeOriginRef.current = null;
       },
     }),
     [
