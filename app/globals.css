@@ -376,6 +376,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   background: color-mix(in srgb, var(--accent) 11%, transparent);
   box-shadow: 0 0 0 1px rgb(255 255 255 / 72%) inset;
 }
+.canvas-region .react-flow__nodesselection-rect {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
 
 .concept-node {
   position: relative;

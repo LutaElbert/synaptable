@@ -74,6 +74,7 @@ test('select all, marquee modifiers, escape, and layer ranges stay synchronized'
   await expect(layerButton('Research')).toHaveAttribute('aria-pressed', 'true');
   await expect(layerButton('Explore tools')).toHaveAttribute('aria-pressed', 'true');
   await expect(layerButton('Editable layers')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(3);
 
   await page.keyboard.press('Escape');
   await expect(research).not.toHaveClass(/selected/);
@@ -95,6 +96,23 @@ test('select all, marquee modifiers, escape, and layer ranges stay synchronized'
   await expect(explore).toHaveClass(/selected/);
   await expect(editable).toHaveClass(/selected/);
   await expect(research).not.toHaveClass(/selected/);
+  const groupSelection = page.locator('.react-flow__nodesselection-rect');
+  await expect(groupSelection).toBeVisible();
+  await expect(groupSelection).toHaveCSS('border-top-width', '0px');
+  await expect(groupSelection).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
+  const groupBox = await groupSelection.boundingBox();
+  const exploreBeforeGroupDrag = await explore.boundingBox();
+  const editableBeforeGroupDrag = await editable.boundingBox();
+  expect(groupBox).toBeTruthy();
+  await page.mouse.move(groupBox!.x + groupBox!.width / 2, groupBox!.y + groupBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(groupBox!.x + groupBox!.width / 2 + 32, groupBox!.y + groupBox!.height / 2 + 18, { steps: 8 });
+  await page.mouse.up();
+  const exploreAfterGroupDrag = await explore.boundingBox();
+  const editableAfterGroupDrag = await editable.boundingBox();
+  expect(Math.abs(exploreAfterGroupDrag!.x - exploreBeforeGroupDrag!.x)).toBeGreaterThan(20);
+  expect(Math.abs(editableAfterGroupDrag!.x - editableBeforeGroupDrag!.x)).toBeGreaterThan(20);
 
   const researchBox = await research.boundingBox();
   expect(researchBox).toBeTruthy();
