@@ -8,10 +8,17 @@ import type {
   RichTextNode,
   VectorPathLayer,
 } from './types';
-import { emptyRichText, sanitizeLinkHref } from './rich-text';
+import { graphIntegrityIssues } from './graph-rules';
+import {
+  conceptTitleFromPlainText,
+  emptyRichText,
+  normalizeRichTextDocument,
+  richTextToPlainText,
+  sanitizeLinkHref,
+} from './rich-text';
 
 export const PROJECT_FORMAT = 'synaptable-project';
-export const PROJECT_FILE_VERSION = 2;
+export const PROJECT_FILE_VERSION = 4;
 export const MAX_PROJECT_FILE_SIZE = 40 * 1024 * 1024;
 
 const MAX_TITLE_LENGTH = 120;
@@ -159,7 +166,20 @@ function parseRichTextDocument(value: unknown): RichTextDocument {
   };
   assertStructure(document);
   if (!document.content?.length) document.content = [{ type: 'paragraph' }];
-  return document as RichTextDocument;
+  return normalizeRichTextDocument(document as RichTextDocument);
+}
+
+function parseConceptTitle(value: unknown): RichTextDocument {
+  const title = parseRichTextDocument(value);
+  if (
+    title.content?.length !== 1
+    || title.content[0].type !== 'paragraph'
+    || (title.content[0].content ?? []).some((child) => child.type !== 'text')
+  ) {
+    throw new Error('Concept title must be a single line of formatted text.');
+  }
+  boundedString(richTextToPlainText(title), 'Concept title', 500);
+  return title;
 }
 
 function parseVectorPath(value: unknown, index: number): VectorPathLayer {
@@ -177,7 +197,7 @@ function parseVectorPath(value: unknown, index: number): VectorPathLayer {
   };
 }
 
-function parseNode(value: unknown, index: number, sourceVersion: 1 | 2): EditorNode {
+function parseNode(value: unknown, index: number, sourceVersion: 1 | 2 | 3 | 4): EditorNode {
   if (!isRecord(value) || !isRecord(value.position) || !isRecord(value.data)) {
     throw new Error(`Layer ${index + 1} is invalid.`);
   }
@@ -213,6 +233,19 @@ function parseNode(value: unknown, index: number, sourceVersion: 1 | 2): EditorN
     if (tone !== 'ink' && tone !== 'indigo' && tone !== 'mint') {
       throw new Error(`Layer ${index + 1} has an invalid concept tone.`);
     }
+    const legacyLabel = boundedString(data.label, 'Concept label', 500);
+    const title = sourceVersion >= 3
+      ? parseConceptTitle(data.title)
+      : conceptTitleFromPlainText(legacyLabel);
+    const label = boundedString(richTextToPlainText(title), 'Concept label', 500);
+    const horizontalAlign = sourceVersion >= 4
+      && (data.horizontalAlign === 'center' || data.horizontalAlign === 'right')
+      ? data.horizontalAlign
+      : 'left';
+    const verticalAlign = sourceVersion >= 4
+      && (data.verticalAlign === 'middle' || data.verticalAlign === 'bottom')
+      ? data.verticalAlign
+      : 'top';
     return {
       ...common,
       type: 'concept',
@@ -221,11 +254,14 @@ function parseNode(value: unknown, index: number, sourceVersion: 1 | 2): EditorN
         name,
         opacity,
         locked,
-        label: boundedString(data.label, 'Concept label', 500),
+        label,
+        title,
         body: sourceVersion === 1 ? emptyRichText() : parseRichTextDocument(data.body),
         eyebrow: boundedString(data.eyebrow, 'Concept eyebrow', 160),
         tone,
-        collapsed: sourceVersion === 2 && data.collapsed === true,
+        collapsed: sourceVersion >= 2 && data.collapsed === true,
+        horizontalAlign,
+        verticalAlign,
       },
     };
   }
@@ -321,8 +357,11 @@ function parseEdge(value: unknown, index: number): EditorEdge {
   };
 }
 
-export function validateEditorDocument(value: unknown): EditorDocument {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2)) {
+export function validateEditorDocument(
+  value: unknown,
+  options: { strictGraph?: boolean } = {},
+): EditorDocument {
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4)) {
     throw new Error('This project uses an unsupported document version.');
   }
   const sourceVersion = value.schemaVersion;
@@ -336,12 +375,39 @@ export function validateEditorDocument(value: unknown): EditorDocument {
   const nodes = value.nodes.map((node, index) => parseNode(node, index, sourceVersion));
   const nodeIds = new Set(nodes.map((node) => node.id));
   if (nodeIds.size !== nodes.length) throw new Error('This project contains duplicate layer ids.');
-  const edges = value.edges.map(parseEdge).filter(
-    (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target),
-  );
+  const parsedEdges = value.edges.map(parseEdge);
+  const graphIssues = graphIntegrityIssues(nodes, parsedEdges);
+  if (options.strictGraph && graphIssues.length) {
+    const issue = graphIssues[0];
+    if (issue.kind === 'duplicate-connector-id') {
+      throw new Error('This project contains duplicate connector ids.');
+    }
+    if (issue.kind === 'missing-endpoint') {
+      throw new Error('This project contains a connector with a missing layer.');
+    }
+    if (issue.kind === 'self-connection') {
+      throw new Error('This project contains a connector from a layer to itself.');
+    }
+    if (issue.kind === 'duplicate-connection') {
+      throw new Error('This project contains duplicate directed connectors.');
+    }
+  }
+  const edgeIds = new Set<string>();
+  const directedPairs = new Set<string>();
+  const edges = parsedEdges.filter((edge) => {
+    const pair = `${edge.source}\u0000${edge.target}`;
+    const valid = nodeIds.has(edge.source)
+      && nodeIds.has(edge.target)
+      && edge.source !== edge.target
+      && !edgeIds.has(edge.id)
+      && !directedPairs.has(pair);
+    edgeIds.add(edge.id);
+    directedPairs.add(pair);
+    return valid;
+  });
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 4,
     title: boundedString(value.title, 'Project title', MAX_TITLE_LENGTH),
     nodes,
     edges,
@@ -370,10 +436,10 @@ export function parseProjectBackup(source: string): EditorDocument {
   } catch {
     throw new Error('The selected file is not valid JSON.');
   }
-  if (!isRecord(value) || value.format !== PROJECT_FORMAT || (value.version !== 1 && value.version !== 2)) {
+  if (!isRecord(value) || value.format !== PROJECT_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4)) {
     throw new Error('This is not a supported SynapTable project backup.');
   }
-  return validateEditorDocument(value.document);
+  return validateEditorDocument(value.document, { strictGraph: true });
 }
 
 export function downloadProjectBackup(source: string, fileName: string) {

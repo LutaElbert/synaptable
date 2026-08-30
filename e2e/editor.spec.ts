@@ -1,35 +1,7 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { createDiagramPng } from './helpers';
 
-async function createDiagramPng(page: Page): Promise<Buffer> {
-  const bytes = await page.evaluate<number[]>(async () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 240;
-    canvas.height = 160;
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('Canvas is unavailable.');
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = '#1f2937';
-    context.lineWidth = 6;
-    context.beginPath();
-    context.moveTo(75, 80);
-    context.lineTo(165, 80);
-    context.stroke();
-    context.fillStyle = '#635bff';
-    context.fillRect(20, 45, 70, 70);
-    context.fillStyle = '#22a06b';
-    context.beginPath();
-    context.arc(190, 80, 35, 0, Math.PI * 2);
-    context.fill();
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((value) => value ? resolve(value) : reject(new Error('PNG encoding failed.')), 'image/png');
-    });
-    return Array.from(new Uint8Array(await blob.arrayBuffer()));
-  });
-  return Buffer.from(bytes);
-}
-
-test('imports, vectorizes, persists, backs up, and exports locally', async ({ page, baseURL }) => {
+test('imports, persists, backs up, and exports locally with vectorization disabled', async ({ page, baseURL }) => {
   const externalRequests: string[] = [];
   const appOrigin = new URL(baseURL ?? page.url()).origin;
   page.on('request', (request) => {
@@ -49,23 +21,9 @@ test('imports, vectorizes, persists, backs up, and exports locally', async ({ pa
     buffer: await createDiagramPng(page),
   });
   await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toBeVisible();
-
-  await page.getByRole('button', { name: 'Vectorize', exact: true }).last().click();
-  await expect(page.getByText(/Created \d+ editable vector layers/)).toBeVisible({ timeout: 45_000 });
-  await expect(page.getByRole('button', { name: 'test-map.png vector', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Expand test-map.png vector' }).click();
-  const pathList = page.getByRole('list', { name: 'test-map.png vector paths' });
-  await expect(pathList).toBeVisible();
-  expect(await pathList.locator('.path-row').count()).toBeGreaterThan(0);
-  await pathList.locator('.path-row').first().click();
-  const pathInspector = page.locator('.inspector-panel');
-  await expect(pathInspector.getByText('Vector path', { exact: true })).toBeVisible();
-  await pathInspector.getByLabel('Name').fill('Primary shape');
-  await pathInspector.getByLabel('Lock path').check();
-  await expect(pathInspector.getByRole('button', { name: 'Duplicate path' })).toBeDisabled();
-  await pathInspector.getByLabel('Lock path').uncheck();
-  await pathInspector.getByRole('button', { name: 'Duplicate path' }).click();
-  await expect(pathList.getByRole('button', { name: 'Primary shape copy', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Vectorize', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Extract layers', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Local vectorization', { exact: true })).toHaveCount(0);
   await expect(page.locator('main[data-save-state="saved"]')).toBeVisible();
 
   await page.getByRole('button', { name: 'Project backup and restore' }).click();
@@ -79,13 +37,13 @@ test('imports, vectorizes, persists, backs up, and exports locally', async ({ pa
 
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'test-map.png vector', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Project backup and restore' }).click();
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByLabel('Choose a SynapTable project backup').setInputFiles(backupPath!);
   await expect(page.getByText('Project backup restored.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'test-map.png vector', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Export SVG' }).click();
   const svgDownload = page.waitForEvent('download');
@@ -94,7 +52,7 @@ test('imports, vectorizes, persists, backs up, and exports locally', async ({ pa
 
   await page.reload();
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'test-map.png vector', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toBeVisible();
   expect(externalRequests).toEqual([]);
 });
 
@@ -125,6 +83,7 @@ test('edits, hides, locks, duplicates, deletes, undoes, and redoes layers', asyn
 
   await inspector.getByRole('button', { name: 'Duplicate layer' }).click();
   await expect(page.getByRole('button', { name: 'Launch plan copy', exact: true })).toBeVisible();
+  await expect(page.locator('.react-flow__edge')).toHaveCount(edgeCount + 1);
 
   const lockLayer = inspector.getByLabel('Lock layer');
   await lockLayer.check();
@@ -217,12 +176,16 @@ test('edits rich concept text directly with formatting, commit, cancel, undo, an
   const body = page.locator('.concept-body-editor');
   await body.fill('First milestone');
   await body.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
-  await page.getByRole('button', { name: 'Bold', exact: true }).click();
+  await body.press(process.platform === 'darwin' ? 'Meta+B' : 'Control+B');
   await page.getByRole('button', { name: 'Bulleted list', exact: true }).click();
   await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
 
   await expect(researchNode.getByText('Research plan', { exact: true })).toBeVisible();
   await expect(researchNode.getByText('First milestone', { exact: true })).toBeVisible();
+  const renderedBulletList = researchNode.locator('.concept-rich-text ul:not(.concept-task-list)');
+  await expect(renderedBulletList).toBeVisible();
+  await expect(renderedBulletList).toHaveCSS('list-style-type', 'disc');
+  await expect(renderedBulletList).toHaveCSS('list-style-position', 'outside');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(researchNode.getByText('Research', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
@@ -241,8 +204,10 @@ test('edits rich concept text directly with formatting, commit, cancel, undo, an
 
   await page.reload();
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
-  await expect(page.locator('.react-flow__node').filter({ hasText: 'Research plan' })).toBeVisible();
+  const restoredResearchNode = page.locator('.react-flow__node').filter({ hasText: 'Research plan' });
+  await expect(restoredResearchNode).toBeVisible();
   await expect(page.locator('.react-flow__node').filter({ hasText: 'First milestone' })).toBeVisible();
+  await expect(restoredResearchNode.locator('.concept-rich-text ul:not(.concept-task-list)')).toHaveCSS('list-style-type', 'disc');
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -309,7 +274,8 @@ test('bulk-arranges selected layers and edits connector labels and styles', asyn
   await expect(page.getByText('Diagram layout tidied.')).toBeVisible();
 
   const edge = page.locator('.react-flow__edge').first();
-  await edge.locator('.react-flow__edge-path').click({ force: true });
+  await edge.focus();
+  await edge.press('Enter');
   const inspector = page.locator('.inspector-panel');
   await expect(inspector.getByText('Connector label', { exact: true })).toBeVisible();
   await inspector.getByLabel('Connector label').fill('supports research');

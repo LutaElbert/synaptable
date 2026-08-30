@@ -1,4 +1,4 @@
-import { sanitizeLinkHref } from './rich-text';
+import { normalizeRichTextDocument, sanitizeLinkHref } from './rich-text';
 import type {
   EditorEdge,
   EditorNode,
@@ -88,14 +88,16 @@ function wrapLine(line: TextLine, maxCharacters: number): TextLine[] {
 
 function layoutRichText(document: RichTextDocument, width: number) {
   const maxCharacters = Math.max(12, Math.floor((width - 34) / 5.8));
-  return blockLines(document).flatMap((line) => wrapLine(line, maxCharacters));
+  return blockLines(normalizeRichTextDocument(document)).flatMap((line) => wrapLine(line, maxCharacters));
 }
 
 function conceptContentHeight(node: EditorNode, width: number) {
   if (node.data.kind !== 'concept') return 0;
-  const lines = layoutRichText(node.data.body, width);
-  const hasBody = lines.some((line) => line.runs.some((run) => run.text.trim()));
-  return hasBody ? 70 + lines.length * 15 + 12 : 78;
+  const titleLines = layoutRichText(node.data.title, width);
+  const bodyLines = layoutRichText(node.data.body, width);
+  const hasBody = bodyLines.some((line) => line.runs.some((run) => run.text.trim()));
+  const titleExtra = Math.max(0, titleLines.length - 1) * 18;
+  return hasBody ? 70 + titleExtra + bodyLines.length * 15 + 12 : 78 + titleExtra;
 }
 
 function nodeSize(node: EditorNode) {
@@ -128,16 +130,39 @@ function renderRun(run: TextRun) {
   return href ? `<a href="${xmlEscape(href)}" target="_blank">${span}</a>` : span;
 }
 
-function renderConceptText(node: EditorNode, x: number, y: number, width: number, accent: string) {
+function conceptTextPosition(node: EditorNode, x: number, width: number) {
+  if (node.data.kind !== 'concept') return { x: x + 17, anchor: 'start' };
+  if (node.data.horizontalAlign === 'center') return { x: x + width / 2, anchor: 'middle' };
+  if (node.data.horizontalAlign === 'right') return { x: x + width - 17, anchor: 'end' };
+  return { x: x + 17, anchor: 'start' };
+}
+
+function conceptVerticalOffset(node: EditorNode, width: number, height: number) {
+  if (node.data.kind !== 'concept') return 0;
+  const remaining = Math.max(0, height - conceptContentHeight(node, width));
+  if (node.data.verticalAlign === 'middle') return remaining / 2;
+  if (node.data.verticalAlign === 'bottom') return remaining;
+  return 0;
+}
+
+function renderConceptText(node: EditorNode, x: number, y: number, width: number, height: number, accent: string) {
   if (node.data.kind !== 'concept') return '';
-  const lines = layoutRichText(node.data.body, width);
-  const hasBody = lines.some((line) => line.runs.some((run) => run.text.trim()));
-  const title = `<text x="${x + 17}" y="${y + 51}" fill="${accent}" font-family="system-ui, sans-serif" font-size="15" font-weight="650">${xmlEscape(node.data.label)}</text>`;
+  const titleLines = layoutRichText(node.data.title, width);
+  const bodyLines = layoutRichText(node.data.body, width);
+  const hasBody = bodyLines.some((line) => line.runs.some((run) => run.text.trim()));
+  const verticalOffset = conceptVerticalOffset(node, width, height);
+  const textPosition = conceptTextPosition(node, x, width);
+  const title = titleLines.map((line, index) => (
+    `<text x="${textPosition.x}" y="${y + verticalOffset + 51 + index * 18}" text-anchor="${textPosition.anchor}" fill="${accent}" font-family="system-ui, sans-serif" font-size="15">${line.runs.map(renderRun).join('')}</text>`
+  )).join('\n    ');
   if (!hasBody) return title;
-  const body = lines.map((line, index) => {
-    const lineX = x + 17 + line.indent * 13;
+  const bodyOffset = Math.max(0, titleLines.length - 1) * 18;
+  const body = bodyLines.map((line, index) => {
+    const structuralLine = Boolean(line.prefix || line.indent);
+    const lineX = structuralLine ? x + 17 + line.indent * 13 : textPosition.x;
+    const anchor = structuralLine ? 'start' : textPosition.anchor;
     const prefix = line.prefix ? `<tspan font-weight="650">${xmlEscape(`${line.prefix} `)}</tspan>` : '';
-    return `<text x="${lineX}" y="${y + 72 + index * 15}" fill="#4f535c" font-family="system-ui, sans-serif" font-size="10">${prefix}${line.runs.map(renderRun).join('')}</text>`;
+    return `<text x="${lineX}" y="${y + verticalOffset + 72 + bodyOffset + index * 15}" text-anchor="${anchor}" fill="#4f535c" font-family="system-ui, sans-serif" font-size="10">${prefix}${line.runs.map(renderRun).join('')}</text>`;
   }).join('\n    ');
   return `${title}\n    ${body}`;
 }
@@ -172,10 +197,12 @@ function renderNode(node: EditorNode, offsetX: number, offsetY: number) {
     indigo: { fill: '#f5f4ff', stroke: '#817aff', accent: '#635bff' },
     mint: { fill: '#f0faf5', stroke: '#86cdae', accent: '#238661' },
   }[node.data.tone];
+  const textPosition = conceptTextPosition(node, x, width);
+  const verticalOffset = conceptVerticalOffset(node, width, height);
   return `<g id="${xmlEscape(node.id)}" opacity="${opacity}">
     <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="15" fill="${tone.fill}" stroke="${tone.stroke}" />
-    <text x="${x + 17}" y="${y + 25}" fill="#858891" font-family="system-ui, sans-serif" font-size="9" letter-spacing="1">${xmlEscape(node.data.eyebrow.toUpperCase())}</text>
-    ${renderConceptText(node, x, y, width, tone.accent)}
+    <text x="${textPosition.x}" y="${y + verticalOffset + 25}" text-anchor="${textPosition.anchor}" fill="#858891" font-family="system-ui, sans-serif" font-size="9" letter-spacing="1">${xmlEscape(node.data.eyebrow.toUpperCase())}</text>
+    ${renderConceptText(node, x, y, width, height, tone.accent)}
   </g>`;
 }
 
@@ -187,10 +214,11 @@ function renderEdges(edges: EditorEdge[], nodes: EditorNode[], offsetX: number, 
       if (!source || !target || source.hidden || target.hidden) return '';
       const sourceSize = nodeSize(source);
       const targetSize = nodeSize(target);
-      const x1 = source.position.x - offsetX + sourceSize.width;
-      const y1 = source.position.y - offsetY + sourceSize.height / 2;
-      const x2 = target.position.x - offsetX;
-      const y2 = target.position.y - offsetY + targetSize.height / 2;
+      const vertical = edge.sourceHandle === 'bottom' && edge.targetHandle === 'top';
+      const x1 = source.position.x - offsetX + (vertical ? sourceSize.width / 2 : sourceSize.width);
+      const y1 = source.position.y - offsetY + (vertical ? sourceSize.height : sourceSize.height / 2);
+      const x2 = target.position.x - offsetX + (vertical ? targetSize.width / 2 : 0);
+      const y2 = target.position.y - offsetY + (vertical ? 0 : targetSize.height / 2);
       const middleX = (x1 + x2) / 2;
       const middleY = (y1 + y2) / 2;
       const kind = edge.data?.kind ?? 'default';
@@ -200,7 +228,10 @@ function renderEdges(edges: EditorEdge[], nodes: EditorNode[], offsetX: number, 
       const label = edge.data?.label?.trim()
         ? `<text x="${middleX}" y="${middleY - 7}" text-anchor="middle" fill="#656973" font-family="system-ui, sans-serif" font-size="9"><tspan stroke="white" stroke-width="4" paint-order="stroke">${xmlEscape(edge.data.label)}</tspan></text>`
         : '';
-      return `<g><path d="M ${x1} ${y1} C ${middleX} ${y1}, ${middleX} ${y2}, ${x2} ${y2}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth}"${dash} marker-end="url(#arrow)" />${label}</g>`;
+      const path = vertical
+        ? `M ${x1} ${y1} C ${x1} ${middleY}, ${x2} ${middleY}, ${x2} ${y2}`
+        : `M ${x1} ${y1} C ${middleX} ${y1}, ${middleX} ${y2}, ${x2} ${y2}`;
+      return `<g><path d="${path}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth}"${dash} marker-end="url(#arrow)" />${label}</g>`;
     })
     .join('');
 }

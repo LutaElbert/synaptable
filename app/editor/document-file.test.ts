@@ -15,21 +15,119 @@ describe('SynapTable project backups', () => {
     expect(restored.nodes).toHaveLength(initialDocument.nodes.length);
     expect(restored.edges).toHaveLength(initialDocument.edges.length);
     expect(restored.nodes.every((node) => node.selected === false)).toBe(true);
-    expect(restored.schemaVersion).toBe(2);
+    expect(restored.schemaVersion).toBe(4);
   });
 
-  it('migrates version 1 projects to rich-text document version 2', () => {
+  it('migrates version 1 projects to the current document version', () => {
     const legacy = structuredClone(initialDocument) as unknown as Record<string, unknown>;
     legacy.schemaVersion = 1;
     const nodes = legacy.nodes as Array<{ data: Record<string, unknown> }>;
     for (const node of nodes) {
       delete node.data.body;
       delete node.data.collapsed;
+      delete node.data.title;
     }
     const migrated = validateEditorDocument(legacy);
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.schemaVersion).toBe(4);
     const concept = migrated.nodes.find((node) => node.data.kind === 'concept');
     expect(concept?.data.kind === 'concept' && concept.data.body.type).toBe('doc');
+    expect(concept?.data.kind === 'concept' && concept.data.title.type).toBe('doc');
+  });
+
+  it('migrates version 2 labels into formatted titles', () => {
+    const legacy = structuredClone(initialDocument) as unknown as Record<string, unknown>;
+    legacy.schemaVersion = 2;
+    const nodes = legacy.nodes as Array<{ data: Record<string, unknown> }>;
+    for (const node of nodes) delete node.data.title;
+    const migrated = validateEditorDocument(legacy);
+    const concept = migrated.nodes.find((node) => node.data.kind === 'concept');
+    if (!concept || concept.data.kind !== 'concept') throw new Error('Missing concept fixture.');
+    expect(migrated.schemaVersion).toBe(4);
+    expect(concept.data.title.content?.[0].content?.[0].marks).toEqual([{ type: 'bold' }]);
+  });
+
+  it('migrates version 3 concepts to default content alignment', () => {
+    const legacy = structuredClone(initialDocument) as unknown as Record<string, unknown>;
+    legacy.schemaVersion = 3;
+    const nodes = legacy.nodes as Array<{ data: Record<string, unknown> }>;
+    for (const node of nodes) {
+      delete node.data.horizontalAlign;
+      delete node.data.verticalAlign;
+    }
+    const migrated = validateEditorDocument(legacy);
+    const concept = migrated.nodes.find((node) => node.data.kind === 'concept');
+    expect(migrated.schemaVersion).toBe(4);
+    expect(concept?.data.kind === 'concept' && concept.data.horizontalAlign).toBe('left');
+    expect(concept?.data.kind === 'concept' && concept.data.verticalAlign).toBe('top');
+  });
+
+  it('round-trips content alignment in version 4 projects', () => {
+    const document = structuredClone(initialDocument);
+    const concept = document.nodes.find((node) => node.data.kind === 'concept');
+    if (!concept || concept.data.kind !== 'concept') throw new Error('Missing concept fixture.');
+    concept.data.horizontalAlign = 'right';
+    concept.data.verticalAlign = 'bottom';
+    const restored = parseProjectBackup(serializeProjectBackup(document));
+    const restoredConcept = restored.nodes.find((node) => node.id === concept.id);
+    expect(restoredConcept?.data.kind === 'concept' && restoredConcept.data.horizontalAlign).toBe('right');
+    expect(restoredConcept?.data.kind === 'concept' && restoredConcept.data.verticalAlign).toBe('bottom');
+  });
+
+  it('removes trailing empty checklist rows while loading saved documents', () => {
+    const stored = structuredClone(initialDocument);
+    const concept = stored.nodes.find((node) => node.data.kind === 'concept');
+    if (!concept || concept.data.kind !== 'concept') throw new Error('Missing concept fixture.');
+    concept.data.body = {
+      type: 'doc',
+      content: [{
+        type: 'taskList',
+        content: [
+          {
+            type: 'taskItem',
+            attrs: { checked: false },
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Keep' }] }],
+          },
+          {
+            type: 'taskItem',
+            attrs: { checked: false },
+            content: [{ type: 'paragraph' }],
+          },
+        ],
+      }],
+    };
+
+    const restored = validateEditorDocument(stored);
+    const restoredConcept = restored.nodes.find((node) => node.id === concept.id);
+    expect(restoredConcept?.data.kind === 'concept' && restoredConcept.data.body.content?.[0].content).toHaveLength(1);
+  });
+
+  it('rejects multiline concept titles', () => {
+    const invalid = structuredClone(initialDocument);
+    const concept = invalid.nodes.find((node) => node.data.kind === 'concept');
+    if (!concept || concept.data.kind !== 'concept') throw new Error('Missing concept fixture.');
+    concept.data.title = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'First' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'Second' }] },
+      ],
+    };
+    expect(() => validateEditorDocument(invalid)).toThrow('single line');
+  });
+
+  it('rejects unsafe links in concept titles', () => {
+    const unsafe = structuredClone(initialDocument);
+    const concept = unsafe.nodes.find((node) => node.data.kind === 'concept');
+    if (!concept || concept.data.kind !== 'concept') throw new Error('Missing concept fixture.');
+    concept.data.title.content = [{
+      type: 'paragraph',
+      content: [{
+        type: 'text',
+        text: 'unsafe',
+        marks: [{ type: 'link', attrs: { href: 'javascript:alert(1)' } }],
+      }],
+    }];
+    expect(() => validateEditorDocument(unsafe)).toThrow('unsafe link');
   });
 
   it('rejects unsafe rich-text links', () => {
@@ -51,6 +149,56 @@ describe('SynapTable project backups', () => {
     const duplicate = structuredClone(initialDocument);
     duplicate.nodes[1].id = duplicate.nodes[0].id;
     expect(() => validateEditorDocument(duplicate)).toThrow('duplicate layer ids');
+  });
+
+  it.each([
+    {
+      name: 'duplicate connector ids',
+      message: 'duplicate connector ids',
+      mutate(document: typeof initialDocument) {
+        document.edges[1].id = document.edges[0].id;
+      },
+    },
+    {
+      name: 'missing connector endpoints',
+      message: 'missing layer',
+      mutate(document: typeof initialDocument) {
+        document.edges[0].target = 'missing-layer';
+      },
+    },
+    {
+      name: 'self-connections',
+      message: 'layer to itself',
+      mutate(document: typeof initialDocument) {
+        document.edges[0].target = document.edges[0].source;
+      },
+    },
+    {
+      name: 'duplicate directed connectors',
+      message: 'duplicate directed connectors',
+      mutate(document: typeof initialDocument) {
+        document.edges[1].source = document.edges[0].source;
+        document.edges[1].target = document.edges[0].target;
+      },
+    },
+  ])('rejects $name in portable backups', ({ message, mutate }) => {
+    const document = structuredClone(initialDocument);
+    mutate(document);
+    const envelope = JSON.stringify({
+      format: 'synaptable-project',
+      version: 2,
+      document,
+    });
+    expect(() => parseProjectBackup(envelope)).toThrow(message);
+  });
+
+  it('repairs invalid local graph edges without losing valid layers', () => {
+    const local = structuredClone(initialDocument);
+    local.edges.push({ ...structuredClone(local.edges[0]), id: 'duplicate-pair' });
+    local.edges.push({ ...structuredClone(local.edges[0]), id: 'orphan', target: 'missing-layer' });
+    const repaired = validateEditorDocument(local);
+    expect(repaired.nodes).toHaveLength(local.nodes.length);
+    expect(repaired.edges).toHaveLength(initialDocument.edges.length);
   });
 
   it('rejects unsupported project envelopes', () => {

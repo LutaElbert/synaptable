@@ -1,8 +1,9 @@
 import { MarkerType } from '@xyflow/react';
+import { conceptTitleFromPlainText } from './rich-text';
 import type { EditorDocument } from './types';
 
 export const initialDocument: EditorDocument = {
-  schemaVersion: 2,
+  schemaVersion: 4,
   title: 'Untitled concept map',
   updatedAt: Date.now(),
   nodes: [
@@ -16,10 +17,13 @@ export const initialDocument: EditorDocument = {
         kind: 'concept',
         name: 'Research',
         label: 'Research',
+        title: conceptTitleFromPlainText('Research'),
         body: { type: 'doc', content: [{ type: 'paragraph' }] },
         eyebrow: 'Starting point',
         tone: 'indigo',
         collapsed: false,
+        horizontalAlign: 'left',
+        verticalAlign: 'top',
         opacity: 1,
         locked: false,
       },
@@ -34,10 +38,13 @@ export const initialDocument: EditorDocument = {
         kind: 'concept',
         name: 'Explore tools',
         label: 'Explore tools',
+        title: conceptTitleFromPlainText('Explore tools'),
         body: { type: 'doc', content: [{ type: 'paragraph' }] },
         eyebrow: 'Next step',
         tone: 'ink',
         collapsed: false,
+        horizontalAlign: 'left',
+        verticalAlign: 'top',
         opacity: 1,
         locked: false,
       },
@@ -52,10 +59,13 @@ export const initialDocument: EditorDocument = {
         kind: 'concept',
         name: 'Editable layers',
         label: 'Editable layers',
+        title: conceptTitleFromPlainText('Editable layers'),
         body: { type: 'doc', content: [{ type: 'paragraph' }] },
         eyebrow: 'Output',
         tone: 'mint',
         collapsed: false,
+        horizontalAlign: 'left',
+        verticalAlign: 'top',
         opacity: 1,
         locked: false,
       },

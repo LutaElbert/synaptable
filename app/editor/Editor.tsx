@@ -12,16 +12,23 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  reconnectEdge,
   useReactFlow,
   type Connection,
   type EdgeChange,
   type NodeChange,
   type NodeProps,
+  type ResizeParams,
 } from '@xyflow/react';
 import {
+  AlignHorizontalJustifyStart,
+  AlignHorizontalSpaceBetween,
+  AlignVerticalJustifyStart,
+  AlignVerticalSpaceBetween,
   ArrowDown,
   ArrowUp,
   Check,
@@ -61,9 +68,12 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
 } from 'react';
 import '@xyflow/react/dist/style.css';
 import {
@@ -73,8 +83,26 @@ import {
   serializeProjectBackup,
 } from './document-file';
 import { buildSvgDocument, downloadSvg } from './export-svg';
+import { EDITOR_FEATURES } from './features';
 import { fileToDataUrl, validateImageFile } from './image-file';
+import {
+  canConnect,
+  collapsedDescendantIds,
+  connectionIssue,
+  connectionIssueMessage,
+  removeNodesAndConnections,
+  tidyGraphPositions,
+} from './graph-rules';
 import { initialDocument } from './initial-document';
+import {
+  CONCEPT_DEFAULT_WIDTH,
+  CONCEPT_EDIT_MIN_HEIGHT,
+  CONCEPT_EDIT_MIN_WIDTH,
+  CONCEPT_MIN_HEIGHT,
+  CONCEPT_MIN_WIDTH,
+  editorNodeDimensions,
+  relativeConceptLayout,
+} from './node-layout';
 import {
   clearLocalDocument,
   createLocalCheckpoint,
@@ -84,7 +112,14 @@ import {
   saveLocalDocument,
   type LocalCheckpoint,
 } from './persistence';
-import { emptyRichText, richTextIsEmpty, richTextToPlainText } from './rich-text';
+import {
+  conceptTitleFromPlainText,
+  emptyRichText,
+  normalizeRichTextDocument,
+  replaceRichTextPlainText,
+  richTextIsEmpty,
+  richTextToPlainText,
+} from './rich-text';
 import { RichTextView } from './RichTextView';
 import type {
   ConversionOptions,
@@ -98,10 +133,41 @@ import { vectorizeDataUrl } from './vectorize';
 
 type EditorSnapshot = Pick<EditorDocument, 'nodes' | 'edges'>;
 type ToolMode = 'select' | 'hand';
+type SelectionOperation = 'replace' | 'add' | 'subtract';
 type MobilePanel = 'layers' | 'inspector' | null;
 type Toast = { id: number; message: string; tone: 'info' | 'success' | 'error' };
 const MAX_FILES_PER_IMPORT = 12;
 const InlineConceptEditor = lazy(() => import('./InlineConceptEditor'));
+const RESIZE_OBSERVER_NOTIFICATIONS = new Set([
+  'ResizeObserver loop completed with undelivered notifications.',
+  'ResizeObserver loop limit exceeded',
+]);
+
+function installFrameScheduledResizeObserver() {
+  if (typeof window === 'undefined' || typeof window.ResizeObserver === 'undefined') return;
+  const resizeWindow = window as typeof window & { __synaptableFrameScheduledResizeObserver?: boolean };
+  if (resizeWindow.__synaptableFrameScheduledResizeObserver) return;
+  const NativeResizeObserver = window.ResizeObserver;
+  window.ResizeObserver = class FrameScheduledResizeObserver extends NativeResizeObserver {
+    constructor(callback: ResizeObserverCallback) {
+      let frameId: number | null = null;
+      let pendingEntries: ResizeObserverEntry[] = [];
+      super((entries, observer) => {
+        pendingEntries = entries;
+        if (frameId !== null) return;
+        frameId = window.requestAnimationFrame(() => {
+          frameId = null;
+          const nextEntries = pendingEntries;
+          pendingEntries = [];
+          callback(nextEntries, observer);
+        });
+      });
+    }
+  };
+  resizeWindow.__synaptableFrameScheduledResizeObserver = true;
+}
+
+installFrameScheduledResizeObserver();
 const CONCEPT_TEMPLATES = {
   idea: {
     name: 'New idea',
@@ -135,10 +201,11 @@ type NodeActionContextValue = {
   keepImage: (id: string) => void;
   vectorizeImage: (id: string, expandLayers?: boolean) => void;
   cancelVectorization: () => void;
-  recordResizeStart: () => void;
-  recordResizeEnd: () => void;
+  recordResizeStart: (id: string) => void;
+  recordResize: (id: string, dimensions: ResizeParams) => void;
+  recordResizeEnd: (id: string, dimensions: ResizeParams) => void;
   beginConceptEdit: (id: string) => void;
-  updateConceptTitle: (id: string, title: string) => void;
+  updateConceptTitle: (id: string, title: RichTextDocument) => void;
   updateConceptBody: (id: string, body: RichTextDocument) => void;
   commitConceptEdit: () => void;
   cancelConceptEdit: () => void;
@@ -148,6 +215,7 @@ type NodeActionContextValue = {
 };
 
 const NodeActionContext = createContext<NodeActionContextValue | null>(null);
+const SelectedNodeCountContext = createContext(0);
 
 function useNodeActions() {
   const value = useContext(NodeActionContext);
@@ -168,11 +236,13 @@ function CommonHandles() {
 
 function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
   const actions = useNodeActions();
+  const selectedNodeCount = useContext(SelectedNodeCountContext);
   if (data.kind !== 'concept') return null;
   const editing = actions.editingConceptId === id;
+  const singleSelection = selected && selectedNodeCount === 1;
   return (
     <>
-      <NodeToolbar isVisible={selected && !editing && !data.locked} position={Position.Top} offset={14}>
+      <NodeToolbar isVisible={singleSelection && !editing && !data.locked} position={Position.Top} offset={14}>
         <div className="node-actionbar nodrag nowheel" aria-label="Concept actions">
           <button type="button" onClick={() => actions.beginConceptEdit(id)}><TypeIcon size={14} /> Edit text</button>
           <button type="button" onClick={() => actions.addConceptRelative(id, 'child')}><Plus size={14} /> Add child</button>
@@ -180,14 +250,15 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
         </div>
       </NodeToolbar>
       <NodeResizer
-        isVisible={selected && !data.locked && !editing}
-        minWidth={150}
-        minHeight={68}
-        onResizeStart={actions.recordResizeStart}
-        onResizeEnd={actions.recordResizeEnd}
+        isVisible={singleSelection && !data.locked && !editing}
+        minWidth={CONCEPT_MIN_WIDTH}
+        minHeight={CONCEPT_MIN_HEIGHT}
+        onResizeStart={() => actions.recordResizeStart(id)}
+        onResize={(_, dimensions) => actions.recordResize(id, dimensions)}
+        onResizeEnd={(_, dimensions) => actions.recordResizeEnd(id, dimensions)}
       />
       <article
-        className={`concept-node tone-${data.tone} ${editing ? 'is-editing nodrag nowheel' : ''}`}
+        className={`concept-node tone-${data.tone} content-align-${data.horizontalAlign} content-valign-${data.verticalAlign} ${editing ? 'is-editing nodrag nowheel' : ''}`}
         style={{ opacity: data.opacity }}
         onDoubleClick={(event) => {
           event.stopPropagation();
@@ -198,7 +269,7 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
         {editing ? (
           <Suspense fallback={<span className="editor-loading">Loading editor…</span>}>
             <InlineConceptEditor
-              title={data.label}
+              title={data.title}
               body={data.body}
               onTitleChange={(title) => actions.updateConceptTitle(id, title)}
               onBodyChange={(body) => actions.updateConceptBody(id, body)}
@@ -208,7 +279,9 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
           </Suspense>
         ) : (
           <>
-            <strong>{data.label || 'Untitled concept'}</strong>
+            {data.label
+              ? <RichTextView document={data.title} className="concept-title-rich-text" />
+              : <strong className="concept-title-placeholder">Untitled concept</strong>}
             {!richTextIsEmpty(data.body) ? <RichTextView document={data.body} /> : null}
           </>
         )}
@@ -234,38 +307,51 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
 
 function RasterNode({ id, data, selected }: NodeProps<EditorNode>) {
   const actions = useNodeActions();
+  const selectedNodeCount = useContext(SelectedNodeCountContext);
   if (data.kind !== 'raster') return null;
   const isConverting = actions.convertingId === id;
+  const singleSelection = selected && selectedNodeCount === 1;
   return (
     <>
-      <NodeToolbar isVisible={selected} position={Position.Top} offset={14}>
+      <NodeToolbar isVisible={singleSelection && !data.locked} position={Position.Top} offset={14}>
         <div className="node-actionbar nodrag nowheel" aria-label="Image actions">
           <button type="button" onClick={() => actions.keepImage(id)}>
             <Check size={14} /> Keep image
           </button>
-          <button
-            type="button"
-            onClick={() => isConverting ? actions.cancelVectorization() : actions.vectorizeImage(id)}
-          >
-            {isConverting ? <X size={14} /> : <Shapes size={14} />}
-            {isConverting ? 'Cancel' : 'Vectorize'}
+          <button type="button" onClick={() => actions.addConceptRelative(id, 'child')}>
+            <Plus size={14} /> Add child
           </button>
-          <button
-            type="button"
-            onClick={() => actions.vectorizeImage(id, true)}
-            disabled={isConverting}
-          >
-            <Layers3 size={14} /> Extract layers
+          <button type="button" onClick={() => actions.addConceptRelative(id, 'sibling')}>
+            <Plus size={14} /> Add sibling
           </button>
+          {EDITOR_FEATURES.imageVectorization ? (
+            <>
+              <button
+                type="button"
+                onClick={() => isConverting ? actions.cancelVectorization() : actions.vectorizeImage(id)}
+              >
+                {isConverting ? <X size={14} /> : <Shapes size={14} />}
+                {isConverting ? 'Cancel' : 'Vectorize'}
+              </button>
+              <button
+                type="button"
+                onClick={() => actions.vectorizeImage(id, true)}
+                disabled={isConverting}
+              >
+                <Layers3 size={14} /> Extract layers
+              </button>
+            </>
+          ) : null}
         </div>
       </NodeToolbar>
       <NodeResizer
-        isVisible={selected && !data.locked}
+        isVisible={singleSelection && !data.locked}
         minWidth={120}
         minHeight={80}
         keepAspectRatio
-        onResizeStart={actions.recordResizeStart}
-        onResizeEnd={actions.recordResizeEnd}
+        onResizeStart={() => actions.recordResizeStart(id)}
+        onResize={(_, dimensions) => actions.recordResize(id, dimensions)}
+        onResizeEnd={(_, dimensions) => actions.recordResizeEnd(id, dimensions)}
       />
       <figure className="raster-node" style={{ opacity: data.opacity }}>
         {/* The user-provided image is the content of this editable layer. */}
@@ -289,19 +375,22 @@ function RasterNode({ id, data, selected }: NodeProps<EditorNode>) {
   );
 }
 
-function VectorNode({ data, selected }: NodeProps<EditorNode>) {
+function VectorNode({ id, data, selected }: NodeProps<EditorNode>) {
   const actions = useNodeActions();
+  const selectedNodeCount = useContext(SelectedNodeCountContext);
   if (data.kind !== 'vector') return null;
   const [minX, minY, width, height] = data.viewBox;
+  const singleSelection = selected && selectedNodeCount === 1;
   return (
     <>
       <NodeResizer
-        isVisible={selected && !data.locked}
+        isVisible={singleSelection && !data.locked}
         minWidth={120}
         minHeight={80}
         keepAspectRatio
-        onResizeStart={actions.recordResizeStart}
-        onResizeEnd={actions.recordResizeEnd}
+        onResizeStart={() => actions.recordResizeStart(id)}
+        onResize={(_, dimensions) => actions.recordResize(id, dimensions)}
+        onResizeEnd={(_, dimensions) => actions.recordResizeEnd(id, dimensions)}
       />
       <div className="vector-node" style={{ opacity: data.opacity }}>
         <svg
@@ -340,6 +429,46 @@ function cloneSnapshot(nodes: EditorNode[], edges: EditorEdge[]): EditorSnapshot
   return structuredClone({ nodes, edges });
 }
 
+type PersistableEditorState = {
+  title: string;
+  nodes: EditorNode[];
+  edges: EditorEdge[];
+};
+
+const TRANSIENT_ELEMENT_KEYS = new Set(['selected', 'dragging', 'measured', 'resizing']);
+
+function persistableElementEqual(left: EditorNode | EditorEdge, right: EditorNode | EditorEdge) {
+  const leftRecord = left as unknown as Record<string, unknown>;
+  const rightRecord = right as unknown as Record<string, unknown>;
+  const keys = new Set([...Object.keys(leftRecord), ...Object.keys(rightRecord)]);
+  for (const key of keys) {
+    if (TRANSIENT_ELEMENT_KEYS.has(key)) continue;
+    if (!Object.is(leftRecord[key], rightRecord[key])) return false;
+  }
+  return true;
+}
+
+function persistableEditorStateEqual(left: PersistableEditorState, right: PersistableEditorState) {
+  if (left.title !== right.title || left.nodes.length !== right.nodes.length || left.edges.length !== right.edges.length) {
+    return false;
+  }
+  return left.nodes.every((node, index) => persistableElementEqual(node, right.nodes[index]))
+    && left.edges.every((edge, index) => persistableElementEqual(edge, right.edges[index]));
+}
+
+function restoreNodeGeometry(node: EditorNode, origin: EditorNode): EditorNode {
+  const width = Number(origin.style?.width) || Number(origin.measured?.width);
+  const height = Number(origin.style?.height) || Number(origin.measured?.height);
+  return {
+    ...node,
+    position: structuredClone(origin.position),
+    style: width && height
+      ? { ...structuredClone(origin.style ?? {}), width, height }
+      : origin.style ? structuredClone(origin.style) : undefined,
+    measured: origin.measured ? structuredClone(origin.measured) : undefined,
+  };
+}
+
 function safeFileBase(fileName: string) {
   return (
     fileName
@@ -375,28 +504,6 @@ function trimHistory(history: EditorSnapshot[], maxEntries = 40, maxBytes = 48 *
   }
 }
 
-function collapsedDescendantIds(nodes: EditorNode[], edges: EditorEdge[]) {
-  const hidden = new Set<string>();
-  const children = new Map<string, string[]>();
-  for (const edge of edges) {
-    const current = children.get(edge.source) ?? [];
-    current.push(edge.target);
-    children.set(edge.source, current);
-  }
-  const visit = (id: string, seen: Set<string>) => {
-    for (const child of children.get(id) ?? []) {
-      if (seen.has(child)) continue;
-      seen.add(child);
-      hidden.add(child);
-      visit(child, seen);
-    }
-  };
-  for (const node of nodes) {
-    if (node.data.kind === 'concept' && node.data.collapsed) visit(node.id, new Set([node.id]));
-  }
-  return hidden;
-}
-
 function connectorPresentation(kind: 'default' | 'dashed' | 'emphasis') {
   return {
     stroke: kind === 'emphasis' ? '#635bff' : '#a9adb7',
@@ -410,6 +517,8 @@ function EditorInner() {
   const [edges, setEdges] = useState<EditorEdge[]>(initialDocument.edges);
   const [title, setTitle] = useState(initialDocument.title);
   const [toolMode, setToolMode] = useState<ToolMode>('select');
+  const [temporaryPanActive, setTemporaryPanActive] = useState(false);
+  const [viewportZoom, setViewportZoom] = useState(1);
   const [dragActive, setDragActive] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
@@ -431,6 +540,7 @@ function EditorInner() {
   const [searchQuery, setSearchQuery] = useState('');
   const [conceptTemplate, setConceptTemplate] = useState<keyof typeof CONCEPT_TEMPLATES>('idea');
   const [checkpoints, setCheckpoints] = useState<LocalCheckpoint[]>([]);
+  const [autosaveRevision, setAutosaveRevision] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
   const exportDialogRef = useRef<HTMLDialogElement>(null);
@@ -444,21 +554,53 @@ function EditorInner() {
   const resizeOriginRef = useRef<EditorSnapshot | null>(null);
   const fieldOriginRef = useRef<EditorSnapshot | null>(null);
   const conceptEditOriginRef = useRef<EditorSnapshot | null>(null);
+  const layerSelectionAnchorRef = useRef<string | null>(null);
+  const selectionOriginRef = useRef<Set<string>>(new Set());
+  const selectionOperationRef = useRef<SelectionOperation>('replace');
   const dragDepthRef = useRef(0);
   const conversionControllerRef = useRef<AbortController | null>(null);
   const saveQueueRef = useRef(Promise.resolve());
   const saveTicketRef = useRef(0);
-  const { screenToFlowPosition, fitView } = useReactFlow<EditorNode, EditorEdge>();
+  const autosaveInputRef = useRef<PersistableEditorState>({ title, nodes, edges });
+  const {
+    screenToFlowPosition,
+    fitView,
+    getViewport,
+    setCenter,
+    zoomIn,
+    zoomOut,
+  } = useReactFlow<EditorNode, EditorEdge>();
 
   useEffect(() => {
+    // React Flow can trigger these browser-generated notifications while its
+    // NodeResizer and internal measurements settle. The resize still completes;
+    // prevent dev overlays and error trackers from treating it as an app crash.
+    const handleResizeObserverNotification = (event: ErrorEvent) => {
+      if (!RESIZE_OBSERVER_NOTIFICATIONS.has(event.message)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener('error', handleResizeObserverNotification, true);
+    return () => window.removeEventListener('error', handleResizeObserverNotification, true);
+  }, []);
+
+  useLayoutEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     titleRef.current = title;
   }, [title]);
+  useEffect(() => {
+    const next = { title, nodes, edges };
+    const previous = autosaveInputRef.current;
+    autosaveInputRef.current = next;
+    if (!persistableEditorStateEqual(previous, next)) {
+      setAutosaveRevision((current) => current + 1);
+    }
+  }, [edges, nodes, title]);
 
   const announce = useCallback((message: string, tone: Toast['tone'] = 'info') => {
     const id = Date.now() + Math.random();
@@ -506,7 +648,7 @@ function EditorInner() {
   }, [refreshHistoryState]);
 
   const getCurrentDocument = useCallback((): EditorDocument => ({
-    schemaVersion: 2,
+    schemaVersion: 4,
     title: titleRef.current,
     nodes: nodesRef.current.map((node) => ({ ...node, selected: false })),
     edges: edgesRef.current.map((edge) => ({ ...edge, selected: false })),
@@ -561,7 +703,7 @@ function EditorInner() {
       window.clearTimeout(dirtyTimeout);
       window.clearTimeout(saveTimeout);
     };
-  }, [edges, getCurrentDocument, hydrated, nodes, queueDocumentSave, title]);
+  }, [autosaveRevision, getCurrentDocument, hydrated, queueDocumentSave]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -601,11 +743,17 @@ function EditorInner() {
 
   const handleConnect = useCallback(
     (connection: Connection) => {
+      const issue = connectionIssue(nodesRef.current, edgesRef.current, connection);
+      if (issue) {
+        announce(connectionIssueMessage(issue), 'error');
+        return;
+      }
       recordHistory();
       setEdges((current) =>
         addEdge(
           {
             ...connection,
+            id: crypto.randomUUID(),
             type: 'smoothstep',
             style: { stroke: '#a9adb7', strokeWidth: 1.5 },
             markerEnd: { type: MarkerType.ArrowClosed },
@@ -616,7 +764,22 @@ function EditorInner() {
         ),
       );
     },
-    [recordHistory],
+    [announce, recordHistory],
+  );
+
+  const handleReconnect = useCallback((edge: EditorEdge, connection: Connection) => {
+    const issue = connectionIssue(nodesRef.current, edgesRef.current, connection, edge.id);
+    if (issue) {
+      announce(connectionIssueMessage(issue), 'error');
+      return;
+    }
+    recordHistory();
+    setEdges((current) => reconnectEdge(edge, connection, current, { shouldReplaceId: false }));
+  }, [announce, recordHistory]);
+
+  const isValidConnection = useCallback(
+    (connection: Connection | EditorEdge) => canConnect(nodesRef.current, edgesRef.current, connection),
+    [],
   );
 
   const selectNode = useCallback((id: string, additive = false) => {
@@ -626,6 +789,7 @@ function EditorInner() {
         selected: additive ? node.id === id ? !node.selected : node.selected : node.id === id,
       })),
     );
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
     setSelectedPath(null);
   }, []);
 
@@ -647,6 +811,7 @@ function EditorInner() {
         ? { ...node.data, collapsed: false }
         : node.data,
     })));
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
     setSelectedPath(null);
     window.setTimeout(() => fitView({ nodes: [{ id }], duration: 280, padding: 0.5, maxZoom: 1.4 }), 0);
   }, [fitView]);
@@ -735,23 +900,118 @@ function EditorInner() {
     return () => window.removeEventListener('paste', onPaste);
   }, [ingestFiles]);
 
+  const selectAllVisibleLayers = useCallback(() => {
+    const collapsed = collapsedDescendantIds(nodesRef.current, edgesRef.current);
+    const selectableIds = new Set(
+      nodesRef.current
+        .filter((node) => !node.hidden && !node.data.locked && !collapsed.has(node.id))
+        .map((node) => node.id),
+    );
+    setNodes((current) => current.map((node) => ({
+      ...node,
+      selected: selectableIds.has(node.id),
+    })));
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    setSelectedPath(null);
+    layerSelectionAnchorRef.current = selectableIds.values().next().value ?? null;
+    announce(
+      selectableIds.size
+        ? `${selectableIds.size} ${selectableIds.size === 1 ? 'layer' : 'layers'} selected.`
+        : 'There are no visible unlocked layers to select.',
+    );
+  }, [announce]);
+
+  const clearCanvasSelection = useCallback(() => {
+    setNodes((current) => current.map((node) => node.selected ? { ...node, selected: false } : node));
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    setSelectedPath(null);
+    layerSelectionAnchorRef.current = null;
+  }, []);
+
+  const handleSelectionStart = useCallback((event: ReactMouseEvent) => {
+    selectionOriginRef.current = new Set(
+      nodesRef.current.filter((node) => node.selected).map((node) => node.id),
+    );
+    selectionOperationRef.current = event.altKey
+      ? 'subtract'
+      : event.shiftKey
+        ? 'add'
+        : 'replace';
+    setSelectedPath(null);
+  }, []);
+
+  const handleSelectionEnd = useCallback(() => {
+    const origin = selectionOriginRef.current;
+    const operation = selectionOperationRef.current;
+    setNodes((current) => {
+      const marqueeIds = new Set(current.filter((node) => node.selected).map((node) => node.id));
+      return current.map((node) => ({
+        ...node,
+        selected: operation === 'replace'
+          ? marqueeIds.has(node.id) && !node.data.locked
+          : operation === 'add'
+            ? origin.has(node.id) || (marqueeIds.has(node.id) && !node.data.locked)
+            : origin.has(node.id) && !(marqueeIds.has(node.id) && !node.data.locked),
+      }));
+    });
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    layerSelectionAnchorRef.current = null;
+    selectionOriginRef.current = new Set();
+    selectionOperationRef.current = 'replace';
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isEditing = Boolean(target?.closest('input, textarea, [contenteditable="true"]'));
+      const isInteractive = Boolean(target?.closest('input, textarea, select, button, a[href], [contenteditable="true"]'));
+      if (target?.closest('dialog[open]')) return;
+
+      if (!isInteractive && event.code === 'Space' && !event.repeat) {
+        event.preventDefault();
+        setTemporaryPanActive(true);
+        return;
+      }
+
+      if (event.defaultPrevented) return;
+
       if (!isEditing && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
         if (event.shiftKey) redo();
         else undo();
-      } else if (!isEditing && event.key.toLowerCase() === 'v') {
+      } else if (!isEditing && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        selectAllVisibleLayers();
+      } else if (!isEditing && event.key === 'Escape') {
+        clearCanvasSelection();
+      } else if (!isEditing && !event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'v') {
         setToolMode('select');
-      } else if (!isEditing && event.key.toLowerCase() === 'h') {
+      } else if (!isEditing && !event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'h') {
         setToolMode('hand');
+      } else if (!isEditing && !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === '+' || event.key === '=')) {
+        event.preventDefault();
+        void zoomIn({ duration: 140 });
+      } else if (!isEditing && !event.metaKey && !event.ctrlKey && !event.altKey && event.key === '-') {
+        event.preventDefault();
+        void zoomOut({ duration: 140 });
+      } else if (!isEditing && !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === '0' || event.key === 'Home')) {
+        event.preventDefault();
+        void fitView({ duration: 220, padding: 0.22 });
       }
     };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code === 'Space') setTemporaryPanActive(false);
+    };
+    const onWindowBlur = () => setTemporaryPanActive(false);
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [redo, undo]);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onWindowBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onWindowBlur);
+    };
+  }, [clearCanvasSelection, fitView, redo, selectAllVisibleLayers, undo, zoomIn, zoomOut]);
 
   useEffect(
     () => () => conversionControllerRef.current?.abort(),
@@ -767,6 +1027,10 @@ function EditorInner() {
 
   const vectorizeImage = useCallback(
     async (id: string, expandLayers = false) => {
+      if (!EDITOR_FEATURES.imageVectorization) {
+        announce('Image vectorization is currently unavailable.');
+        return;
+      }
       const raster = nodesRef.current.find((node) => node.id === id);
       if (!raster || raster.data.kind !== 'raster' || convertingId) return;
       const controller = new AbortController();
@@ -838,8 +1102,8 @@ function EditorInner() {
     conversionControllerRef.current?.abort();
   }, []);
 
-  const addConceptNode = useCallback(() => {
-    const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const addConceptAt = useCallback((screenPoint: { x: number; y: number }, editAfterCreate = false) => {
+    const center = screenToFlowPosition(screenPoint);
     const id = crypto.randomUUID();
     recordHistory();
     setNodes((current) => [
@@ -848,23 +1112,37 @@ function EditorInner() {
         id,
         type: 'concept',
         position: { x: center.x - 94, y: center.y - 39 },
+        style: { width: CONCEPT_DEFAULT_WIDTH, height: CONCEPT_MIN_HEIGHT },
         draggable: true,
         deletable: true,
         data: {
           kind: 'concept',
           name: 'New concept',
           label: 'New concept',
+          title: conceptTitleFromPlainText('New concept'),
           body: emptyRichText(),
           eyebrow: 'Concept',
           tone: 'ink',
           collapsed: false,
+          horizontalAlign: 'left',
+          verticalAlign: 'top',
           opacity: 1,
           locked: false,
         },
         selected: true,
       },
     ]);
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    setSelectedPath(null);
+    layerSelectionAnchorRef.current = id;
+    if (editAfterCreate) {
+      window.requestAnimationFrame(() => setEditingConceptId(id));
+    }
   }, [recordHistory, screenToFlowPosition]);
+
+  const addConceptNode = useCallback(() => {
+    addConceptAt({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  }, [addConceptAt]);
 
   const addConceptFromTemplate = useCallback(() => {
     const template = CONCEPT_TEMPLATES[conceptTemplate];
@@ -875,6 +1153,7 @@ function EditorInner() {
       id,
       type: 'concept',
       position: { x: center.x - 110, y: center.y - 56 },
+      style: { width: CONCEPT_DEFAULT_WIDTH, height: CONCEPT_MIN_HEIGHT },
       draggable: true,
       deletable: true,
       selected: true,
@@ -882,10 +1161,13 @@ function EditorInner() {
         kind: 'concept',
         name: template.name,
         label: template.name,
+        title: conceptTitleFromPlainText(template.name),
         body: structuredClone(template.body),
         eyebrow: template.eyebrow,
         tone: template.tone,
         collapsed: false,
+        horizontalAlign: 'left',
+        verticalAlign: 'top',
         opacity: 1,
         locked: false,
       },
@@ -895,6 +1177,9 @@ function EditorInner() {
 
   const selectedNodes = nodes.filter((node) => node.selected);
   const selectedNode = selectedNodes[0] ?? null;
+  const selectedNodeId = selectedNode?.id ?? null;
+  const selectedNodeCount = selectedNodes.length;
+  const selectedUnlockedCount = selectedNodes.filter((node) => !node.data.locked).length;
   const selectedEdge = edges.find((edge) => edge.selected) ?? null;
   const selectedVectorPath = useMemo(() => {
     if (!selectedPath) return null;
@@ -927,6 +1212,57 @@ function EditorInner() {
     setNodes((current) => current.map((node) => selectedIds.has(node.id) ? updater(node) : node));
   }, [recordHistory]);
 
+  const duplicateSelectedNodes = useCallback(() => {
+    const selected = nodesRef.current.filter((node) => node.selected && !node.data.locked);
+    if (!selected.length) return;
+    const idMap = new Map(selected.map((node) => [node.id, crypto.randomUUID()]));
+    const copies = selected.map((node): EditorNode => ({
+      ...structuredClone(node),
+      id: idMap.get(node.id)!,
+      position: { x: node.position.x + 28, y: node.position.y + 28 },
+      selected: true,
+      draggable: true,
+      deletable: true,
+      data: {
+        ...structuredClone(node.data),
+        name: `${node.data.name} copy`,
+        locked: false,
+      },
+    }));
+    const copiedEdges = edgesRef.current
+      .filter((edge) => idMap.has(edge.source) && idMap.has(edge.target))
+      .map((edge): EditorEdge => ({
+        ...structuredClone(edge),
+        id: crypto.randomUUID(),
+        source: idMap.get(edge.source)!,
+        target: idMap.get(edge.target)!,
+        selected: false,
+      }));
+    recordHistory();
+    setNodes((current) => [
+      ...current.map((node) => ({ ...node, selected: false })),
+      ...copies,
+    ]);
+    setEdges((current) => [
+      ...current.map((edge) => edge.selected ? { ...edge, selected: false } : edge),
+      ...copiedEdges,
+    ]);
+    layerSelectionAnchorRef.current = copies[0]?.id ?? null;
+    announce(`${copies.length} ${copies.length === 1 ? 'layer' : 'layers'} duplicated.`, 'success');
+  }, [announce, recordHistory]);
+
+  const setSelectedNodesLocked = useCallback((locked: boolean) => {
+    const selectedIds = new Set(nodesRef.current.filter((node) => node.selected && node.data.locked !== locked).map((node) => node.id));
+    if (!selectedIds.size) return;
+    recordHistory();
+    setNodes((current) => current.map((node) => selectedIds.has(node.id) ? {
+      ...node,
+      draggable: !locked,
+      deletable: !locked,
+      data: { ...node.data, locked },
+    } : node));
+  }, [recordHistory]);
+
   const alignSelectedNodes = useCallback((mode: 'left' | 'top' | 'horizontal' | 'vertical') => {
     const selected = nodesRef.current.filter((node) => node.selected && !node.data.locked);
     if (selected.length < 2) return;
@@ -956,40 +1292,14 @@ function EditorInner() {
     const ids = new Set(nodesRef.current.filter((node) => node.selected && !node.data.locked).map((node) => node.id));
     if (!ids.size) return;
     recordHistory();
-    setNodes((current) => current.filter((node) => !ids.has(node.id)));
-    setEdges((current) => current.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)));
+    const next = removeNodesAndConnections(nodesRef.current, edgesRef.current, ids);
+    setNodes(next.nodes);
+    setEdges(next.edges);
   }, [recordHistory]);
 
   const tidyDiagram = useCallback(() => {
-    const allNodes = nodesRef.current.filter((node) => !node.hidden);
-    if (allNodes.length < 2) return;
-    const nodeIds = new Set(allNodes.map((node) => node.id));
-    const incoming = new Map(allNodes.map((node) => [node.id, 0]));
-    const children = new Map<string, string[]>();
-    for (const edge of edgesRef.current) {
-      if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) continue;
-      incoming.set(edge.target, (incoming.get(edge.target) ?? 0) + 1);
-      children.set(edge.source, [...(children.get(edge.source) ?? []), edge.target]);
-    }
-    const roots = allNodes.filter((node) => (incoming.get(node.id) ?? 0) === 0);
-    const queue = (roots.length ? roots : [allNodes[0]]).map((node) => ({ id: node.id, depth: 0 }));
-    const depths = new Map<string, number>();
-    while (queue.length) {
-      const current = queue.shift()!;
-      if (depths.has(current.id)) continue;
-      depths.set(current.id, current.depth);
-      for (const child of children.get(current.id) ?? []) queue.push({ id: child, depth: current.depth + 1 });
-    }
-    for (const node of allNodes) if (!depths.has(node.id)) depths.set(node.id, 0);
-    const rows = new Map<number, string[]>();
-    for (const node of allNodes) {
-      const depth = depths.get(node.id) ?? 0;
-      rows.set(depth, [...(rows.get(depth) ?? []), node.id]);
-    }
-    const positions = new Map<string, { x: number; y: number }>();
-    for (const [depth, ids] of rows) {
-      ids.forEach((id, index) => positions.set(id, { x: 110 + depth * 310, y: 90 + index * 150 }));
-    }
+    const positions = tidyGraphPositions(nodesRef.current, edgesRef.current);
+    if (positions.size < 2) return;
     recordHistory();
     setNodes((current) => current.map((node) => node.data.locked || !positions.has(node.id)
       ? node
@@ -1010,8 +1320,8 @@ function EditorInner() {
       ...item,
       style: {
         ...item.style,
-        width: Math.max(250, Number(item.style?.width) || Number(item.measured?.width) || 220),
-        height: Math.max(170, Number(item.style?.height) || Number(item.measured?.height) || 78),
+        width: Math.max(CONCEPT_EDIT_MIN_WIDTH, Number(item.style?.width) || Number(item.measured?.width) || CONCEPT_DEFAULT_WIDTH),
+        height: Math.max(CONCEPT_EDIT_MIN_HEIGHT, Number(item.style?.height) || Number(item.measured?.height) || CONCEPT_MIN_HEIGHT),
       },
     } : item));
     setEditingConceptId(id);
@@ -1021,29 +1331,15 @@ function EditorInner() {
   const addConceptRelative = useCallback((id: string, relation: 'child' | 'sibling') => {
     const source = nodesRef.current.find((node) => node.id === id);
     if (!source || source.data.locked) return;
-    const incoming = edgesRef.current.find((edge) => edge.target === id);
-    const parentId = relation === 'sibling' ? incoming?.source : id;
-    const siblings = parentId
-      ? edgesRef.current.filter((edge) => edge.source === parentId).map((edge) => edge.target)
-      : [];
-    const reference = relation === 'child'
-      ? source
-      : parentId
-        ? nodesRef.current.find((node) => node.id === parentId) ?? source
-        : source;
     const newId = crypto.randomUUID();
+    const layout = relativeConceptLayout(nodesRef.current, edgesRef.current, id, relation, newId);
+    const position = layout.positions.get(newId);
+    if (!position) return;
     const nextNode: EditorNode = {
       id: newId,
       type: 'concept',
-      position: {
-        x: relation === 'child' || parentId ? reference.position.x + 290 : source.position.x + 32,
-        y: relation === 'child'
-          ? source.position.y + siblings.length * 116
-          : parentId
-            ? reference.position.y + siblings.length * 116
-            : source.position.y + 116,
-      },
-      style: { width: 250, height: 170 },
+      position,
+      style: { width: CONCEPT_DEFAULT_WIDTH, height: CONCEPT_MIN_HEIGHT },
       draggable: true,
       deletable: true,
       selected: true,
@@ -1051,22 +1347,40 @@ function EditorInner() {
         kind: 'concept',
         name: 'New concept',
         label: 'New concept',
+        title: conceptTitleFromPlainText('New concept'),
         body: emptyRichText(),
         eyebrow: relation === 'child' ? 'Child idea' : 'Related idea',
         tone: 'ink',
         collapsed: false,
+        horizontalAlign: 'left',
+        verticalAlign: 'top',
         opacity: 1,
         locked: false,
       },
     };
     recordHistory();
-    setNodes((current) => [...current.map((node) => ({ ...node, selected: false })), nextNode]);
-    if (parentId) {
-      setEdges((current) => [...current, {
+    setNodes((current) => [
+      ...current.map((node) => ({
+        ...node,
+        position: layout.positions.get(node.id) ?? node.position,
+        selected: false,
+      })),
+      nextNode,
+    ]);
+    if (layout.parentId) {
+      const parentId = layout.parentId;
+      setEdges((current) => [...current.map((edge) => edge.source === parentId ? {
+        ...edge,
+        sourceHandle: 'bottom',
+        targetHandle: 'top',
+      } : edge), {
         id: crypto.randomUUID(),
         source: parentId,
         target: newId,
+        sourceHandle: 'bottom',
+        targetHandle: 'top',
         type: 'smoothstep',
+        animated: false,
         markerEnd: { type: MarkerType.ArrowClosed },
         style: { stroke: '#a9adb7', strokeWidth: 1.5 },
         data: { label: '', kind: 'default' },
@@ -1078,7 +1392,8 @@ function EditorInner() {
     }, 60);
   }, [beginConceptEdit, fitView, recordHistory]);
 
-  const updateConceptTitle = useCallback((id: string, label: string) => {
+  const updateConceptTitle = useCallback((id: string, title: RichTextDocument) => {
+    const label = richTextToPlainText(title).slice(0, 500);
     setNodes((current) => current.map((node) => node.id === id && node.data.kind === 'concept'
       ? {
           ...node,
@@ -1086,6 +1401,7 @@ function EditorInner() {
             ...node.data,
             name: node.data.name === node.data.label ? label : node.data.name,
             label,
+            title,
           },
         }
       : node));
@@ -1098,14 +1414,38 @@ function EditorInner() {
   }, []);
 
   const commitConceptEdit = useCallback(() => {
-    if (conceptEditOriginRef.current) {
-      recordHistory(conceptEditOriginRef.current);
-      conceptEditOriginRef.current = null;
+    const id = editingConceptId;
+    const origin = conceptEditOriginRef.current;
+    if (id) {
+      const originNode = origin?.nodes.find((node) => node.id === id);
+      const currentNode = nodesRef.current.find((node) => node.id === id);
+      const normalizedNode = currentNode?.data.kind === 'concept'
+        ? {
+            ...currentNode,
+            data: {
+              ...currentNode.data,
+              body: normalizeRichTextDocument(currentNode.data.body),
+            },
+          }
+        : currentNode;
+      if (origin && originNode && normalizedNode && JSON.stringify(originNode.data) !== JSON.stringify(normalizedNode.data)) {
+        recordHistory(origin);
+      }
+      setNodes((current) => current.map((node) => {
+        if (node.id !== id || node.data.kind !== 'concept') return node;
+        const normalized = {
+          ...node,
+          data: { ...node.data, body: normalizeRichTextDocument(node.data.body) },
+        };
+        return originNode ? restoreNodeGeometry(normalized, originNode) : normalized;
+      }));
     }
+    conceptEditOriginRef.current = null;
     setEditingConceptId(null);
-  }, [recordHistory]);
+  }, [editingConceptId, recordHistory]);
 
   const cancelConceptEdit = useCallback(() => {
+    const id = editingConceptId;
     const origin = conceptEditOriginRef.current;
     if (origin) {
       setNodes(origin.nodes);
@@ -1113,7 +1453,14 @@ function EditorInner() {
       conceptEditOriginRef.current = null;
     }
     setEditingConceptId(null);
-  }, []);
+    if (id) {
+      window.setTimeout(() => {
+        const node = [...document.querySelectorAll<HTMLElement>('.react-flow__node')]
+          .find((element) => element.dataset.id === id);
+        node?.focus();
+      }, 0);
+    }
+  }, [editingConceptId]);
 
   const beginFieldEdit = useCallback(() => {
     if (!fieldOriginRef.current) {
@@ -1128,37 +1475,50 @@ function EditorInner() {
   }, [recordHistory]);
 
   const cancelFieldEdit = useCallback(() => {
+    const id = renamingLayerId;
     if (fieldOriginRef.current) {
       setNodes(fieldOriginRef.current.nodes);
       setEdges(fieldOriginRef.current.edges);
       fieldOriginRef.current = null;
     }
     setRenamingLayerId(null);
-  }, []);
+    if (id) {
+      window.setTimeout(() => {
+        const layer = [...document.querySelectorAll<HTMLElement>('[data-layer-id]')]
+          .find((element) => element.dataset.layerId === id);
+        layer?.focus();
+      }, 0);
+    }
+  }, [renamingLayerId]);
 
   useEffect(() => {
     const beginFromKeyboard = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest('input, textarea, button, [contenteditable="true"]')) return;
+      if (!target?.closest('.react-flow__node')) return;
       const selected = nodesRef.current.find((node) => node.selected);
-      if (!selected || selected.data.kind !== 'concept' || selected.data.locked) return;
-      if (event.key === 'Tab' && target?.closest('.react-flow__node')) {
+      if (!selected || selected.data.locked) return;
+      const supportsBranchCreation = selected.data.kind === 'concept' || selected.data.kind === 'raster';
+      if (supportsBranchCreation && event.key === 'Tab') {
         event.preventDefault();
+        event.stopPropagation();
         addConceptRelative(selected.id, 'child');
         return;
       }
-      if (event.key === 'Enter' && event.shiftKey) {
+      if (supportsBranchCreation && event.key === 'Enter' && event.shiftKey) {
         event.preventDefault();
+        event.stopPropagation();
         addConceptRelative(selected.id, 'sibling');
         return;
       }
-      if (event.key !== 'Enter') return;
+      if (selected.data.kind !== 'concept' || event.key !== 'Enter') return;
       event.preventDefault();
+      event.stopPropagation();
       beginConceptEdit(selected.id);
     };
-    window.addEventListener('keydown', beginFromKeyboard);
-    return () => window.removeEventListener('keydown', beginFromKeyboard);
+    window.addEventListener('keydown', beginFromKeyboard, true);
+    return () => window.removeEventListener('keydown', beginFromKeyboard, true);
   }, [addConceptRelative, beginConceptEdit]);
 
   const updateSelectedPath = useCallback(
@@ -1261,18 +1621,19 @@ function EditorInner() {
     }));
   }, [updateNode]);
 
-  const duplicateSelected = useCallback(() => {
-    if (!selectedNode) return;
+  const duplicateSelected = () => {
+    const selected = nodesRef.current.find((node) => node.id === selectedNodeId);
+    if (!selected) return;
     const copy: EditorNode = {
-      ...structuredClone(selectedNode),
+      ...structuredClone(selected),
       id: crypto.randomUUID(),
-      position: { x: selectedNode.position.x + 28, y: selectedNode.position.y + 28 },
+      position: { x: selected.position.x + 28, y: selected.position.y + 28 },
       selected: true,
       draggable: true,
       deletable: true,
       data: {
-        ...structuredClone(selectedNode.data),
-        name: `${selectedNode.data.name} copy`,
+        ...structuredClone(selected.data),
+        name: `${selected.data.name} copy`,
         locked: false,
       },
     };
@@ -1281,17 +1642,18 @@ function EditorInner() {
       ...current.map((node) => ({ ...node, selected: false })),
       copy,
     ]);
-  }, [recordHistory, selectedNode]);
+  };
 
-  const deleteSelected = useCallback(() => {
-    if (!selectedNode || selectedNode.data.locked) return;
+  const deleteSelected = () => {
+    const selected = nodesRef.current.find((node) => node.id === selectedNodeId);
+    if (!selected || selected.data.locked) return;
     recordHistory();
-    setNodes((current) => current.filter((node) => node.id !== selectedNode.id));
+    setNodes((current) => current.filter((node) => node.id !== selected.id));
     setEdges((current) =>
-      current.filter((edge) => edge.source !== selectedNode.id && edge.target !== selectedNode.id),
+      current.filter((edge) => edge.source !== selected.id && edge.target !== selected.id),
     );
     setSelectedPath(null);
-  }, [recordHistory, selectedNode]);
+  };
 
   const moveLayer = useCallback((id: string, direction: -1 | 1) => {
     recordHistory();
@@ -1437,11 +1799,32 @@ function EditorInner() {
           resizeOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
         }
       },
-      recordResizeEnd: () => {
-        if (resizeOriginRef.current) {
-          recordHistory(resizeOriginRef.current);
-          resizeOriginRef.current = null;
-        }
+      recordResize: (id, dimensions) => {
+        if (!resizeOriginRef.current) return;
+        const resizedNodes = nodesRef.current.map((node) => node.id === id
+          ? {
+              ...node,
+              position: { x: dimensions.x, y: dimensions.y },
+              style: { ...node.style, width: dimensions.width, height: dimensions.height },
+            }
+          : node);
+        nodesRef.current = resizedNodes;
+        setNodes(resizedNodes);
+      },
+      recordResizeEnd: (id) => {
+        const origin = resizeOriginRef.current;
+        const originNode = origin?.nodes.find((node) => node.id === id);
+        const currentNode = nodesRef.current.find((node) => node.id === id);
+        const originSize = originNode ? editorNodeDimensions(originNode) : null;
+        const currentSize = currentNode ? editorNodeDimensions(currentNode) : null;
+        const changed = Boolean(originNode && originSize && currentNode && currentSize && (
+          Math.abs(originSize.width - currentSize.width) >= 0.01
+          || Math.abs(originSize.height - currentSize.height) >= 0.01
+          || Math.abs(originNode.position.x - currentNode.position.x) >= 0.01
+          || Math.abs(originNode.position.y - currentNode.position.y) >= 0.01
+        ));
+        if (origin && changed) recordHistory(origin);
+        resizeOriginRef.current = null;
       },
     }),
     [
@@ -1473,19 +1856,72 @@ function EditorInner() {
     ].join(' ').toLocaleLowerCase();
     return searchable.includes(normalizedSearch);
   });
+  const handleLayerSelection = useCallback((event: ReactMouseEvent<HTMLButtonElement>, id: string) => {
+    const anchorId = layerSelectionAnchorRef.current;
+    if (event.shiftKey && anchorId) {
+      const anchorIndex = layerNodes.findIndex((node) => node.id === anchorId);
+      const targetIndex = layerNodes.findIndex((node) => node.id === id);
+      if (anchorIndex >= 0 && targetIndex >= 0) {
+        const start = Math.min(anchorIndex, targetIndex);
+        const end = Math.max(anchorIndex, targetIndex);
+        const rangeIds = new Set(layerNodes.slice(start, end + 1).map((node) => node.id));
+        setNodes((current) => current.map((node) => ({ ...node, selected: rangeIds.has(node.id) })));
+        setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+        setSelectedPath(null);
+        return;
+      }
+    }
+
+    if (event.metaKey || event.ctrlKey) {
+      if (!anchorId) layerSelectionAnchorRef.current = id;
+      selectNode(id, true);
+      return;
+    }
+
+    layerSelectionAnchorRef.current = id;
+    revealAndSelectNode(id);
+  }, [layerNodes, revealAndSelectNode, selectNode]);
   const collapsedNodeIds = useMemo(() => collapsedDescendantIds(nodes, edges), [edges, nodes]);
   const canvasNodes = useMemo(
-    () => nodes.map((node) => collapsedNodeIds.has(node.id) ? { ...node, hidden: true } : node),
+    () => nodes.map((node) => {
+      if (node.data.kind !== 'concept') {
+        return {
+          ...node,
+          hidden: Boolean(node.hidden || collapsedNodeIds.has(node.id)),
+        };
+      }
+      const minimumHeight = Number(node.style?.height) || CONCEPT_MIN_HEIGHT;
+      const style = {
+        ...node.style,
+        height: node.resizing ? minimumHeight : undefined,
+        minHeight: minimumHeight,
+        '--concept-min-block-size': `${minimumHeight}px`,
+      } as CSSProperties;
+      return {
+        ...node,
+        style,
+        hidden: Boolean(node.hidden || collapsedNodeIds.has(node.id)),
+      };
+    }),
     [collapsedNodeIds, nodes],
   );
   const canvasEdges = useMemo(
-    () => edges.filter((edge) => !collapsedNodeIds.has(edge.source) && !collapsedNodeIds.has(edge.target)),
-    [collapsedNodeIds, edges],
+    () => {
+      const nodeNames = new Map(nodes.map((node) => [node.id, node.data.name]));
+      return edges
+        .filter((edge) => !collapsedNodeIds.has(edge.source) && !collapsedNodeIds.has(edge.target))
+        .map((edge) => ({
+          ...edge,
+          ariaLabel: `Connector from ${nodeNames.get(edge.source) ?? edge.source} to ${nodeNames.get(edge.target) ?? edge.target}${edge.data?.label ? `: ${edge.data.label}` : ''}`,
+        }));
+    },
+    [collapsedNodeIds, edges, nodes],
   );
 
   return (
-    <NodeActionContext.Provider value={nodeActionValue}>
-      <main
+    <SelectedNodeCountContext.Provider value={selectedNodeCount}>
+      <NodeActionContext.Provider value={nodeActionValue}>
+        <main
         className="editor-shell"
         aria-label="SynapTable diagram editor"
         aria-busy={!hydrated}
@@ -1531,10 +1967,24 @@ function EditorInner() {
             <button type="button" className="ghost-button new-button" onClick={() => void resetDocument()}>
               <RotateCcw size={14} /> New
             </button>
-            <button type="button" className="icon-button" aria-label="Undo" onClick={undo} disabled={!historyState.canUndo}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Undo"
+              onClick={undo}
+              disabled={!hydrated || !historyState.canUndo}
+              suppressHydrationWarning
+            >
               <Undo2 size={16} />
             </button>
-            <button type="button" className="icon-button" aria-label="Redo" onClick={redo} disabled={!historyState.canRedo}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Redo"
+              onClick={redo}
+              disabled={!hydrated || !historyState.canRedo}
+              suppressHydrationWarning
+            >
               <Redo2 size={16} />
             </button>
             <button type="button" className="primary-button" aria-label="Export SVG" onClick={openExport}>
@@ -1576,7 +2026,10 @@ function EditorInner() {
             </select>
             <button type="button" onClick={addConceptFromTemplate}><Plus size={12} /> Add</button>
           </div>
-          <ul className="layer-list" aria-label="Canvas layers">
+          <p id="layer-list-instructions" className="visually-hidden">
+            Double-click an unlocked layer or press F2 while it is focused to rename it.
+          </p>
+          <ul className="layer-list" aria-label="Canvas layers" aria-describedby="layer-list-instructions">
             {layerNodes.map((node) => {
               const expanded = expandedVectors.has(node.id);
               return (
@@ -1614,7 +2067,14 @@ function EditorInner() {
                             setRenamingLayerId(null);
                           }}
                           onKeyDown={(event) => {
-                            if (event.key === 'Enter') event.currentTarget.blur();
+                            if (event.key === 'Enter') {
+                              event.currentTarget.blur();
+                              window.setTimeout(() => {
+                                const layer = [...document.querySelectorAll<HTMLElement>('[data-layer-id]')]
+                                  .find((element) => element.dataset.layerId === node.id);
+                                layer?.focus();
+                              }, 0);
+                            }
                             if (event.key === 'Escape') {
                               event.preventDefault();
                               cancelFieldEdit();
@@ -1626,10 +2086,15 @@ function EditorInner() {
                       <button
                         type="button"
                         className="layer-main"
+                        data-layer-id={node.id}
                         aria-pressed={node.selected === true}
-                        onClick={(event) => event.metaKey || event.ctrlKey || event.shiftKey
-                          ? selectNode(node.id, true)
-                          : revealAndSelectNode(node.id)}
+                        onClick={(event) => handleLayerSelection(event, node.id)}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'F2' || node.data.locked) return;
+                          event.preventDefault();
+                          beginFieldEdit();
+                          setRenamingLayerId(node.id);
+                        }}
                         onDoubleClick={() => {
                           if (node.data.locked) return;
                           beginFieldEdit();
@@ -1689,7 +2154,7 @@ function EditorInner() {
 
         <section
           id="canvas-workspace"
-          className={`canvas-region ${dragActive ? 'drag-active' : ''}`}
+          className={`canvas-region tool-${toolMode} ${dragActive ? 'drag-active' : ''} ${temporaryPanActive ? 'temporary-pan' : ''} ${selectedNodeCount > 1 ? 'multi-selection-active' : ''}`}
           aria-label="Canvas workspace"
           tabIndex={-1}
           onDragEnter={(event) => {
@@ -1712,6 +2177,12 @@ function EditorInner() {
             setDragActive(false);
             void ingestFiles(Array.from(event.dataTransfer.files), { x: event.clientX, y: event.clientY });
           }}
+          onDoubleClick={(event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (toolMode !== 'select' || !target?.classList.contains('react-flow__pane')) return;
+            event.preventDefault();
+            addConceptAt({ x: event.clientX, y: event.clientY }, true);
+          }}
         >
           <ReactFlow<EditorNode, EditorEdge>
             nodes={canvasNodes}
@@ -1720,6 +2191,8 @@ function EditorInner() {
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
             onConnect={handleConnect}
+            onReconnect={handleReconnect}
+            isValidConnection={isValidConnection}
             onNodeDragStart={() => {
               dragOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
             }}
@@ -1729,16 +2202,34 @@ function EditorInner() {
                 dragOriginRef.current = null;
               }
             }}
+            onSelectionStart={handleSelectionStart}
+            onSelectionEnd={handleSelectionEnd}
             onPaneClick={() => setSelectedPath(null)}
+            onMove={(_, viewport) => setViewportZoom(viewport.zoom)}
             fitView
             fitViewOptions={{ padding: 0.22 }}
             minZoom={0.15}
             maxZoom={4}
-            panOnDrag={toolMode === 'hand'}
-            nodesDraggable={toolMode === 'select'}
+            panOnDrag={toolMode === 'hand' ? true : [1]}
+            panActivationKeyCode="Space"
+            panOnScroll
+            zoomOnScroll={false}
+            zoomActivationKeyCode={['Meta', 'Control']}
+            zoomOnPinch
+            zoomOnDoubleClick={false}
+            selectionOnDrag={toolMode === 'select'}
+            selectionMode={SelectionMode.Partial}
+            selectionKeyCode={['Meta', 'Control']}
+            multiSelectionKeyCode={['Meta', 'Control', 'Shift']}
+            paneClickDistance={5}
+            nodeClickDistance={3}
+            autoPanOnSelection
+            autoPanOnNodeDrag
+            autoPanOnConnect
+            nodesDraggable={toolMode === 'select' && !temporaryPanActive}
             nodesFocusable
             edgesFocusable
-            selectNodesOnDrag={toolMode === 'select'}
+            selectNodesOnDrag={toolMode === 'select' && !temporaryPanActive}
             deleteKeyCode={['Backspace', 'Delete']}
             ariaLabelConfig={{
               'controls.ariaLabel': 'Canvas controls',
@@ -1746,6 +2237,69 @@ function EditorInner() {
             }}
           >
             <Background color="#d8dbe2" gap={18} size={1} />
+            <NodeToolbar
+              nodeId={selectedNodes.map((node) => node.id)}
+              isVisible={selectedNodeCount > 1}
+              position={Position.Top}
+              offset={18}
+            >
+              <div
+                className="multi-node-actionbar nodrag nowheel"
+                role="group"
+                aria-label={`${selectedNodeCount} selected layer actions`}
+              >
+                <span className="multi-node-count"><Layers3 size={14} /> {selectedNodeCount} selected</span>
+                <button
+                  type="button"
+                  aria-label="Duplicate selected layers"
+                  title="Duplicate selected layers"
+                  disabled={selectedUnlockedCount === 0}
+                  onClick={duplicateSelectedNodes}
+                ><Copy size={14} /></button>
+                <button
+                  type="button"
+                  aria-label="Align selected layers left"
+                  title="Align left"
+                  disabled={selectedUnlockedCount < 2}
+                  onClick={() => alignSelectedNodes('left')}
+                ><AlignHorizontalJustifyStart size={14} /></button>
+                <button
+                  type="button"
+                  aria-label="Align selected layers top"
+                  title="Align top"
+                  disabled={selectedUnlockedCount < 2}
+                  onClick={() => alignSelectedNodes('top')}
+                ><AlignVerticalJustifyStart size={14} /></button>
+                <button
+                  type="button"
+                  aria-label="Distribute selected layers horizontally"
+                  title="Distribute horizontally"
+                  disabled={selectedUnlockedCount < 3}
+                  onClick={() => alignSelectedNodes('horizontal')}
+                ><AlignHorizontalSpaceBetween size={14} /></button>
+                <button
+                  type="button"
+                  aria-label="Distribute selected layers vertically"
+                  title="Distribute vertically"
+                  disabled={selectedUnlockedCount < 3}
+                  onClick={() => alignSelectedNodes('vertical')}
+                ><AlignVerticalSpaceBetween size={14} /></button>
+                <button
+                  type="button"
+                  aria-label={selectedUnlockedCount === 0 ? 'Unlock selected layers' : 'Lock selected layers'}
+                  title={selectedUnlockedCount === 0 ? 'Unlock selected layers' : 'Lock selected layers'}
+                  onClick={() => setSelectedNodesLocked(selectedUnlockedCount > 0)}
+                >{selectedUnlockedCount === 0 ? <Unlock size={14} /> : <Lock size={14} />}</button>
+                <button
+                  type="button"
+                  className="danger"
+                  aria-label="Delete unlocked selected layers"
+                  title="Delete unlocked selected layers"
+                  disabled={selectedUnlockedCount === 0}
+                  onClick={deleteSelectedNodes}
+                ><Trash2 size={14} /></button>
+              </div>
+            </NodeToolbar>
             <Controls position="bottom-right" showInteractive={false} />
             <MiniMap
               position="bottom-left"
@@ -1754,13 +2308,30 @@ function EditorInner() {
               nodeColor={(node) => node.type === 'raster' ? '#d8dbe2' : node.type === 'vector' ? '#635bff' : '#8a8e98'}
             />
             <Panel position="top-center" className="canvas-toolbar" aria-label="Canvas tools">
-              <button type="button" className={`tool ${toolMode === 'select' ? 'active' : ''}`} aria-label="Select tool, V" aria-pressed={toolMode === 'select'} onClick={() => setToolMode('select')}><MousePointer2 size={16} /></button>
-              <button type="button" className={`tool ${toolMode === 'hand' ? 'active' : ''}`} aria-label="Hand tool, H" aria-pressed={toolMode === 'hand'} onClick={() => setToolMode('hand')}><Hand size={16} /></button>
+              <button type="button" className={`tool ${toolMode === 'select' && !temporaryPanActive ? 'active' : ''}`} aria-label="Select tool, V" aria-pressed={toolMode === 'select' && !temporaryPanActive} title="Select layers (V) · Drag empty canvas to select" onClick={() => setToolMode('select')}><MousePointer2 size={16} /></button>
+              <button type="button" className={`tool ${toolMode === 'hand' || temporaryPanActive ? 'active' : ''}`} aria-label="Hand tool, H" aria-pressed={toolMode === 'hand' || temporaryPanActive} title="Pan canvas (H) · Hold Space from Select" onClick={() => setToolMode('hand')}><Hand size={16} /></button>
               <span className="toolbar-divider" />
               <button type="button" className="tool" aria-label="Add concept" onClick={addConceptNode}><TypeIcon size={16} /></button>
               <button type="button" className="tool" aria-label="Connect nodes by dragging their handles" onClick={() => announce('Drag from a node handle to another node to create a connector.')}><Waypoints size={16} /></button>
               <button type="button" className="tool" aria-label="Tidy diagram layout" onClick={tidyDiagram}><Sparkles size={16} /></button>
               <button type="button" className="tool" aria-label="Import image" onClick={() => fileInputRef.current?.click()}><Upload size={16} /></button>
+            </Panel>
+            <Panel position="bottom-right" className="zoom-readout">
+              <button
+                type="button"
+                aria-label={`Reset zoom to 100%, currently ${Math.round(viewportZoom * 100)}%`}
+                title="Reset zoom to 100%"
+                onClick={() => {
+                  const viewport = getViewport();
+                  const canvasBounds = document.querySelector<HTMLElement>('.canvas-region .react-flow')?.getBoundingClientRect();
+                  const center = screenToFlowPosition({
+                    x: canvasBounds ? canvasBounds.left + canvasBounds.width / 2 : window.innerWidth / 2,
+                    y: canvasBounds ? canvasBounds.top + canvasBounds.height / 2 : window.innerHeight / 2,
+                  });
+                  void setCenter(center.x, center.y, { zoom: 1, duration: 180 });
+                  if (viewport.zoom === 1) setViewportZoom(1);
+                }}
+              >{Math.round(viewportZoom * 100)}%</button>
             </Panel>
             <Panel position="bottom-center" className="drop-prompt">
               <span className="upload-symbol" aria-hidden="true"><Upload size={16} /></span>
@@ -1838,6 +2409,9 @@ function EditorInner() {
                 : node)}
               onOpacity={(opacity) => updateSelectedNodes((node) => ({ ...node, data: { ...node.data, opacity } }))}
               onAlign={alignSelectedNodes}
+              onDuplicate={duplicateSelectedNodes}
+              onLock={() => setSelectedNodesLocked(true)}
+              onUnlock={() => setSelectedNodesLocked(false)}
               onDelete={deleteSelectedNodes}
             />
           ) : selectedNode ? (
@@ -1959,8 +2533,9 @@ function EditorInner() {
             />
           </form>
         </dialog>
-      </main>
-    </NodeActionContext.Provider>
+        </main>
+      </NodeActionContext.Provider>
+    </SelectedNodeCountContext.Provider>
   );
 }
 
@@ -2044,12 +2619,18 @@ function MultiSelectionInspector({
   onTone,
   onOpacity,
   onAlign,
+  onDuplicate,
+  onLock,
+  onUnlock,
   onDelete,
 }: {
   count: number;
   onTone: (tone: 'ink' | 'indigo' | 'mint') => void;
   onOpacity: (opacity: number) => void;
   onAlign: (mode: 'left' | 'top' | 'horizontal' | 'vertical') => void;
+  onDuplicate: () => void;
+  onLock: () => void;
+  onUnlock: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -2081,7 +2662,12 @@ function MultiSelectionInspector({
           <button type="button" onClick={() => onAlign('vertical')} disabled={count < 3}>Distribute ↕</button>
         </div>
       </div>
-      <div className="inspector-actions single-action">
+      <div className="multi-selection-actions">
+        <button type="button" onClick={onDuplicate}><Copy size={13} /> Duplicate</button>
+        <button type="button" onClick={onLock}><Lock size={13} /> Lock</button>
+        <button type="button" onClick={onUnlock}><Unlock size={13} /> Unlock</button>
+      </div>
+      <div className="inspector-actions single-action multi-selection-delete">
         <button type="button" className="danger" onClick={onDelete}><Trash2 size={14} /> Delete unlocked layers</button>
       </div>
     </>
@@ -2135,7 +2721,14 @@ function NodeInspector({
               maxLength={500}
               disabled={node.data.locked}
               onFocus={onEditStart}
-              onChange={(event) => updateData({ label: event.target.value, name: event.target.value }, false)}
+              onChange={(event) => updateData({
+                label: event.target.value,
+                name: event.target.value,
+                title: replaceRichTextPlainText(
+                  node.data.kind === 'concept' ? node.data.title : emptyRichText(),
+                  event.target.value,
+                ),
+              }, false)}
               onBlur={onEditEnd}
             />
           </label>
@@ -2167,6 +2760,37 @@ function NodeInspector({
                 <option value="mint">Mint</option>
               </select>
             </label>
+            <fieldset className="content-alignment-field" disabled={node.data.locked}>
+              <legend>Content alignment</legend>
+              <div className="content-alignment-row">
+                <span>Across</span>
+                {(['left', 'center', 'right'] as const).map((alignment) => (
+                  <button
+                    key={alignment}
+                    type="button"
+                    aria-label={`Align content ${alignment}`}
+                    aria-pressed={node.data.horizontalAlign === alignment}
+                    onClick={() => updateData({ horizontalAlign: alignment })}
+                  >
+                    {alignment[0].toUpperCase() + alignment.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <div className="content-alignment-row">
+                <span>Down</span>
+                {(['top', 'middle', 'bottom'] as const).map((alignment) => (
+                  <button
+                    key={alignment}
+                    type="button"
+                    aria-label={`Align content ${alignment}`}
+                    aria-pressed={node.data.verticalAlign === alignment}
+                    onClick={() => updateData({ verticalAlign: alignment })}
+                  >
+                    {alignment[0].toUpperCase() + alignment.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
             <button type="button" className="secondary-button edit-content-button" disabled={node.data.locked} onClick={onEditConcept}>
               <TypeIcon size={13} /> Edit rich text
             </button>
@@ -2192,7 +2816,7 @@ function NodeInspector({
           <span>Lock layer</span>
         </label>
       </div>
-      {node.data.kind === 'raster' ? (
+      {EDITOR_FEATURES.imageVectorization && node.data.kind === 'raster' ? (
         <div className="inspector-section">
           <span className="section-label">Local vectorization</span>
           <label className="stacked-field">

@@ -46,10 +46,13 @@ type BaseNodeData = Record<string, unknown> & {
 export type ConceptNodeData = BaseNodeData & {
   kind: 'concept';
   label: string;
+  title: RichTextDocument;
   body: RichTextDocument;
   eyebrow: string;
   tone: 'ink' | 'indigo' | 'mint';
   collapsed: boolean;
+  horizontalAlign: 'left' | 'center' | 'right';
+  verticalAlign: 'top' | 'middle' | 'bottom';
 };
 
 export type RasterNodeData = BaseNodeData & {
@@ -77,7 +80,7 @@ export type EditorEdgeData = Record<string, unknown> & {
 export type EditorEdge = Edge<EditorEdgeData>;
 
 export type EditorDocument = {
-  schemaVersion: 2;
+  schemaVersion: 4;
   title: string;
   nodes: EditorNode[];
   edges: EditorEdge[];

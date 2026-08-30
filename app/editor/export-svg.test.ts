@@ -14,6 +14,17 @@ describe('buildSvgDocument', () => {
           kind: 'concept',
           name: 'Ideas & notes',
           label: 'Ideas & notes',
+          title: {
+            type: 'doc',
+            content: [{
+              type: 'paragraph',
+              content: [{
+                type: 'text',
+                text: 'Ideas & notes',
+                marks: [{ type: 'bold' }, { type: 'italic' }],
+              }],
+            }],
+          },
           body: {
             type: 'doc',
             content: [{
@@ -30,6 +41,8 @@ describe('buildSvgDocument', () => {
           eyebrow: 'Start',
           tone: 'indigo',
           collapsed: false,
+          horizontalAlign: 'left',
+          verticalAlign: 'top',
           opacity: 1,
           locked: false,
         },
@@ -78,6 +91,7 @@ describe('buildSvgDocument', () => {
 
     expect(svg).toContain('<svg');
     expect(svg).toContain('Ideas &amp; notes');
+    expect(svg).toContain('font-style="italic"');
     expect(svg).toContain('Bold action');
     expect(svg).toContain('font-weight="700"');
     expect(svg).toContain('•');
@@ -96,5 +110,53 @@ describe('buildSvgDocument', () => {
     const svg = buildSvgDocument(nodes, edges);
     expect(svg).toContain('supports &amp; explains');
     expect(svg).toContain('stroke-dasharray="6 5"');
+  });
+
+  it('exports content alignment and bottom-to-top child connectors', () => {
+    const nodes = structuredClone(initialDocument.nodes.slice(0, 2));
+    const parent = nodes[0];
+    const child = nodes[1];
+    if (parent.data.kind !== 'concept') throw new Error('Expected a concept fixture.');
+    parent.style = { width: 220, height: 180 };
+    parent.data.horizontalAlign = 'center';
+    parent.data.verticalAlign = 'bottom';
+    child.position = { x: 130, y: 500 };
+    const edge = {
+      ...structuredClone(initialDocument.edges[0]),
+      source: parent.id,
+      target: child.id,
+      sourceHandle: 'bottom',
+      targetHandle: 'top',
+    };
+    const svg = buildSvgDocument(nodes, [edge]);
+    expect(svg).toContain('text-anchor="middle"');
+    expect(svg).toContain('M 158 228 C 158');
+  });
+
+  it('omits trailing empty checklist rows from exported SVG content and height', () => {
+    const nodes = structuredClone(initialDocument.nodes);
+    const concept = nodes[0];
+    if (concept.data.kind !== 'concept') throw new Error('Expected a concept fixture.');
+    concept.data.body = {
+      type: 'doc',
+      content: [{
+        type: 'taskList',
+        content: [
+          {
+            type: 'taskItem',
+            attrs: { checked: false },
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Only item' }] }],
+          },
+          {
+            type: 'taskItem',
+            attrs: { checked: false },
+            content: [{ type: 'paragraph' }],
+          },
+        ],
+      }],
+    };
+
+    const svg = buildSvgDocument([concept], []);
+    expect(svg.match(/☐/g)).toHaveLength(1);
   });
 });

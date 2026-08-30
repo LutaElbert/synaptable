@@ -32,6 +32,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@cloudflare/vite-plugin": "1.54.2",
     "@cloudflare/workers-types": "5.20260829.1",
     "@playwright/test": "^1.62.1",

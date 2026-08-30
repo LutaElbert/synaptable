@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { richTextFromPlainText, richTextIsEmpty, richTextToPlainText, sanitizeLinkHref } from './rich-text';
+import {
+  conceptTitleFromPlainText,
+  normalizeRichTextDocument,
+  replaceRichTextPlainText,
+  richTextFromPlainText,
+  richTextIsEmpty,
+  richTextToPlainText,
+  sanitizeLinkHref,
+} from './rich-text';
 import type { RichTextDocument } from './types';
 
 describe('rich text utilities', () => {
@@ -26,6 +34,78 @@ describe('rich text utilities', () => {
     };
     expect(richTextToPlainText(document)).toContain('• Idea');
     expect(richTextToPlainText(document)).toContain('[x] Done');
+  });
+
+  it('removes trailing empty list rows without changing meaningful or nested content', () => {
+    const document: RichTextDocument = {
+      type: 'doc',
+      content: [{
+        type: 'taskList',
+        content: [
+          {
+            type: 'taskItem',
+            attrs: { checked: true },
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Keep me' }] }],
+          },
+          {
+            type: 'taskItem',
+            attrs: { checked: false },
+            content: [
+              { type: 'paragraph' },
+              {
+                type: 'bulletList',
+                content: [{
+                  type: 'listItem',
+                  content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Nested detail' }] }],
+                }],
+              },
+            ],
+          },
+          {
+            type: 'taskItem',
+            attrs: { checked: false },
+            content: [{ type: 'paragraph' }],
+          },
+          {
+            type: 'taskItem',
+            attrs: { checked: false },
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: '   ' }] }],
+          },
+        ],
+      }],
+    };
+
+    const normalized = normalizeRichTextDocument(document);
+    expect(normalized.content?.[0].content).toHaveLength(2);
+    expect(richTextToPlainText(normalized)).toContain('Nested detail');
+    expect(document.content?.[0].content).toHaveLength(4);
+  });
+
+  it('turns a document containing only empty list rows into an empty paragraph', () => {
+    const document: RichTextDocument = {
+      type: 'doc',
+      content: [{
+        type: 'taskList',
+        content: [{
+          type: 'taskItem',
+          attrs: { checked: false },
+          content: [{ type: 'paragraph' }],
+        }],
+      }],
+    };
+
+    expect(normalizeRichTextDocument(document)).toEqual({
+      type: 'doc',
+      content: [{ type: 'paragraph' }],
+    });
+    expect(richTextIsEmpty(document)).toBe(true);
+  });
+
+  it('creates bold concept titles and preserves their leading marks during plain replacement', () => {
+    const title = conceptTitleFromPlainText('Original');
+    const replaced = replaceRichTextPlainText(title, 'Replacement');
+    expect(richTextToPlainText(replaced)).toBe('Replacement');
+    expect(replaced.content?.[0].content?.[0].marks).toEqual([{ type: 'bold' }]);
   });
 
   it('allows safe links and rejects executable or data URLs', () => {

@@ -1,5 +1,7 @@
 # SynapTable implementation plan
 
+> Current product direction: image vectorization is temporarily disabled through the centralized editor feature switch. The implementation below is retained for possible future evaluation, but its controls are not exposed in the application.
+
 ## Outcome
 
 Build a local-first diagram workspace where a user can drag, paste, or browse for a PNG, JPEG, or WebP; keep it as a reference; trace it into editable vector paths without AI; edit layers; and export an SVG.

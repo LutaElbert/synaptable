@@ -1,15 +1,16 @@
 # SynapTable
 
-SynapTable is a local-first diagram workspace that turns PNG, JPEG, and WebP images into editable vector paths without AI. Images and documents remain in the browser unless the user explicitly downloads a project or SVG file.
+SynapTable is a local-first diagram workspace for building connected, editable concept maps and working with image references. Images and documents remain in the browser unless the user explicitly downloads a project or SVG file.
+
+Image vectorization is temporarily disabled in the product interface. Its isolated implementation is retained behind a centralized feature switch for possible future evaluation.
 
 ## Features
 
 - Drag, paste, or browse for images up to 15 MB and 24 decoded megapixels.
-- Trace images locally in a cancellable Web Worker.
 - Edit concept, raster, vector, and individual path layers.
 - Double-click concept nodes to edit structured notes directly with bold, italic, underline, strikethrough, safe links, bullets, numbering, and checklists.
 - Rename, recolor, hide, lock, duplicate, delete, resize, and reorder content.
-- Add child and sibling ideas, collapse branches, search all layer and note text, and tidy a diagram automatically.
+- Add child and sibling ideas from concept or image layers, collapse concept branches, search all layer and note text, and tidy a diagram automatically.
 - Multi-select layers for bulk styling, alignment, distribution, opacity, and deletion.
 - Label connectors and choose default, dashed, or emphasis styles.
 - Start from idea, task, decision, or question templates.
@@ -37,8 +38,9 @@ Open `http://localhost:3000`.
 ## Editing shortcuts
 
 - `Enter` edits the selected concept.
-- `Tab` adds a child when a canvas node has keyboard focus.
-- `Shift+Enter` adds a sibling when a canvas node has keyboard focus.
+- Double-click a layer name or press `F2` to rename it; `Enter` commits and `Escape` cancels.
+- `Tab` adds a child when an unlocked concept or image node has canvas focus.
+- `Shift+Enter` adds a sibling when an unlocked concept or image node has canvas focus.
 - `Cmd/Ctrl+Enter` finishes rich-text editing; `Escape` cancels it.
 - `Cmd/Ctrl+B`, `Cmd/Ctrl+I`, `Cmd/Ctrl+U`, and `Cmd/Ctrl+Shift+X` format selected text.
 - `Cmd/Ctrl+K` opens the link editor through the rich-text extension.
@@ -57,7 +59,7 @@ npm run test:e2e
 npm audit
 ```
 
-`npm run test:e2e` starts or reuses the local development server. CI builds the app first and runs the same workflow against the local Cloudflare Worker in Chromium, Firefox, and WebKit. The suite covers direct rich-text editing, migration, search, branch operations, checkpoints, bulk arrangement, connector editing, vectorization, backup/restore, persistence, export, and mobile panels.
+`npm run test:e2e` starts or reuses the local development server. CI builds the app first and runs the same workflow against the local Cloudflare Worker in Chromium, Firefox, and WebKit. The suite covers image import, double-click and keyboard layer editing, direct rich-text editing, migration, connection validation and reconnection, locked-layer behavior, cascade deletion, search, branch operations, checkpoints, bulk arrangement, backup/restore, drag/resize persistence, accessibility, export, and mobile panels. See [LAYER_CONNECTION_TEST_PLAN.md](./LAYER_CONNECTION_TEST_PLAN.md) for the graph behavior contract and regression matrix.
 
 ## Cloudflare Workers
 
@@ -74,4 +76,4 @@ Deployment is intentionally a separate approval step. Completing local verificat
 
 ## Local data and recovery
 
-Browser storage can be cleared by the user, browser, device policy, or storage pressure. Use **Project backup and restore** to create local checkpoints and download a portable `.synaptable` file before changing devices or clearing site data. Version 1 project files are migrated automatically to the current rich-text document schema. See [PRIVACY.md](./PRIVACY.md).
+Browser storage can be cleared by the user, browser, device policy, or storage pressure. Use **Project backup and restore** to create local checkpoints and download a portable `.synaptable` file before changing devices or clearing site data. Version 1 and 2 project files are migrated automatically to the current rich-title document schema. See [PRIVACY.md](./PRIVACY.md).
