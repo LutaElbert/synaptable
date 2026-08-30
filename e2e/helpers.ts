@@ -27,7 +27,12 @@ export async function connectLayers(page: Page, sourceName: string, targetName: 
 }
 
 export async function waitForSaved(page: Page) {
-  await expect(page.locator('main[data-save-state="saved"]')).toBeVisible();
+  const workspace = page.locator('main[data-ready="true"]');
+  // Autosave is intentionally debounced for 450 ms. Wait past the debounce
+  // so an already-running save cannot satisfy this assertion before the
+  // latest document mutation has been queued.
+  await page.waitForTimeout(500);
+  await expect(workspace).toHaveAttribute('data-save-state', 'saved');
 }
 
 export async function createDiagramPng(page: Page): Promise<Buffer> {

@@ -257,6 +257,7 @@ test('checklist content auto-sizes its layer and removes the trailing empty row 
 
 test('child and sibling actions create compact layers below the parent with vertical connections', async ({ page }) => {
   await openEditor(page);
+  await expect(page.locator('.react-flow__edge')).toHaveCount(2);
   const originalEdgeCount = await page.locator('.react-flow__edge').count();
   await page.getByRole('button', { name: 'Research', exact: true }).click();
   await page.getByRole('button', { name: 'Add child', exact: true }).click();
@@ -659,25 +660,22 @@ test('resized layer dimensions are undoable and persist after reload', async ({ 
   const resizedBox = await research.boundingBox();
   expect(resizedBox!.width).toBeGreaterThan(originalBox!.width + 30);
   expect(resizedBox!.height).toBeGreaterThan(originalBox!.height + 20);
-  const resizedStyle = await research.getAttribute('style');
-  const width = resizedStyle?.match(/width:\s*([^;]+)/)?.[1];
-  const height = resizedStyle?.match(/height:\s*([^;]+)/)?.[1];
-  expect(width).toBeTruthy();
-  expect(height).toBeTruthy();
 
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   const undoneBox = await research.boundingBox();
   expect(Math.abs(undoneBox!.width - originalBox!.width)).toBeLessThan(2);
   expect(Math.abs(undoneBox!.height - originalBox!.height)).toBeLessThan(2);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
-  expect(await research.getAttribute('style')).toContain(`width: ${width}`);
+  const redoneBox = await research.boundingBox();
+  expect(Math.abs(redoneBox!.width - resizedBox!.width)).toBeLessThan(2);
+  expect(Math.abs(redoneBox!.height - resizedBox!.height)).toBeLessThan(2);
   await waitForSaved(page);
 
   await page.reload();
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
-  const restoredStyle = await canvasNode(page, 'Research').getAttribute('style');
-  expect(restoredStyle).toContain(`width: ${width}`);
-  expect(restoredStyle).toContain(`height: ${height}`);
+  const restoredBox = await canvasNode(page, 'Research').boundingBox();
+  expect(Math.abs(restoredBox!.width - resizedBox!.width)).toBeLessThan(2);
+  expect(Math.abs(restoredBox!.height - resizedBox!.height)).toBeLessThan(2);
   const unexpectedErrors = pageErrors.filter((message) => ![
     'ResizeObserver loop completed with undelivered notifications.',
     'ResizeObserver loop limit exceeded',
