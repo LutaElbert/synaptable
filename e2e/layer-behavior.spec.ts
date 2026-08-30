@@ -357,7 +357,7 @@ test('double-click and F2 rename a layer with commit, cancel, undo, and redo', a
   await expect(page.getByRole('button', { name: 'Discovery', exact: true })).toBeFocused();
 });
 
-test('double-click rename behaves consistently for raster and vector layers', async ({ page }) => {
+test('double-click rename works for raster layers while vectorization is disabled', async ({ page }) => {
   await openEditor(page);
   await page.getByLabel('Choose images to add to the canvas').setInputFiles({
     name: 'double-click-map.png',
@@ -369,18 +369,8 @@ test('double-click rename behaves consistently for raster and vector layers', as
   await page.getByLabel('Layer name').fill('Raster evidence');
   await page.getByLabel('Layer name').press('Enter');
   await expect(page.getByRole('button', { name: 'Raster evidence', exact: true })).toBeFocused();
-
-  await page.getByRole('button', { name: 'Vectorize', exact: true }).last().click();
-  const vectorLayer = page.getByRole('button', { name: 'Raster evidence vector', exact: true });
-  await expect(vectorLayer).toBeVisible({ timeout: 45_000 });
-  await vectorLayer.dblclick();
-  await page.getByLabel('Layer name').fill('Vector evidence');
-  await page.getByLabel('Layer name').press('Escape');
-  await expect(page.getByRole('button', { name: 'Raster evidence vector', exact: true })).toBeFocused();
-  await page.getByRole('button', { name: 'Raster evidence vector', exact: true }).dblclick();
-  await page.getByLabel('Layer name').fill('Vector evidence');
-  await page.getByLabel('Layer name').press('Enter');
-  await expect(page.getByRole('button', { name: 'Vector evidence', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Vectorize', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Extract layers', exact: true })).toHaveCount(0);
 });
 
 test('locked layers reject canvas editing, renaming, and new connections', async ({ page }) => {

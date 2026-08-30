@@ -1,11 +1,12 @@
 # SynapTable
 
-SynapTable is a local-first diagram workspace that turns PNG, JPEG, and WebP images into editable vector paths without AI. Images and documents remain in the browser unless the user explicitly downloads a project or SVG file.
+SynapTable is a local-first diagram workspace for building connected, editable concept maps and working with image references. Images and documents remain in the browser unless the user explicitly downloads a project or SVG file.
+
+Image vectorization is temporarily disabled in the product interface. Its isolated implementation is retained behind a centralized feature switch for possible future evaluation.
 
 ## Features
 
 - Drag, paste, or browse for images up to 15 MB and 24 decoded megapixels.
-- Trace images locally in a cancellable Web Worker.
 - Edit concept, raster, vector, and individual path layers.
 - Double-click concept nodes to edit structured notes directly with bold, italic, underline, strikethrough, safe links, bullets, numbering, and checklists.
 - Rename, recolor, hide, lock, duplicate, delete, resize, and reorder content.
@@ -58,7 +59,7 @@ npm run test:e2e
 npm audit
 ```
 
-`npm run test:e2e` starts or reuses the local development server. CI builds the app first and runs the same workflow against the local Cloudflare Worker in Chromium, Firefox, and WebKit. The suite covers double-click and keyboard layer editing, direct rich-text editing, migration, connection validation and reconnection, locked-layer behavior, cascade deletion, search, branch operations, checkpoints, bulk arrangement, vectorization, backup/restore, drag/resize persistence, accessibility, export, and mobile panels. See [LAYER_CONNECTION_TEST_PLAN.md](./LAYER_CONNECTION_TEST_PLAN.md) for the graph behavior contract and regression matrix.
+`npm run test:e2e` starts or reuses the local development server. CI builds the app first and runs the same workflow against the local Cloudflare Worker in Chromium, Firefox, and WebKit. The suite covers image import, double-click and keyboard layer editing, direct rich-text editing, migration, connection validation and reconnection, locked-layer behavior, cascade deletion, search, branch operations, checkpoints, bulk arrangement, backup/restore, drag/resize persistence, accessibility, export, and mobile panels. See [LAYER_CONNECTION_TEST_PLAN.md](./LAYER_CONNECTION_TEST_PLAN.md) for the graph behavior contract and regression matrix.
 
 ## Cloudflare Workers
 

@@ -82,6 +82,7 @@ import {
   serializeProjectBackup,
 } from './document-file';
 import { buildSvgDocument, downloadSvg } from './export-svg';
+import { EDITOR_FEATURES } from './features';
 import { fileToDataUrl, validateImageFile } from './image-file';
 import {
   canConnect,
@@ -314,20 +315,24 @@ function RasterNode({ id, data, selected }: NodeProps<EditorNode>) {
           <button type="button" onClick={() => actions.keepImage(id)}>
             <Check size={14} /> Keep image
           </button>
-          <button
-            type="button"
-            onClick={() => isConverting ? actions.cancelVectorization() : actions.vectorizeImage(id)}
-          >
-            {isConverting ? <X size={14} /> : <Shapes size={14} />}
-            {isConverting ? 'Cancel' : 'Vectorize'}
-          </button>
-          <button
-            type="button"
-            onClick={() => actions.vectorizeImage(id, true)}
-            disabled={isConverting}
-          >
-            <Layers3 size={14} /> Extract layers
-          </button>
+          {EDITOR_FEATURES.imageVectorization ? (
+            <>
+              <button
+                type="button"
+                onClick={() => isConverting ? actions.cancelVectorization() : actions.vectorizeImage(id)}
+              >
+                {isConverting ? <X size={14} /> : <Shapes size={14} />}
+                {isConverting ? 'Cancel' : 'Vectorize'}
+              </button>
+              <button
+                type="button"
+                onClick={() => actions.vectorizeImage(id, true)}
+                disabled={isConverting}
+              >
+                <Layers3 size={14} /> Extract layers
+              </button>
+            </>
+          ) : null}
         </div>
       </NodeToolbar>
       <NodeResizer
@@ -1011,6 +1016,10 @@ function EditorInner() {
 
   const vectorizeImage = useCallback(
     async (id: string, expandLayers = false) => {
+      if (!EDITOR_FEATURES.imageVectorization) {
+        announce('Image vectorization is currently unavailable.');
+        return;
+      }
       const raster = nodesRef.current.find((node) => node.id === id);
       if (!raster || raster.data.kind !== 'raster' || convertingId) return;
       const controller = new AbortController();
@@ -2797,7 +2806,7 @@ function NodeInspector({
           <span>Lock layer</span>
         </label>
       </div>
-      {node.data.kind === 'raster' ? (
+      {EDITOR_FEATURES.imageVectorization && node.data.kind === 'raster' ? (
         <div className="inspector-section">
           <span className="section-label">Local vectorization</span>
           <label className="stacked-field">

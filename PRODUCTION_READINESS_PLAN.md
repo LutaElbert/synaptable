@@ -1,8 +1,10 @@
 # SynapTable production-readiness plan
 
+> Product-direction update — 2026-08-30: image vectorization is temporarily disabled through the centralized editor feature switch and is no longer part of the current release acceptance path. Historical verification notes below are retained as implementation records.
+
 ## Outcome
 
-Ship SynapTable as a reliable public Cloudflare Workers application while preserving its core promise: image import, non-AI local vectorization, editable layers, local document persistence, and SVG export without sending user images to a server.
+Ship SynapTable as a reliable public Cloudflare Workers application while preserving its current core promise: image import, editable concept and reference layers, local document persistence, and SVG export without sending user images to a server.
 
 The original MVP implementation phases are complete. This plan reopens release work because the former GPT Sites deployment was deleted and Cloudflare is now the production target.
 

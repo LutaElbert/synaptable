@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { createDiagramPng } from './helpers';
 
-test('imports, vectorizes, persists, backs up, and exports locally', async ({ page, baseURL }) => {
+test('imports, persists, backs up, and exports locally with vectorization disabled', async ({ page, baseURL }) => {
   const externalRequests: string[] = [];
   const appOrigin = new URL(baseURL ?? page.url()).origin;
   page.on('request', (request) => {
@@ -21,35 +21,9 @@ test('imports, vectorizes, persists, backs up, and exports locally', async ({ pa
     buffer: await createDiagramPng(page),
   });
   await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toBeVisible();
-
-  await page.getByRole('button', { name: 'Vectorize', exact: true }).last().click();
-  await expect(page.getByText(/Created \d+ editable vector layers/)).toBeVisible({ timeout: 45_000 });
-  await expect(page.getByRole('button', { name: 'test-map.png vector', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Expand test-map.png vector' }).click();
-  const pathList = page.getByRole('list', { name: 'test-map.png vector paths' });
-  await expect(pathList).toBeVisible();
-  expect(await pathList.locator('.path-row').count()).toBeGreaterThan(0);
-  await pathList.locator('.path-row').first().click();
-  const pathInspector = page.locator('.inspector-panel');
-  await expect(pathInspector.getByText('Vector path', { exact: true })).toBeVisible();
-  await pathInspector.getByLabel('Name').fill('Primary shape');
-  await pathInspector.getByLabel('Lock path').check();
-  await expect(pathInspector.getByRole('button', { name: 'Duplicate path' })).toBeDisabled();
-  await pathInspector.getByLabel('Lock path').uncheck();
-  await pathInspector.getByRole('button', { name: 'Duplicate path' }).click();
-  await expect(pathList.getByRole('button', { name: 'Primary shape copy', exact: true })).toBeVisible();
-  await pathList.getByRole('button', { name: 'Primary shape', exact: true }).click();
-  await pathList.getByRole('button', { name: 'Hide Primary shape', exact: true }).click();
-  await expect(pathList.getByRole('button', { name: 'Show Primary shape', exact: true })).toBeVisible();
-  await pathList.getByRole('button', { name: 'Show Primary shape', exact: true }).click();
-  await pathInspector.getByRole('button', { name: 'Move path down' }).click();
-  await expect(pathList.locator('.path-row').nth(1)).toContainText('Primary shape');
-  await pathInspector.getByRole('button', { name: 'Move path up' }).click();
-  await pathList.getByRole('button', { name: 'Primary shape copy', exact: true }).click();
-  await pathInspector.getByRole('button', { name: 'Delete path' }).click();
-  await expect(pathList.getByRole('button', { name: 'Primary shape copy', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect(pathList.getByRole('button', { name: 'Primary shape copy', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Vectorize', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Extract layers', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Local vectorization', { exact: true })).toHaveCount(0);
   await expect(page.locator('main[data-save-state="saved"]')).toBeVisible();
 
   await page.getByRole('button', { name: 'Project backup and restore' }).click();
@@ -63,13 +37,13 @@ test('imports, vectorizes, persists, backs up, and exports locally', async ({ pa
 
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'test-map.png vector', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Project backup and restore' }).click();
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByLabel('Choose a SynapTable project backup').setInputFiles(backupPath!);
   await expect(page.getByText('Project backup restored.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'test-map.png vector', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Export SVG' }).click();
   const svgDownload = page.waitForEvent('download');
@@ -78,7 +52,7 @@ test('imports, vectorizes, persists, backs up, and exports locally', async ({ pa
 
   await page.reload();
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'test-map.png vector', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toBeVisible();
   expect(externalRequests).toEqual([]);
 });
 
