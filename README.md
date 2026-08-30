@@ -10,7 +10,7 @@ Image vectorization is temporarily disabled in the product interface. Its isolat
 - Edit concept, raster, vector, and individual path layers.
 - Double-click concept nodes to edit structured notes directly with bold, italic, underline, strikethrough, safe links, bullets, numbering, and checklists.
 - Rename, recolor, hide, lock, duplicate, delete, resize, and reorder content.
-- Add child and sibling ideas, collapse branches, search all layer and note text, and tidy a diagram automatically.
+- Add child and sibling ideas from concept or image layers, collapse concept branches, search all layer and note text, and tidy a diagram automatically.
 - Multi-select layers for bulk styling, alignment, distribution, opacity, and deletion.
 - Label connectors and choose default, dashed, or emphasis styles.
 - Start from idea, task, decision, or question templates.
@@ -39,8 +39,8 @@ Open `http://localhost:3000`.
 
 - `Enter` edits the selected concept.
 - Double-click a layer name or press `F2` to rename it; `Enter` commits and `Escape` cancels.
-- `Tab` adds a child when a canvas node has keyboard focus.
-- `Shift+Enter` adds a sibling when a canvas node has keyboard focus.
+- `Tab` adds a child when an unlocked concept or image node has canvas focus.
+- `Shift+Enter` adds a sibling when an unlocked concept or image node has canvas focus.
 - `Cmd/Ctrl+Enter` finishes rich-text editing; `Escape` cancels it.
 - `Cmd/Ctrl+B`, `Cmd/Ctrl+I`, `Cmd/Ctrl+U`, and `Cmd/Ctrl+Shift+X` format selected text.
 - `Cmd/Ctrl+K` opens the link editor through the rich-text extension.

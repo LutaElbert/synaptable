@@ -300,6 +300,99 @@ test('child and sibling actions create compact layers below the parent with vert
   await expect(page.locator('.react-flow__edge')).toHaveCount(originalEdgeCount + 2);
 });
 
+test('image actions add editable concept children and parent-aware siblings', async ({ page }) => {
+  await openEditor(page);
+  await page.getByLabel('Choose images to add to the canvas').setInputFiles({
+    name: 'story-reference.png',
+    mimeType: 'image/png',
+    buffer: await createDiagramPng(page),
+  });
+
+  const imageLayer = page.getByRole('button', { name: 'story-reference.png', exact: true });
+  await expect(imageLayer).toBeVisible();
+  await imageLayer.click();
+  const inspector = page.locator('.inspector-panel');
+  await inspector.getByRole('spinbutton', { name: 'X', exact: true }).fill('680');
+  await inspector.getByRole('spinbutton', { name: 'Y', exact: true }).fill('420');
+  await inspector.getByRole('spinbutton', { name: 'Y', exact: true }).press('Tab');
+  await page.getByRole('button', { name: 'Fit View' }).click();
+  let imageNode = page.locator('.react-flow__node.selected');
+  await expect(imageNode).toHaveCount(1);
+  const research = canvasNode(page, 'Research');
+  const sourceHandle = research.locator('.react-flow__handle.source').first();
+  const targetHandle = imageNode.locator('.react-flow__handle.target').first();
+  const sourceBox = await sourceHandle.boundingBox();
+  const targetBox = await targetHandle.boundingBox();
+  expect(sourceBox).toBeTruthy();
+  expect(targetBox).toBeTruthy();
+  await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await expect(page.getByLabel('Connector from Research to story-reference.png')).toBeVisible();
+
+  await imageLayer.click();
+  await expect(page.getByRole('button', { name: 'Add child', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add sibling', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Add child', exact: true }).click();
+  await page.getByLabel('Concept title').fill('Image observation');
+  await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
+  await expect(page.getByLabel('Connector from story-reference.png to Image observation')).toBeVisible();
+
+  imageNode = page.locator('.react-flow__node').filter({ has: page.locator('.raster-node') });
+  const imageBox = await imageNode.boundingBox();
+  const childBox = await canvasNode(page, 'Image observation').boundingBox();
+  expect(imageBox).toBeTruthy();
+  expect(childBox).toBeTruthy();
+  expect(childBox!.y).toBeGreaterThan(imageBox!.y + imageBox!.height);
+
+  await imageLayer.click();
+  await page.getByRole('button', { name: 'Add sibling', exact: true }).click();
+  await page.getByLabel('Concept title').fill('Image sibling');
+  await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
+  await expect(page.getByLabel('Connector from Research to Image sibling')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Image sibling', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Image sibling', exact: true })).toBeVisible();
+  await waitForSaved(page);
+  await page.reload();
+  await expect(page.getByLabel('Connector from story-reference.png to Image observation')).toBeVisible();
+  await expect(page.getByLabel('Connector from Research to Image sibling')).toBeVisible();
+});
+
+test('image branch shortcuts work and locked images do not expose branch actions', async ({ page }) => {
+  await openEditor(page);
+  await page.getByLabel('Choose images to add to the canvas').setInputFiles({
+    name: 'shortcut-reference.png',
+    mimeType: 'image/png',
+    buffer: await createDiagramPng(page),
+  });
+
+  const imageLayer = page.getByRole('button', { name: 'shortcut-reference.png', exact: true });
+  await imageLayer.click();
+  const imageNode = page.locator('.react-flow__node.selected');
+  await imageNode.focus();
+  await imageNode.press('Tab');
+  await page.getByLabel('Concept title').fill('Keyboard image child');
+  await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
+  await expect(page.getByLabel('Connector from shortcut-reference.png to Keyboard image child')).toBeVisible();
+
+  await imageLayer.click();
+  await page.locator('.react-flow__node.selected').focus();
+  await page.locator('.react-flow__node.selected').press('Shift+Enter');
+  await page.getByLabel('Concept title').fill('Keyboard image sibling');
+  await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Keyboard image sibling', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Connector from shortcut-reference.png to Keyboard image sibling')).toHaveCount(0);
+
+  await imageLayer.click();
+  await page.locator('.inspector-panel').getByLabel('Lock layer').check();
+  await expect(page.getByRole('button', { name: 'Add child', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add sibling', exact: true })).toHaveCount(0);
+});
+
 test('content alignment is accessible, undoable, and persistent on resized concepts', async ({ page }) => {
   await openEditor(page);
   const research = canvasNode(page, 'Research');

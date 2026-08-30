@@ -26,6 +26,25 @@ function concept(id: string, x: number, y: number, width = 220, height = 68): Ed
   };
 }
 
+function raster(id: string, x: number, y: number, width = 320, height = 240): EditorNode {
+  return {
+    id,
+    type: 'raster',
+    position: { x, y },
+    style: { width, height },
+    data: {
+      kind: 'raster',
+      name: id,
+      src: 'data:image/png;base64,',
+      fileName: `${id}.png`,
+      naturalWidth: width,
+      naturalHeight: height,
+      opacity: 1,
+      locked: false,
+    },
+  };
+}
+
 function edge(source: string, target: string): EditorEdge {
   return { id: `${source}-${target}`, source, target, data: { label: '', kind: 'default' } };
 }
@@ -64,5 +83,25 @@ describe('relativeConceptLayout', () => {
     const result = relativeConceptLayout([concept('root', 50, 70)], [], 'root', 'sibling', 'new');
     expect(result.parentId).toBeNull();
     expect(result.positions.get('new')).toEqual({ x: 314, y: 70 });
+  });
+
+  it('centers a concept child beneath an image using the image height', () => {
+    const result = relativeConceptLayout([raster('image', 40, 60)], [], 'image', 'child', 'new');
+    expect(result.parentId).toBe('image');
+    expect(result.positions.get('new')).toEqual({ x: 90, y: 392 });
+  });
+
+  it('places an unconnected image sibling beside the image without a parent', () => {
+    const result = relativeConceptLayout([raster('image', 40, 60)], [], 'image', 'sibling', 'new');
+    expect(result.parentId).toBeNull();
+    expect(result.positions.get('new')).toEqual({ x: 404, y: 60 });
+  });
+
+  it('places an image sibling in its existing parent row', () => {
+    const nodes = [concept('parent', 100, 80), raster('image', 0, 240, 320, 180)];
+    const result = relativeConceptLayout(nodes, [edge('parent', 'image')], 'image', 'sibling', 'new');
+    expect(result.parentId).toBe('parent');
+    expect(result.positions.get('image')).toEqual({ x: -82, y: 240 });
+    expect(result.positions.get('new')).toEqual({ x: 282, y: 240 });
   });
 });

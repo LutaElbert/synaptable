@@ -14,8 +14,8 @@ Phases 1–5 are implemented and verified locally. Deployment phases 6–7 have 
 
 - Vinext reports 100% compatibility with zero partial or hard issues.
 - The production Cloudflare Worker build succeeds and runs locally through Wrangler with enforced security headers.
-- Thirty-two unit tests pass for rich-text validation/utilities, schema migration, SVG export, project validation and repair, connection rules, cyclic graphs, cascade deletion, collapse, and deterministic tidy behavior.
-- Seventy-nine production-Worker end-to-end checks pass across Chromium, Firefox, and WebKit, with two intentional non-Chromium stress-test skips. They cover browse/drop/paste import, corrupt-file rejection, local vectorization, individual path editing, double-click and keyboard layer editing, title/body formatting and toggle-off behavior, outside-click geometry restoration, connection validation and reconnection, locked layers, cascade deletion, focus restoration, search, branches, checkpoints, bulk arrangement, undo/redo, backup/restore, drag/resize persistence, SVG download, accessibility, and mobile panels. The 500-layer/800-connector stress scenario passes in Chromium.
+- Forty-six unit tests pass for rich-text validation/utilities, schema migration, SVG export, project validation and repair, connection rules, mixed image/concept layout, cyclic graphs, cascade deletion, collapse, and deterministic tidy behavior.
+- One hundred twelve production-Worker end-to-end checks pass across Chromium, Firefox, and WebKit, with two intentional non-Chromium stress-test skips. They cover browse/drop/paste import, corrupt-file rejection, image child/sibling actions, double-click and keyboard layer editing, title/body formatting and toggle-off behavior, outside-click geometry restoration, connection validation and reconnection, locked layers, cascade deletion, focus restoration, search, branches, checkpoints, bulk arrangement, undo/redo, backup/restore, drag/resize persistence, SVG download, accessibility, and mobile panels. The 500-layer/800-connector stress scenario passes in Chromium.
 - The automated workflow confirms that the local-only editor makes no off-origin requests.
 - Mobile Lighthouse scores 98 performance and 100 accessibility, best practices, SEO, and agentic browsing; LCP is 2.2 seconds, CLS is 0, and total blocking time is 0 milliseconds in the local test profile.
 - `npm audit` reports zero vulnerabilities.
@@ -25,7 +25,7 @@ Phases 1–5 are implemented and verified locally. Deployment phases 6–7 have 
 
 - Host the app on Cloudflare Workers, first on a preview `workers.dev` URL and then on the production domain.
 - Keep images, vectors, and documents local to the browser. Do not add accounts, D1, R2, or cloud sync in this release.
-- Keep local vectorization clearly labeled as non-AI.
+- Keep image vectorization disabled and hidden until the product direction explicitly brings it back.
 - Hide or feature-gate semantic AI reconstruction until a real provider, privacy policy, error handling, and usage controls exist.
 - Support the current and previous major versions of Chrome, Edge, Firefox, and Safari, including current mobile Safari and Chrome. File browsing is the universal fallback when drag, drop, or paste is unavailable.
 - Treat cloud sync, collaboration, video vectorization, and AI diagram reconstruction as separate post-v1 tracks.
@@ -35,7 +35,7 @@ Phases 1–5 are implemented and verified locally. Deployment phases 6–7 have 
 - Local development works at `http://localhost:3000`; the built Worker is also verified locally through Wrangler.
 - GPT Sites-specific packages, configuration, and hosting metadata have been removed.
 - Cloudflare Worker configuration, immutable asset caching, security headers, CI, privacy documentation, and deployment scripts are present.
-- IndexedDB autosave, validated backup/restore, cancellable Web Worker vectorization, layer/path editing, undo/redo, connector creation, and SVG export are implemented.
+- IndexedDB autosave, validated backup/restore, layer editing, undo/redo, connector creation, and SVG export are implemented. The isolated image-vectorization implementation remains feature-gated off with no user-facing controls.
 - Automated unit and cross-browser end-to-end coverage protects the release-critical workflows.
 - The layer and connector behavior contract, test matrix, and local evidence are recorded in `LAYER_CONNECTION_TEST_PLAN.md`.
 - Schema-v3 rich concept titles and bodies, version-1/2 migration, lazy-loaded single-editor operation, local checkpoints, templates, search, branch collapse, quick-add, bulk arrangement, connector labels/styles, and rich editable-SVG export are implemented.
@@ -44,7 +44,7 @@ Phases 1–5 are implemented and verified locally. Deployment phases 6–7 have 
 
 Production readiness is achieved only when all of these gates pass:
 
-- **Functionality:** import, vectorize, edit, undo/redo, reload recovery, and SVG export work on every supported desktop browser and at least one iOS and Android browser.
+- **Functionality:** import, edit, create image/concept branches, undo/redo, reload recovery, and SVG export work on every supported desktop browser and at least one iOS and Android browser.
 - **Privacy:** a network trace proves imported images and document contents never leave the device in local-only mode.
 - **Reliability:** oversized, corrupt, unsupported, and memory-intensive images fail safely without losing the current document.
 - **Accessibility:** the complete primary workflow is keyboard operable, status changes are announced appropriately, focus is preserved, and the layer list provides a semantic alternative to spatial canvas navigation.

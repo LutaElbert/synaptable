@@ -310,10 +310,16 @@ function RasterNode({ id, data, selected }: NodeProps<EditorNode>) {
   const singleSelection = selected && selectedNodeCount === 1;
   return (
     <>
-      <NodeToolbar isVisible={singleSelection} position={Position.Top} offset={14}>
+      <NodeToolbar isVisible={singleSelection && !data.locked} position={Position.Top} offset={14}>
         <div className="node-actionbar nodrag nowheel" aria-label="Image actions">
           <button type="button" onClick={() => actions.keepImage(id)}>
             <Check size={14} /> Keep image
+          </button>
+          <button type="button" onClick={() => actions.addConceptRelative(id, 'child')}>
+            <Plus size={14} /> Add child
+          </button>
+          <button type="button" onClick={() => actions.addConceptRelative(id, 'sibling')}>
+            <Plus size={14} /> Add sibling
           </button>
           {EDITOR_FEATURES.imageVectorization ? (
             <>
@@ -1487,23 +1493,27 @@ function EditorInner() {
       if (target?.closest('input, textarea, button, [contenteditable="true"]')) return;
       if (!target?.closest('.react-flow__node')) return;
       const selected = nodesRef.current.find((node) => node.selected);
-      if (!selected || selected.data.kind !== 'concept' || selected.data.locked) return;
-      if (event.key === 'Tab' && target?.closest('.react-flow__node')) {
+      if (!selected || selected.data.locked) return;
+      const supportsBranchCreation = selected.data.kind === 'concept' || selected.data.kind === 'raster';
+      if (supportsBranchCreation && event.key === 'Tab') {
         event.preventDefault();
+        event.stopPropagation();
         addConceptRelative(selected.id, 'child');
         return;
       }
-      if (event.key === 'Enter' && event.shiftKey) {
+      if (supportsBranchCreation && event.key === 'Enter' && event.shiftKey) {
         event.preventDefault();
+        event.stopPropagation();
         addConceptRelative(selected.id, 'sibling');
         return;
       }
-      if (event.key !== 'Enter') return;
+      if (selected.data.kind !== 'concept' || event.key !== 'Enter') return;
       event.preventDefault();
+      event.stopPropagation();
       beginConceptEdit(selected.id);
     };
-    window.addEventListener('keydown', beginFromKeyboard);
-    return () => window.removeEventListener('keydown', beginFromKeyboard);
+    window.addEventListener('keydown', beginFromKeyboard, true);
+    return () => window.removeEventListener('keydown', beginFromKeyboard, true);
   }, [addConceptRelative, beginConceptEdit]);
 
   const updateSelectedPath = useCallback(

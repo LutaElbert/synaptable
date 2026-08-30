@@ -9,6 +9,8 @@ Protect the editor's graph integrity and make layer editing predictable across p
 - Double-clicking a concept on the canvas enters rich-text editing. Double-clicking a layer name in the layer panel enters rename mode; `F2` is the keyboard equivalent.
 - Inline editing temporarily enlarges a small concept for usable controls, then restores its exact saved position and dimensions on finish, outside-click commit, or cancel.
 - Concept titles and bodies support reversible bold, italic, underline, strikethrough, and safe-link formatting. Bodies additionally support reversible bullets, numbering, and checklists; title list controls remain unavailable.
+- A single selected, unlocked concept or image layer exposes child and sibling actions. Children are compact editable concepts connected from the source bottom to the child top. Siblings reuse the selected layer's incoming parent and row; an unconnected root sibling is placed beside the source without inventing a connector.
+- `Tab` creates a child and `Shift+Enter` creates a sibling when an unlocked concept or image node has canvas focus. Plain `Enter` starts rich-text editing only for concepts.
 - `Enter` commits a layer rename, while `Escape` cancels without creating a history entry. Focus returns to the edited concept or layer control after cancellation and to the renamed layer after commit.
 - Locked layers cannot be renamed, edited on the canvas, moved, resized, styled, deleted through a mixed bulk operation, or used as an endpoint for a new or reconnected connector.
 - A connector requires two existing, distinct, unlocked endpoints. Duplicate directed connectors are rejected; reverse-direction connectors and cycles are supported.
@@ -20,7 +22,8 @@ Protect the editor's graph integrity and make layer editing predictable across p
 
 | Area | Coverage |
 | --- | --- |
-| Double-click and keyboard editing | Canvas concept edit/cancel, layer-panel rename commit/cancel, `F2`, raster/vector parity, clean history, focus restoration |
+| Double-click and keyboard editing | Canvas concept edit/cancel, layer-panel rename commit/cancel, `F2`, raster parity, clean history, focus restoration |
+| Branch creation | Concept and image toolbar actions, `Tab`/`Shift+Enter`, mixed-size layout, bottom/top connectors, parent-aware siblings, locked images, undo/redo, and reload |
 | Rich formatting toolbar | Title/body focus routing; bold, italic, underline, strikethrough, safe link apply/remove/cancel; bullets, numbering, checklists; toggle-off behavior; finish, outside-click, cancel, undo/redo, and reload |
 | Connection rules | Missing endpoints, self-edge, duplicate direction, reverse cycle, locked endpoints, reconnection, duplicate reconnect rejection |
 | Mutation safety | Keyboard and inspector deletion, cascade cleanup, mixed locked selection, ordering, duplicate-layer isolation, undo/redo |
@@ -46,10 +49,11 @@ npm audit --audit-level=high
 
 The local Worker must return the configured CSP, framing, MIME-sniffing, referrer, permissions, HSTS, and cross-origin headers. `git diff --check` must report no whitespace errors.
 
-## Latest local evidence — 2026-08-29
+## Latest local evidence — 2026-08-30
 
-- 32/32 unit tests passed.
-- 79 production-Worker browser checks passed: 27 Chromium, 26 Firefox, and 26 WebKit, with two intentional non-Chromium stress-test skips.
+- 46/46 unit tests passed.
+- 112 production-Worker browser checks passed: 38 Chromium, 37 Firefox, and 37 WebKit, with two intentional non-Chromium stress-test skips.
+- Image child/sibling toolbar actions, keyboard shortcuts, parent-aware layout, connector handles, locking, undo/redo, and reload passed in all three engines.
 - Double-click, outside-click geometry restoration, all inline formatting controls, drag/resize history, and reload persistence passed in all three engines.
 - The Chromium scale fixture passed with 500 layers and 800 connectors.
 - Vinext compatibility is 100%, the production build succeeds, the dependency audit reports zero vulnerabilities, and the required security headers are present.
@@ -57,7 +61,7 @@ The local Worker must return the configured CSP, framing, MIME-sniffing, referre
 
 ## Manual acceptance still required
 
-- Try representative real concept-map screenshots and confirm the resulting layer names, vector paths, and intended connections are useful.
+- Try representative real concept-map screenshots and confirm image references, child ideas, sibling placement, and intended connections are useful.
 - Repeat pointer editing and drag/resize on at least one physical touch device.
 - Review VoiceOver/Safari or another screen-reader/browser combination.
 - Approve the release candidate before any preview deployment, merge, or production deployment.
