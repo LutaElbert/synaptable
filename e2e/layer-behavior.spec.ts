@@ -1,5 +1,17 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { canvasNode, connectLayers, createDiagramPng, openEditor, waitForSaved } from './helpers';
+
+async function dragResizeControl(page: Page, node: Locator, selector: string, deltaX: number, deltaY: number) {
+  const handle = node.locator(selector);
+  const box = await handle.boundingBox();
+  expect(box).toBeTruthy();
+  const startX = box!.x + box!.width / 2;
+  const startY = box!.y + box!.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + deltaX, startY + deltaY, { steps: 12 });
+  await page.mouse.up();
+}
 
 test('double-click edits a canvas concept and cancel is a clean no-op', async ({ page }) => {
   await openEditor(page);
@@ -241,6 +253,84 @@ test('checklist content auto-sizes its layer and removes the trailing empty row 
   expect(restoredCardBox).toBeTruthy();
   expect(restoredBodyBox).toBeTruthy();
   expect(restoredBodyBox!.y + restoredBodyBox!.height).toBeLessThanOrEqual(restoredCardBox!.y + restoredCardBox!.height + 1);
+});
+
+test('child and sibling actions create compact layers below the parent with vertical connections', async ({ page }) => {
+  await openEditor(page);
+  const originalEdgeCount = await page.locator('.react-flow__edge').count();
+  await page.getByRole('button', { name: 'Research', exact: true }).click();
+  await page.getByRole('button', { name: 'Add child', exact: true }).click();
+  await page.getByLabel('Concept title').fill('Compact child');
+  await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
+
+  const parent = canvasNode(page, 'Research');
+  const child = canvasNode(page, 'Compact child');
+  const parentBox = await parent.boundingBox();
+  const childBox = await child.boundingBox();
+  expect(parentBox).toBeTruthy();
+  expect(childBox).toBeTruthy();
+  expect(childBox!.height).toBeLessThan(100);
+  expect(childBox!.y).toBeGreaterThan(parentBox!.y + parentBox!.height);
+  await expect(page.locator('.react-flow__edge')).toHaveCount(originalEdgeCount + 1);
+
+  const parentBottom = await parent.locator('.react-flow__handle.source[data-handleid="bottom"]').boundingBox();
+  const childTop = await child.locator('.react-flow__handle.target[data-handleid="top"]').boundingBox();
+  expect(parentBottom).toBeTruthy();
+  expect(childTop).toBeTruthy();
+  expect(Math.abs(parentBottom!.y + parentBottom!.height / 2 - (parentBox!.y + parentBox!.height))).toBeLessThan(4);
+  expect(Math.abs(childTop!.y + childTop!.height / 2 - childBox!.y)).toBeLessThan(4);
+
+  await page.getByRole('button', { name: 'Compact child', exact: true }).click();
+  await page.getByRole('button', { name: 'Add sibling', exact: true }).click();
+  await page.getByLabel('Concept title').fill('Compact sibling');
+  await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
+  const refreshedChildBox = await canvasNode(page, 'Compact child').boundingBox();
+  const siblingBox = await canvasNode(page, 'Compact sibling').boundingBox();
+  expect(refreshedChildBox).toBeTruthy();
+  expect(siblingBox).toBeTruthy();
+  await page.getByRole('button', { name: 'Compact child', exact: true }).click();
+  const childX = Number(await page.locator('.inspector-panel').getByRole('spinbutton', { name: 'X', exact: true }).inputValue());
+  const childY = Number(await page.locator('.inspector-panel').getByRole('spinbutton', { name: 'Y', exact: true }).inputValue());
+  await page.getByRole('button', { name: 'Compact sibling', exact: true }).click();
+  const siblingX = Number(await page.locator('.inspector-panel').getByRole('spinbutton', { name: 'X', exact: true }).inputValue());
+  const siblingY = Number(await page.locator('.inspector-panel').getByRole('spinbutton', { name: 'Y', exact: true }).inputValue());
+  expect(siblingY).toBe(childY);
+  expect(siblingX - childX).toBeGreaterThanOrEqual(260);
+  expect(siblingBox!.height).toBeLessThan(100);
+  await expect(page.locator('.react-flow__edge')).toHaveCount(originalEdgeCount + 2);
+});
+
+test('content alignment is accessible, undoable, and persistent on resized concepts', async ({ page }) => {
+  await openEditor(page);
+  const research = canvasNode(page, 'Research');
+  await research.click();
+  await dragResizeControl(page, research, '.react-flow__resize-control.handle.bottom.right', 90, 120);
+  const titleBefore = await research.locator('.concept-title-rich-text').boundingBox();
+  expect(titleBefore).toBeTruthy();
+
+  const center = page.getByRole('button', { name: 'Align content center', exact: true });
+  const bottom = page.getByRole('button', { name: 'Align content bottom', exact: true });
+  await center.click();
+  await bottom.click();
+  const card = research.locator('.concept-node');
+  await expect(center).toHaveAttribute('aria-pressed', 'true');
+  await expect(bottom).toHaveAttribute('aria-pressed', 'true');
+  await expect(card).toHaveCSS('text-align', 'center');
+  await expect(card).toHaveCSS('align-content', 'end');
+  const titleAfter = await research.locator('.concept-title-rich-text').boundingBox();
+  expect(titleAfter).toBeTruthy();
+  expect(titleAfter!.y).toBeGreaterThan(titleBefore!.y + 40);
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Align content top', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(bottom).toHaveAttribute('aria-pressed', 'true');
+  await waitForSaved(page);
+  await page.reload();
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  await page.getByRole('button', { name: 'Research', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Align content center', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Align content bottom', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('double-click and F2 rename a layer with commit, cancel, undo, and redo', async ({ page }) => {
@@ -510,4 +600,45 @@ test('resized layer dimensions are undoable and persist after reload', async ({ 
     'ResizeObserver loop limit exceeded',
   ].includes(message));
   expect(unexpectedErrors).toEqual([]);
+});
+
+test('top-left resizing updates position, respects minimums, and hides controls while locked or editing', async ({ page }) => {
+  await openEditor(page);
+  const research = canvasNode(page, 'Research');
+  await research.click();
+  const originalBox = await research.boundingBox();
+  expect(originalBox).toBeTruthy();
+
+  await dragResizeControl(page, research, '.react-flow__resize-control.handle.top.left', -55, -35);
+  const expandedBox = await research.boundingBox();
+  expect(expandedBox).toBeTruthy();
+  expect(expandedBox!.x).toBeLessThan(originalBox!.x - 20);
+  expect(expandedBox!.y).toBeLessThan(originalBox!.y - 12);
+  expect(expandedBox!.width).toBeGreaterThan(originalBox!.width + 30);
+  expect(expandedBox!.height).toBeGreaterThan(originalBox!.height + 18);
+
+  await dragResizeControl(
+    page,
+    research,
+    '.react-flow__resize-control.handle.bottom.right',
+    -(expandedBox!.width - 155),
+    -(expandedBox!.height - 72),
+  );
+  const minimumBox = await research.boundingBox();
+  expect(minimumBox).toBeTruthy();
+  expect(minimumBox!.width).toBeGreaterThanOrEqual(149);
+  expect(minimumBox!.height).toBeGreaterThanOrEqual(67);
+  const cardBox = await research.locator('.concept-node').boundingBox();
+  const titleBox = await research.locator('.concept-title-rich-text').boundingBox();
+  expect(cardBox).toBeTruthy();
+  expect(titleBox).toBeTruthy();
+  expect(titleBox!.y + titleBox!.height).toBeLessThanOrEqual(cardBox!.y + cardBox!.height + 1);
+
+  await page.getByLabel('Lock layer').check();
+  await expect(research.locator('.react-flow__resize-control.handle')).toHaveCount(0);
+  await page.getByLabel('Lock layer').uncheck();
+  await research.locator('.concept-node').dblclick();
+  await expect(page.getByLabel('Concept title')).toBeVisible();
+  await expect(research.locator('.react-flow__resize-control.handle')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cancel editing', exact: true }).click();
 });

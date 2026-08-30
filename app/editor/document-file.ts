@@ -18,7 +18,7 @@ import {
 } from './rich-text';
 
 export const PROJECT_FORMAT = 'synaptable-project';
-export const PROJECT_FILE_VERSION = 3;
+export const PROJECT_FILE_VERSION = 4;
 export const MAX_PROJECT_FILE_SIZE = 40 * 1024 * 1024;
 
 const MAX_TITLE_LENGTH = 120;
@@ -197,7 +197,7 @@ function parseVectorPath(value: unknown, index: number): VectorPathLayer {
   };
 }
 
-function parseNode(value: unknown, index: number, sourceVersion: 1 | 2 | 3): EditorNode {
+function parseNode(value: unknown, index: number, sourceVersion: 1 | 2 | 3 | 4): EditorNode {
   if (!isRecord(value) || !isRecord(value.position) || !isRecord(value.data)) {
     throw new Error(`Layer ${index + 1} is invalid.`);
   }
@@ -238,6 +238,14 @@ function parseNode(value: unknown, index: number, sourceVersion: 1 | 2 | 3): Edi
       ? parseConceptTitle(data.title)
       : conceptTitleFromPlainText(legacyLabel);
     const label = boundedString(richTextToPlainText(title), 'Concept label', 500);
+    const horizontalAlign = sourceVersion >= 4
+      && (data.horizontalAlign === 'center' || data.horizontalAlign === 'right')
+      ? data.horizontalAlign
+      : 'left';
+    const verticalAlign = sourceVersion >= 4
+      && (data.verticalAlign === 'middle' || data.verticalAlign === 'bottom')
+      ? data.verticalAlign
+      : 'top';
     return {
       ...common,
       type: 'concept',
@@ -252,6 +260,8 @@ function parseNode(value: unknown, index: number, sourceVersion: 1 | 2 | 3): Edi
         eyebrow: boundedString(data.eyebrow, 'Concept eyebrow', 160),
         tone,
         collapsed: sourceVersion >= 2 && data.collapsed === true,
+        horizontalAlign,
+        verticalAlign,
       },
     };
   }
@@ -351,7 +361,7 @@ export function validateEditorDocument(
   value: unknown,
   options: { strictGraph?: boolean } = {},
 ): EditorDocument {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3)) {
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4)) {
     throw new Error('This project uses an unsupported document version.');
   }
   const sourceVersion = value.schemaVersion;
@@ -397,7 +407,7 @@ export function validateEditorDocument(
   });
 
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     title: boundedString(value.title, 'Project title', MAX_TITLE_LENGTH),
     nodes,
     edges,
@@ -426,7 +436,7 @@ export function parseProjectBackup(source: string): EditorDocument {
   } catch {
     throw new Error('The selected file is not valid JSON.');
   }
-  if (!isRecord(value) || value.format !== PROJECT_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== 3)) {
+  if (!isRecord(value) || value.format !== PROJECT_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4)) {
     throw new Error('This is not a supported SynapTable project backup.');
   }
   return validateEditorDocument(value.document, { strictGraph: true });

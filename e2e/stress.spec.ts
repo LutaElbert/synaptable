@@ -29,6 +29,8 @@ function stressProject(nodeCount = 500, edgeCount = 800) {
       eyebrow: index % 2 ? 'Detail' : 'Topic',
       tone: index % 3 === 0 ? 'indigo' : index % 3 === 1 ? 'ink' : 'mint',
       collapsed: false,
+      horizontalAlign: 'left',
+      verticalAlign: 'top',
       opacity: 1,
       locked: false,
     },

@@ -51,6 +51,8 @@ export type ConceptNodeData = BaseNodeData & {
   eyebrow: string;
   tone: 'ink' | 'indigo' | 'mint';
   collapsed: boolean;
+  horizontalAlign: 'left' | 'center' | 'right';
+  verticalAlign: 'top' | 'middle' | 'bottom';
 };
 
 export type RasterNodeData = BaseNodeData & {
@@ -78,7 +80,7 @@ export type EditorEdgeData = Record<string, unknown> & {
 export type EditorEdge = Edge<EditorEdgeData>;
 
 export type EditorDocument = {
-  schemaVersion: 3;
+  schemaVersion: 4;
   title: string;
   nodes: EditorNode[];
   edges: EditorEdge[];

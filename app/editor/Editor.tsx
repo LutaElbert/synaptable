@@ -93,6 +93,15 @@ import {
 } from './graph-rules';
 import { initialDocument } from './initial-document';
 import {
+  CONCEPT_DEFAULT_WIDTH,
+  CONCEPT_EDIT_MIN_HEIGHT,
+  CONCEPT_EDIT_MIN_WIDTH,
+  CONCEPT_MIN_HEIGHT,
+  CONCEPT_MIN_WIDTH,
+  editorNodeDimensions,
+  relativeConceptLayout,
+} from './node-layout';
+import {
   clearLocalDocument,
   createLocalCheckpoint,
   deleteLocalCheckpoint,
@@ -131,6 +140,32 @@ const RESIZE_OBSERVER_NOTIFICATIONS = new Set([
   'ResizeObserver loop completed with undelivered notifications.',
   'ResizeObserver loop limit exceeded',
 ]);
+
+function installFrameScheduledResizeObserver() {
+  if (typeof window === 'undefined' || typeof window.ResizeObserver === 'undefined') return;
+  const resizeWindow = window as typeof window & { __synaptableFrameScheduledResizeObserver?: boolean };
+  if (resizeWindow.__synaptableFrameScheduledResizeObserver) return;
+  const NativeResizeObserver = window.ResizeObserver;
+  window.ResizeObserver = class FrameScheduledResizeObserver extends NativeResizeObserver {
+    constructor(callback: ResizeObserverCallback) {
+      let frameId: number | null = null;
+      let pendingEntries: ResizeObserverEntry[] = [];
+      super((entries, observer) => {
+        pendingEntries = entries;
+        if (frameId !== null) return;
+        frameId = window.requestAnimationFrame(() => {
+          frameId = null;
+          const nextEntries = pendingEntries;
+          pendingEntries = [];
+          callback(nextEntries, observer);
+        });
+      });
+    }
+  };
+  resizeWindow.__synaptableFrameScheduledResizeObserver = true;
+}
+
+installFrameScheduledResizeObserver();
 const CONCEPT_TEMPLATES = {
   idea: {
     name: 'New idea',
@@ -213,13 +248,13 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
       </NodeToolbar>
       <NodeResizer
         isVisible={singleSelection && !data.locked && !editing}
-        minWidth={150}
-        minHeight={68}
+        minWidth={CONCEPT_MIN_WIDTH}
+        minHeight={CONCEPT_MIN_HEIGHT}
         onResizeStart={() => actions.recordResizeStart(id)}
         onResizeEnd={(_, dimensions) => actions.recordResizeEnd(id, dimensions)}
       />
       <article
-        className={`concept-node tone-${data.tone} ${editing ? 'is-editing nodrag nowheel' : ''}`}
+        className={`concept-node tone-${data.tone} content-align-${data.horizontalAlign} content-valign-${data.verticalAlign} ${editing ? 'is-editing nodrag nowheel' : ''}`}
         style={{ opacity: data.opacity }}
         onDoubleClick={(event) => {
           event.stopPropagation();
@@ -597,7 +632,7 @@ function EditorInner() {
   }, [refreshHistoryState]);
 
   const getCurrentDocument = useCallback((): EditorDocument => ({
-    schemaVersion: 3,
+    schemaVersion: 4,
     title: titleRef.current,
     nodes: nodesRef.current.map((node) => ({ ...node, selected: false })),
     edges: edgesRef.current.map((edge) => ({ ...edge, selected: false })),
@@ -1057,6 +1092,7 @@ function EditorInner() {
         id,
         type: 'concept',
         position: { x: center.x - 94, y: center.y - 39 },
+        style: { width: CONCEPT_DEFAULT_WIDTH, height: CONCEPT_MIN_HEIGHT },
         draggable: true,
         deletable: true,
         data: {
@@ -1068,6 +1104,8 @@ function EditorInner() {
           eyebrow: 'Concept',
           tone: 'ink',
           collapsed: false,
+          horizontalAlign: 'left',
+          verticalAlign: 'top',
           opacity: 1,
           locked: false,
         },
@@ -1095,6 +1133,7 @@ function EditorInner() {
       id,
       type: 'concept',
       position: { x: center.x - 110, y: center.y - 56 },
+      style: { width: CONCEPT_DEFAULT_WIDTH, height: CONCEPT_MIN_HEIGHT },
       draggable: true,
       deletable: true,
       selected: true,
@@ -1107,6 +1146,8 @@ function EditorInner() {
         eyebrow: template.eyebrow,
         tone: template.tone,
         collapsed: false,
+        horizontalAlign: 'left',
+        verticalAlign: 'top',
         opacity: 1,
         locked: false,
       },
@@ -1259,8 +1300,8 @@ function EditorInner() {
       ...item,
       style: {
         ...item.style,
-        width: Math.max(250, Number(item.style?.width) || Number(item.measured?.width) || 220),
-        height: Math.max(170, Number(item.style?.height) || Number(item.measured?.height) || 78),
+        width: Math.max(CONCEPT_EDIT_MIN_WIDTH, Number(item.style?.width) || Number(item.measured?.width) || CONCEPT_DEFAULT_WIDTH),
+        height: Math.max(CONCEPT_EDIT_MIN_HEIGHT, Number(item.style?.height) || Number(item.measured?.height) || CONCEPT_MIN_HEIGHT),
       },
     } : item));
     setEditingConceptId(id);
@@ -1270,29 +1311,15 @@ function EditorInner() {
   const addConceptRelative = useCallback((id: string, relation: 'child' | 'sibling') => {
     const source = nodesRef.current.find((node) => node.id === id);
     if (!source || source.data.locked) return;
-    const incoming = edgesRef.current.find((edge) => edge.target === id);
-    const parentId = relation === 'sibling' ? incoming?.source : id;
-    const siblings = parentId
-      ? edgesRef.current.filter((edge) => edge.source === parentId).map((edge) => edge.target)
-      : [];
-    const reference = relation === 'child'
-      ? source
-      : parentId
-        ? nodesRef.current.find((node) => node.id === parentId) ?? source
-        : source;
     const newId = crypto.randomUUID();
+    const layout = relativeConceptLayout(nodesRef.current, edgesRef.current, id, relation, newId);
+    const position = layout.positions.get(newId);
+    if (!position) return;
     const nextNode: EditorNode = {
       id: newId,
       type: 'concept',
-      position: {
-        x: relation === 'child' || parentId ? reference.position.x + 290 : source.position.x + 32,
-        y: relation === 'child'
-          ? source.position.y + siblings.length * 116
-          : parentId
-            ? reference.position.y + siblings.length * 116
-            : source.position.y + 116,
-      },
-      style: { width: 250, height: 170 },
+      position,
+      style: { width: CONCEPT_DEFAULT_WIDTH, height: CONCEPT_MIN_HEIGHT },
       draggable: true,
       deletable: true,
       selected: true,
@@ -1305,18 +1332,35 @@ function EditorInner() {
         eyebrow: relation === 'child' ? 'Child idea' : 'Related idea',
         tone: 'ink',
         collapsed: false,
+        horizontalAlign: 'left',
+        verticalAlign: 'top',
         opacity: 1,
         locked: false,
       },
     };
     recordHistory();
-    setNodes((current) => [...current.map((node) => ({ ...node, selected: false })), nextNode]);
-    if (parentId) {
-      setEdges((current) => [...current, {
+    setNodes((current) => [
+      ...current.map((node) => ({
+        ...node,
+        position: layout.positions.get(node.id) ?? node.position,
+        selected: false,
+      })),
+      nextNode,
+    ]);
+    if (layout.parentId) {
+      const parentId = layout.parentId;
+      setEdges((current) => [...current.map((edge) => edge.source === parentId ? {
+        ...edge,
+        sourceHandle: 'bottom',
+        targetHandle: 'top',
+      } : edge), {
         id: crypto.randomUUID(),
         source: parentId,
         target: newId,
+        sourceHandle: 'bottom',
+        targetHandle: 'top',
         type: 'smoothstep',
+        animated: false,
         markerEnd: { type: MarkerType.ArrowClosed },
         style: { stroke: '#a9adb7', strokeWidth: 1.5 },
         data: { label: '', kind: 'default' },
@@ -1732,10 +1776,18 @@ function EditorInner() {
         }
       },
       recordResizeEnd: (id, dimensions) => {
-        if (resizeOriginRef.current) {
-          recordHistory(resizeOriginRef.current);
-          resizeOriginRef.current = null;
-        }
+        const origin = resizeOriginRef.current;
+        const originNode = origin?.nodes.find((node) => node.id === id);
+        const originSize = originNode ? editorNodeDimensions(originNode) : null;
+        const changed = Boolean(originNode && originSize && (
+          Math.abs(originSize.width - dimensions.width) >= 0.01
+          || Math.abs(originSize.height - dimensions.height) >= 0.01
+          || Math.abs(originNode.position.x - dimensions.x) >= 0.01
+          || Math.abs(originNode.position.y - dimensions.y) >= 0.01
+        ));
+        if (origin && changed) recordHistory(origin);
+        resizeOriginRef.current = null;
+        if (!changed) return;
         window.requestAnimationFrame(() => {
           setNodes((current) => current.map((node) => {
             if (node.id !== id) return node;
@@ -1819,10 +1871,10 @@ function EditorInner() {
           hidden: Boolean(node.hidden || collapsedNodeIds.has(node.id)),
         };
       }
-      const minimumHeight = Number(node.style?.height) || 68;
+      const minimumHeight = Number(node.style?.height) || CONCEPT_MIN_HEIGHT;
       const style = {
         ...node.style,
-        height: 'auto',
+        height: node.resizing ? minimumHeight : undefined,
         minHeight: minimumHeight,
         '--concept-min-block-size': `${minimumHeight}px`,
       } as CSSProperties;
@@ -2689,6 +2741,37 @@ function NodeInspector({
                 <option value="mint">Mint</option>
               </select>
             </label>
+            <fieldset className="content-alignment-field" disabled={node.data.locked}>
+              <legend>Content alignment</legend>
+              <div className="content-alignment-row">
+                <span>Across</span>
+                {(['left', 'center', 'right'] as const).map((alignment) => (
+                  <button
+                    key={alignment}
+                    type="button"
+                    aria-label={`Align content ${alignment}`}
+                    aria-pressed={node.data.horizontalAlign === alignment}
+                    onClick={() => updateData({ horizontalAlign: alignment })}
+                  >
+                    {alignment[0].toUpperCase() + alignment.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <div className="content-alignment-row">
+                <span>Down</span>
+                {(['top', 'middle', 'bottom'] as const).map((alignment) => (
+                  <button
+                    key={alignment}
+                    type="button"
+                    aria-label={`Align content ${alignment}`}
+                    aria-pressed={node.data.verticalAlign === alignment}
+                    onClick={() => updateData({ verticalAlign: alignment })}
+                  >
+                    {alignment[0].toUpperCase() + alignment.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
             <button type="button" className="secondary-button edit-content-button" disabled={node.data.locked} onClick={onEditConcept}>
               <TypeIcon size={13} /> Edit rich text
             </button>

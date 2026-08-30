@@ -15,10 +15,10 @@ describe('SynapTable project backups', () => {
     expect(restored.nodes).toHaveLength(initialDocument.nodes.length);
     expect(restored.edges).toHaveLength(initialDocument.edges.length);
     expect(restored.nodes.every((node) => node.selected === false)).toBe(true);
-    expect(restored.schemaVersion).toBe(3);
+    expect(restored.schemaVersion).toBe(4);
   });
 
-  it('migrates version 1 projects to rich-title document version 3', () => {
+  it('migrates version 1 projects to the current document version', () => {
     const legacy = structuredClone(initialDocument) as unknown as Record<string, unknown>;
     legacy.schemaVersion = 1;
     const nodes = legacy.nodes as Array<{ data: Record<string, unknown> }>;
@@ -28,13 +28,13 @@ describe('SynapTable project backups', () => {
       delete node.data.title;
     }
     const migrated = validateEditorDocument(legacy);
-    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.schemaVersion).toBe(4);
     const concept = migrated.nodes.find((node) => node.data.kind === 'concept');
     expect(concept?.data.kind === 'concept' && concept.data.body.type).toBe('doc');
     expect(concept?.data.kind === 'concept' && concept.data.title.type).toBe('doc');
   });
 
-  it('migrates version 2 labels into formatted version 3 titles', () => {
+  it('migrates version 2 labels into formatted titles', () => {
     const legacy = structuredClone(initialDocument) as unknown as Record<string, unknown>;
     legacy.schemaVersion = 2;
     const nodes = legacy.nodes as Array<{ data: Record<string, unknown> }>;
@@ -42,8 +42,35 @@ describe('SynapTable project backups', () => {
     const migrated = validateEditorDocument(legacy);
     const concept = migrated.nodes.find((node) => node.data.kind === 'concept');
     if (!concept || concept.data.kind !== 'concept') throw new Error('Missing concept fixture.');
-    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.schemaVersion).toBe(4);
     expect(concept.data.title.content?.[0].content?.[0].marks).toEqual([{ type: 'bold' }]);
+  });
+
+  it('migrates version 3 concepts to default content alignment', () => {
+    const legacy = structuredClone(initialDocument) as unknown as Record<string, unknown>;
+    legacy.schemaVersion = 3;
+    const nodes = legacy.nodes as Array<{ data: Record<string, unknown> }>;
+    for (const node of nodes) {
+      delete node.data.horizontalAlign;
+      delete node.data.verticalAlign;
+    }
+    const migrated = validateEditorDocument(legacy);
+    const concept = migrated.nodes.find((node) => node.data.kind === 'concept');
+    expect(migrated.schemaVersion).toBe(4);
+    expect(concept?.data.kind === 'concept' && concept.data.horizontalAlign).toBe('left');
+    expect(concept?.data.kind === 'concept' && concept.data.verticalAlign).toBe('top');
+  });
+
+  it('round-trips content alignment in version 4 projects', () => {
+    const document = structuredClone(initialDocument);
+    const concept = document.nodes.find((node) => node.data.kind === 'concept');
+    if (!concept || concept.data.kind !== 'concept') throw new Error('Missing concept fixture.');
+    concept.data.horizontalAlign = 'right';
+    concept.data.verticalAlign = 'bottom';
+    const restored = parseProjectBackup(serializeProjectBackup(document));
+    const restoredConcept = restored.nodes.find((node) => node.id === concept.id);
+    expect(restoredConcept?.data.kind === 'concept' && restoredConcept.data.horizontalAlign).toBe('right');
+    expect(restoredConcept?.data.kind === 'concept' && restoredConcept.data.verticalAlign).toBe('bottom');
   });
 
   it('removes trailing empty checklist rows while loading saved documents', () => {

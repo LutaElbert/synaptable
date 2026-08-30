@@ -3,7 +3,7 @@ import { conceptTitleFromPlainText } from './rich-text';
 import type { EditorDocument } from './types';
 
 export const initialDocument: EditorDocument = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   title: 'Untitled concept map',
   updatedAt: Date.now(),
   nodes: [
@@ -22,6 +22,8 @@ export const initialDocument: EditorDocument = {
         eyebrow: 'Starting point',
         tone: 'indigo',
         collapsed: false,
+        horizontalAlign: 'left',
+        verticalAlign: 'top',
         opacity: 1,
         locked: false,
       },
@@ -41,6 +43,8 @@ export const initialDocument: EditorDocument = {
         eyebrow: 'Next step',
         tone: 'ink',
         collapsed: false,
+        horizontalAlign: 'left',
+        verticalAlign: 'top',
         opacity: 1,
         locked: false,
       },
@@ -60,6 +64,8 @@ export const initialDocument: EditorDocument = {
         eyebrow: 'Output',
         tone: 'mint',
         collapsed: false,
+        horizontalAlign: 'left',
+        verticalAlign: 'top',
         opacity: 1,
         locked: false,
       },
