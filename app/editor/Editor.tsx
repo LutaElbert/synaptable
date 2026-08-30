@@ -25,6 +25,10 @@ import {
   type ResizeParams,
 } from '@xyflow/react';
 import {
+  AlignHorizontalJustifyStart,
+  AlignHorizontalSpaceBetween,
+  AlignVerticalJustifyStart,
+  AlignVerticalSpaceBetween,
   ArrowDown,
   ArrowUp,
   Check,
@@ -171,6 +175,7 @@ type NodeActionContextValue = {
 };
 
 const NodeActionContext = createContext<NodeActionContextValue | null>(null);
+const SelectedNodeCountContext = createContext(0);
 
 function useNodeActions() {
   const value = useContext(NodeActionContext);
@@ -191,11 +196,13 @@ function CommonHandles() {
 
 function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
   const actions = useNodeActions();
+  const selectedNodeCount = useContext(SelectedNodeCountContext);
   if (data.kind !== 'concept') return null;
   const editing = actions.editingConceptId === id;
+  const singleSelection = selected && selectedNodeCount === 1;
   return (
     <>
-      <NodeToolbar isVisible={selected && !editing && !data.locked} position={Position.Top} offset={14}>
+      <NodeToolbar isVisible={singleSelection && !editing && !data.locked} position={Position.Top} offset={14}>
         <div className="node-actionbar nodrag nowheel" aria-label="Concept actions">
           <button type="button" onClick={() => actions.beginConceptEdit(id)}><TypeIcon size={14} /> Edit text</button>
           <button type="button" onClick={() => actions.addConceptRelative(id, 'child')}><Plus size={14} /> Add child</button>
@@ -203,7 +210,7 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
         </div>
       </NodeToolbar>
       <NodeResizer
-        isVisible={selected && !data.locked && !editing}
+        isVisible={singleSelection && !data.locked && !editing}
         minWidth={150}
         minHeight={68}
         onResizeStart={() => actions.recordResizeStart(id)}
@@ -259,11 +266,13 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
 
 function RasterNode({ id, data, selected }: NodeProps<EditorNode>) {
   const actions = useNodeActions();
+  const selectedNodeCount = useContext(SelectedNodeCountContext);
   if (data.kind !== 'raster') return null;
   const isConverting = actions.convertingId === id;
+  const singleSelection = selected && selectedNodeCount === 1;
   return (
     <>
-      <NodeToolbar isVisible={selected} position={Position.Top} offset={14}>
+      <NodeToolbar isVisible={singleSelection} position={Position.Top} offset={14}>
         <div className="node-actionbar nodrag nowheel" aria-label="Image actions">
           <button type="button" onClick={() => actions.keepImage(id)}>
             <Check size={14} /> Keep image
@@ -285,7 +294,7 @@ function RasterNode({ id, data, selected }: NodeProps<EditorNode>) {
         </div>
       </NodeToolbar>
       <NodeResizer
-        isVisible={selected && !data.locked}
+        isVisible={singleSelection && !data.locked}
         minWidth={120}
         minHeight={80}
         keepAspectRatio
@@ -316,12 +325,14 @@ function RasterNode({ id, data, selected }: NodeProps<EditorNode>) {
 
 function VectorNode({ id, data, selected }: NodeProps<EditorNode>) {
   const actions = useNodeActions();
+  const selectedNodeCount = useContext(SelectedNodeCountContext);
   if (data.kind !== 'vector') return null;
   const [minX, minY, width, height] = data.viewBox;
+  const singleSelection = selected && selectedNodeCount === 1;
   return (
     <>
       <NodeResizer
-        isVisible={selected && !data.locked}
+        isVisible={singleSelection && !data.locked}
         minWidth={120}
         minHeight={80}
         keepAspectRatio
@@ -1103,6 +1114,9 @@ function EditorInner() {
 
   const selectedNodes = nodes.filter((node) => node.selected);
   const selectedNode = selectedNodes[0] ?? null;
+  const selectedNodeId = selectedNode?.id ?? null;
+  const selectedNodeCount = selectedNodes.length;
+  const selectedUnlockedCount = selectedNodes.filter((node) => !node.data.locked).length;
   const selectedEdge = edges.find((edge) => edge.selected) ?? null;
   const selectedVectorPath = useMemo(() => {
     if (!selectedPath) return null;
@@ -1525,18 +1539,19 @@ function EditorInner() {
     }));
   }, [updateNode]);
 
-  const duplicateSelected = useCallback(() => {
-    if (!selectedNode) return;
+  const duplicateSelected = () => {
+    const selected = nodesRef.current.find((node) => node.id === selectedNodeId);
+    if (!selected) return;
     const copy: EditorNode = {
-      ...structuredClone(selectedNode),
+      ...structuredClone(selected),
       id: crypto.randomUUID(),
-      position: { x: selectedNode.position.x + 28, y: selectedNode.position.y + 28 },
+      position: { x: selected.position.x + 28, y: selected.position.y + 28 },
       selected: true,
       draggable: true,
       deletable: true,
       data: {
-        ...structuredClone(selectedNode.data),
-        name: `${selectedNode.data.name} copy`,
+        ...structuredClone(selected.data),
+        name: `${selected.data.name} copy`,
         locked: false,
       },
     };
@@ -1545,17 +1560,18 @@ function EditorInner() {
       ...current.map((node) => ({ ...node, selected: false })),
       copy,
     ]);
-  }, [recordHistory, selectedNode]);
+  };
 
-  const deleteSelected = useCallback(() => {
-    if (!selectedNode || selectedNode.data.locked) return;
+  const deleteSelected = () => {
+    const selected = nodesRef.current.find((node) => node.id === selectedNodeId);
+    if (!selected || selected.data.locked) return;
     recordHistory();
-    setNodes((current) => current.filter((node) => node.id !== selectedNode.id));
+    setNodes((current) => current.filter((node) => node.id !== selected.id));
     setEdges((current) =>
-      current.filter((edge) => edge.source !== selectedNode.id && edge.target !== selectedNode.id),
+      current.filter((edge) => edge.source !== selected.id && edge.target !== selected.id),
     );
     setSelectedPath(null);
-  }, [recordHistory, selectedNode]);
+  };
 
   const moveLayer = useCallback((id: string, direction: -1 | 1) => {
     recordHistory();
@@ -1802,8 +1818,9 @@ function EditorInner() {
   );
 
   return (
-    <NodeActionContext.Provider value={nodeActionValue}>
-      <main
+    <SelectedNodeCountContext.Provider value={selectedNodeCount}>
+      <NodeActionContext.Provider value={nodeActionValue}>
+        <main
         className="editor-shell"
         aria-label="SynapTable diagram editor"
         aria-busy={!hydrated}
@@ -2022,7 +2039,7 @@ function EditorInner() {
 
         <section
           id="canvas-workspace"
-          className={`canvas-region tool-${toolMode} ${dragActive ? 'drag-active' : ''} ${temporaryPanActive ? 'temporary-pan' : ''}`}
+          className={`canvas-region tool-${toolMode} ${dragActive ? 'drag-active' : ''} ${temporaryPanActive ? 'temporary-pan' : ''} ${selectedNodeCount > 1 ? 'multi-selection-active' : ''}`}
           aria-label="Canvas workspace"
           tabIndex={-1}
           onDragEnter={(event) => {
@@ -2105,6 +2122,69 @@ function EditorInner() {
             }}
           >
             <Background color="#d8dbe2" gap={18} size={1} />
+            <NodeToolbar
+              nodeId={selectedNodes.map((node) => node.id)}
+              isVisible={selectedNodeCount > 1}
+              position={Position.Top}
+              offset={18}
+            >
+              <div
+                className="multi-node-actionbar nodrag nowheel"
+                role="group"
+                aria-label={`${selectedNodeCount} selected layer actions`}
+              >
+                <span className="multi-node-count"><Layers3 size={14} /> {selectedNodeCount} selected</span>
+                <button
+                  type="button"
+                  aria-label="Duplicate selected layers"
+                  title="Duplicate selected layers"
+                  disabled={selectedUnlockedCount === 0}
+                  onClick={duplicateSelectedNodes}
+                ><Copy size={14} /></button>
+                <button
+                  type="button"
+                  aria-label="Align selected layers left"
+                  title="Align left"
+                  disabled={selectedUnlockedCount < 2}
+                  onClick={() => alignSelectedNodes('left')}
+                ><AlignHorizontalJustifyStart size={14} /></button>
+                <button
+                  type="button"
+                  aria-label="Align selected layers top"
+                  title="Align top"
+                  disabled={selectedUnlockedCount < 2}
+                  onClick={() => alignSelectedNodes('top')}
+                ><AlignVerticalJustifyStart size={14} /></button>
+                <button
+                  type="button"
+                  aria-label="Distribute selected layers horizontally"
+                  title="Distribute horizontally"
+                  disabled={selectedUnlockedCount < 3}
+                  onClick={() => alignSelectedNodes('horizontal')}
+                ><AlignHorizontalSpaceBetween size={14} /></button>
+                <button
+                  type="button"
+                  aria-label="Distribute selected layers vertically"
+                  title="Distribute vertically"
+                  disabled={selectedUnlockedCount < 3}
+                  onClick={() => alignSelectedNodes('vertical')}
+                ><AlignVerticalSpaceBetween size={14} /></button>
+                <button
+                  type="button"
+                  aria-label={selectedUnlockedCount === 0 ? 'Unlock selected layers' : 'Lock selected layers'}
+                  title={selectedUnlockedCount === 0 ? 'Unlock selected layers' : 'Lock selected layers'}
+                  onClick={() => setSelectedNodesLocked(selectedUnlockedCount > 0)}
+                >{selectedUnlockedCount === 0 ? <Unlock size={14} /> : <Lock size={14} />}</button>
+                <button
+                  type="button"
+                  className="danger"
+                  aria-label="Delete unlocked selected layers"
+                  title="Delete unlocked selected layers"
+                  disabled={selectedUnlockedCount === 0}
+                  onClick={deleteSelectedNodes}
+                ><Trash2 size={14} /></button>
+              </div>
+            </NodeToolbar>
             <Controls position="bottom-right" showInteractive={false} />
             <MiniMap
               position="bottom-left"
@@ -2338,8 +2418,9 @@ function EditorInner() {
             />
           </form>
         </dialog>
-      </main>
-    </NodeActionContext.Provider>
+        </main>
+      </NodeActionContext.Provider>
+    </SelectedNodeCountContext.Provider>
   );
 }
 

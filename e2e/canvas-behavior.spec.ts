@@ -75,8 +75,17 @@ test('select all, marquee modifiers, escape, and layer ranges stay synchronized'
   await expect(layerButton('Explore tools')).toHaveAttribute('aria-pressed', 'true');
   await expect(layerButton('Editable layers')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.react-flow__node.selected')).toHaveCount(3);
+  const keyboardGroupActions = page.getByRole('group', { name: '3 selected layer actions' });
+  await expect(keyboardGroupActions).toBeVisible();
+  await expect(page.locator('.node-actionbar')).toHaveCount(0);
+  await expect(page.locator('.react-flow__resize-control')).toHaveCount(0);
+  await expect(page.locator('.react-flow__node.selected .react-flow__handle').first()).toHaveCSS('opacity', '0');
+  await expect(page.locator('.react-flow__node.selected .react-flow__handle').first()).toHaveCSS('pointer-events', 'none');
+  await expect(keyboardGroupActions.getByRole('button', { name: 'Align selected layers left' })).toBeEnabled();
+  await expect(keyboardGroupActions.getByRole('button', { name: 'Distribute selected layers horizontally' })).toBeEnabled();
 
   await page.keyboard.press('Escape');
+  await expect(keyboardGroupActions).toBeHidden();
   await expect(research).not.toHaveClass(/selected/);
   await expect(explore).not.toHaveClass(/selected/);
   await expect(editable).not.toHaveClass(/selected/);
@@ -101,6 +110,9 @@ test('select all, marquee modifiers, escape, and layer ranges stay synchronized'
   await expect(groupSelection).toHaveCSS('border-top-width', '0px');
   await expect(groupSelection).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
+  const marqueeGroupActions = page.getByRole('group', { name: '2 selected layer actions' });
+  await expect(marqueeGroupActions).toBeVisible();
+  await expect(marqueeGroupActions.getByRole('button', { name: 'Distribute selected layers horizontally' })).toBeDisabled();
   const groupBox = await groupSelection.boundingBox();
   const exploreBeforeGroupDrag = await explore.boundingBox();
   const editableBeforeGroupDrag = await editable.boundingBox();
@@ -126,12 +138,14 @@ test('select all, marquee modifiers, escape, and layer ranges stay synchronized'
   await page.keyboard.up('Shift');
   await expect(page.locator('.inspector-panel').getByText('3 layers selected', { exact: true }).first()).toBeVisible();
 
+  const currentExploreBox = await explore.boundingBox();
+  expect(currentExploreBox).toBeTruthy();
   await page.keyboard.down('Alt');
   await dragBox(page, {
-    x: exploreBox!.x - 12,
-    y: exploreBox!.y - 12,
-    width: exploreBox!.width + 24,
-    height: exploreBox!.height + 24,
+    x: currentExploreBox!.x - 12,
+    y: currentExploreBox!.y - 12,
+    width: currentExploreBox!.width + 24,
+    height: currentExploreBox!.height + 24,
   });
   await page.keyboard.up('Alt');
   await expect(explore).not.toHaveClass(/selected/);
@@ -199,15 +213,30 @@ test('select all respects editing and locked layers and supports bulk actions', 
 
   const originalLayerCount = await page.locator('.layer-list > li').count();
   const originalEdgeCount = await page.locator('.react-flow__edge').count();
-  await page.getByRole('button', { name: 'Duplicate', exact: true }).click();
+  await page.getByRole('button', { name: 'Duplicate selected layers', exact: true }).click();
   await expect(page.locator('.layer-list > li')).toHaveCount(originalLayerCount + 2);
   await expect(page.locator('.react-flow__edge')).toHaveCount(originalEdgeCount);
   await expect(page.locator('.inspector-panel').getByText('2 layers selected', { exact: true }).first()).toBeVisible();
 
-  await page.getByRole('button', { name: 'Lock', exact: true }).click();
+  await page.getByRole('button', { name: 'Lock selected layers', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Unlock selected layers', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Unlock Editable layers copy', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Unlock', exact: true }).click();
+  await page.getByRole('button', { name: 'Unlock selected layers', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Lock Editable layers copy', exact: true })).toBeVisible();
+});
+
+test('double-clicking one layer drills from multi-selection into editing', async ({ page }) => {
+  await openEditor(page);
+  await page.keyboard.press('Meta+a');
+  await expect(page.getByRole('group', { name: '3 selected layer actions' })).toBeVisible();
+  await expect(page.locator('.node-actionbar')).toHaveCount(0);
+  await expect(page.locator('.react-flow__resize-control')).toHaveCount(0);
+
+  await canvasNode(page, 'Research').dblclick();
+  await expect(page.getByRole('group', { name: '3 selected layer actions' })).toBeHidden();
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(1);
+  await expect(page.getByLabel('Concept title')).toBeVisible();
+  await expect(page.locator('.react-flow__resize-control')).toHaveCount(0);
 });
 
 test('double-clicking empty canvas creates and edits a concept while zoom recovery remains available', async ({ page }) => {

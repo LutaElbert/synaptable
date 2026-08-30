@@ -609,6 +609,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 }
 .react-flow__node:hover .react-flow__handle, .react-flow__node.selected .react-flow__handle, .react-flow__handle:focus-visible { opacity: 1; }
 .react-flow__node:has(.concept-node.is-editing) .react-flow__handle { opacity: 0; pointer-events: none; }
+.canvas-region.multi-selection-active .react-flow__node.selected .react-flow__handle { opacity: 0; pointer-events: none; }
 .react-flow__resize-control.handle { inline-size: 8px; block-size: 8px; border: 2px solid white; border-radius: 2px; background: var(--accent); }
 .react-flow__resize-control.line { border-color: var(--accent); }
 .react-flow__edge-path { stroke-linecap: round; }
@@ -690,6 +691,44 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   cursor: pointer;
 }
 .node-actionbar button:hover { background: #f0f1f4; color: var(--ink); }
+.multi-node-actionbar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgb(255 255 255 / 97%);
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+  backdrop-filter: blur(12px);
+}
+.multi-node-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 29px;
+  padding-inline: 8px 11px;
+  border-inline-end: 1px solid var(--line);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+}
+.multi-node-actionbar button {
+  display: grid;
+  place-items: center;
+  min-inline-size: 29px;
+  min-block-size: 29px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #4e5159;
+  cursor: pointer;
+}
+.multi-node-actionbar button:hover:not(:disabled) { background: #f0f1f4; color: var(--ink); }
+.multi-node-actionbar button.danger { color: var(--danger); }
+.multi-node-actionbar button:disabled { opacity: .38; cursor: not-allowed; }
 .conversion-overlay {
   position: absolute;
   inset: 0;
