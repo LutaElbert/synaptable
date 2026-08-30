@@ -111,10 +111,16 @@ test('all formatting tools target the active title or body and can be toggled of
   await expect(page.locator('.formatting-context')).toHaveText('Body');
   await expect(bullets).toBeEnabled();
   await bullets.click();
-  await expect(body.locator('ul:not([data-type="taskList"])')).toBeVisible();
+  const bulletList = body.locator('ul:not([data-type="taskList"])');
+  await expect(bulletList).toBeVisible();
+  await expect(bulletList).toHaveCSS('list-style-type', 'disc');
+  await expect(bulletList).toHaveCSS('list-style-position', 'outside');
   await bullets.click();
   await numbers.click();
-  await expect(body.locator('ol')).toBeVisible();
+  const numberedList = body.locator('ol');
+  await expect(numberedList).toBeVisible();
+  await expect(numberedList).toHaveCSS('list-style-type', 'decimal');
+  await expect(numberedList).toHaveCSS('list-style-position', 'outside');
   await numbers.click();
   await checklist.click();
   await expect(body.locator('ul[data-type="taskList"]')).toBeVisible();

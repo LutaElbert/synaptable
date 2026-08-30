@@ -208,6 +208,10 @@ test('edits rich concept text directly with formatting, commit, cancel, undo, an
 
   await expect(researchNode.getByText('Research plan', { exact: true })).toBeVisible();
   await expect(researchNode.getByText('First milestone', { exact: true })).toBeVisible();
+  const renderedBulletList = researchNode.locator('.concept-rich-text ul:not(.concept-task-list)');
+  await expect(renderedBulletList).toBeVisible();
+  await expect(renderedBulletList).toHaveCSS('list-style-type', 'disc');
+  await expect(renderedBulletList).toHaveCSS('list-style-position', 'outside');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(researchNode.getByText('Research', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
@@ -226,8 +230,10 @@ test('edits rich concept text directly with formatting, commit, cancel, undo, an
 
   await page.reload();
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
-  await expect(page.locator('.react-flow__node').filter({ hasText: 'Research plan' })).toBeVisible();
+  const restoredResearchNode = page.locator('.react-flow__node').filter({ hasText: 'Research plan' });
+  await expect(restoredResearchNode).toBeVisible();
   await expect(page.locator('.react-flow__node').filter({ hasText: 'First milestone' })).toBeVisible();
+  await expect(restoredResearchNode.locator('.concept-rich-text ul:not(.concept-task-list)')).toHaveCSS('list-style-type', 'disc');
   expect(runtimeErrors).toEqual([]);
 });
 
