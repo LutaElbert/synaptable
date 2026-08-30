@@ -39,6 +39,38 @@ export function replaceRichTextPlainText(
   return richTextFromPlainText(value, findMarks(document));
 }
 
+function richTextNodeHasContent(node: RichTextNode): boolean {
+  if (node.type === 'text') return Boolean(node.text?.trim());
+  if (node.type === 'hardBreak') return false;
+  return (node.content ?? []).some(richTextNodeHasContent);
+}
+
+function normalizeRichTextNode(node: RichTextNode): RichTextNode | null {
+  const content = node.content
+    ?.map(normalizeRichTextNode)
+    .filter((child): child is RichTextNode => child !== null);
+
+  if (node.type === 'bulletList' || node.type === 'orderedList' || node.type === 'taskList') {
+    const items = [...(content ?? [])];
+    while (items.length && !richTextNodeHasContent(items.at(-1)!)) items.pop();
+    if (!items.length) return null;
+    return { ...node, content: items };
+  }
+
+  return content === undefined ? { ...node } : { ...node, content };
+}
+
+/**
+ * Removes list rows that have no user-visible content at the end of a list.
+ * Editors need a temporary empty row while typing, so call this at document
+ * boundaries such as commit, load, display, and export rather than on update.
+ */
+export function normalizeRichTextDocument(document: RichTextDocument): RichTextDocument {
+  const normalized = normalizeRichTextNode(document);
+  if (!normalized || normalized.type !== 'doc' || !normalized.content?.length) return emptyRichText();
+  return normalized as RichTextDocument;
+}
+
 function plainTextForNode(node: RichTextNode, depth = 0): string {
   if (node.type === 'text') return node.text ?? '';
   if (node.type === 'hardBreak') return '\n';
@@ -49,13 +81,16 @@ function plainTextForNode(node: RichTextNode, depth = 0): string {
   if (node.type === 'bulletList' || node.type === 'orderedList' || node.type === 'taskList') {
     return children
       .map((child, index) => {
+        const childText = plainTextForNode(child, depth + 1);
+        if (!childText.trim()) return '';
         const prefix = node.type === 'orderedList'
           ? `${Number(node.attrs?.start ?? 1) + index}. `
           : node.type === 'taskList'
             ? `${child.attrs?.checked ? '[x]' : '[ ]'} `
             : '• ';
-        return `${'  '.repeat(depth)}${prefix}${plainTextForNode(child, depth + 1)}`;
+        return `${'  '.repeat(depth)}${prefix}${childText}`;
       })
+      .filter(Boolean)
       .join('\n');
   }
   const value = children.map((child) => plainTextForNode(child, depth)).join('');

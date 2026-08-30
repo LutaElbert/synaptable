@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
-import { sanitizeLinkHref } from './rich-text';
+import { normalizeRichTextDocument, sanitizeLinkHref } from './rich-text';
 import type { RichTextDocument, RichTextMark, RichTextNode } from './types';
 
 function applyMarks(content: ReactNode, marks: RichTextMark[] | undefined, key: string): ReactNode {
@@ -44,5 +44,5 @@ export function RichTextView({
   document: RichTextDocument;
   className?: string;
 }) {
-  return <div className={className}>{renderNode(document, 'doc')}</div>;
+  return <div className={className}>{renderNode(normalizeRichTextDocument(document), 'doc')}</div>;
 }

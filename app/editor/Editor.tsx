@@ -71,6 +71,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import '@xyflow/react/dist/style.css';
@@ -103,6 +104,7 @@ import {
 import {
   conceptTitleFromPlainText,
   emptyRichText,
+  normalizeRichTextDocument,
   replaceRichTextPlainText,
   richTextIsEmpty,
   richTextToPlainText,
@@ -1350,17 +1352,29 @@ function EditorInner() {
   const commitConceptEdit = useCallback(() => {
     const id = editingConceptId;
     const origin = conceptEditOriginRef.current;
-    if (origin && id) {
-      const originNode = origin.nodes.find((node) => node.id === id);
+    if (id) {
+      const originNode = origin?.nodes.find((node) => node.id === id);
       const currentNode = nodesRef.current.find((node) => node.id === id);
-      if (originNode && currentNode && JSON.stringify(originNode.data) !== JSON.stringify(currentNode.data)) {
+      const normalizedNode = currentNode?.data.kind === 'concept'
+        ? {
+            ...currentNode,
+            data: {
+              ...currentNode.data,
+              body: normalizeRichTextDocument(currentNode.data.body),
+            },
+          }
+        : currentNode;
+      if (origin && originNode && normalizedNode && JSON.stringify(originNode.data) !== JSON.stringify(normalizedNode.data)) {
         recordHistory(origin);
       }
-      if (originNode) {
-        setNodes((current) => current.map((node) => node.id === id
-          ? restoreNodeGeometry(node, originNode)
-          : node));
-      }
+      setNodes((current) => current.map((node) => {
+        if (node.id !== id || node.data.kind !== 'concept') return node;
+        const normalized = {
+          ...node,
+          data: { ...node.data, body: normalizeRichTextDocument(node.data.body) },
+        };
+        return originNode ? restoreNodeGeometry(normalized, originNode) : normalized;
+      }));
     }
     conceptEditOriginRef.current = null;
     setEditingConceptId(null);
@@ -1798,10 +1812,26 @@ function EditorInner() {
   }, [layerNodes, revealAndSelectNode, selectNode]);
   const collapsedNodeIds = useMemo(() => collapsedDescendantIds(nodes, edges), [edges, nodes]);
   const canvasNodes = useMemo(
-    () => nodes.map((node) => ({
-      ...node,
-      hidden: Boolean(node.hidden || collapsedNodeIds.has(node.id)),
-    })),
+    () => nodes.map((node) => {
+      if (node.data.kind !== 'concept') {
+        return {
+          ...node,
+          hidden: Boolean(node.hidden || collapsedNodeIds.has(node.id)),
+        };
+      }
+      const minimumHeight = Number(node.style?.height) || 68;
+      const style = {
+        ...node.style,
+        height: 'auto',
+        minHeight: minimumHeight,
+        '--concept-min-block-size': `${minimumHeight}px`,
+      } as CSSProperties;
+      return {
+        ...node,
+        style,
+        hidden: Boolean(node.hidden || collapsedNodeIds.has(node.id)),
+      };
+    }),
     [collapsedNodeIds, nodes],
   );
   const canvasEdges = useMemo(
@@ -1866,10 +1896,24 @@ function EditorInner() {
             <button type="button" className="ghost-button new-button" onClick={() => void resetDocument()}>
               <RotateCcw size={14} /> New
             </button>
-            <button type="button" className="icon-button" aria-label="Undo" onClick={undo} disabled={!historyState.canUndo}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Undo"
+              onClick={undo}
+              disabled={!hydrated || !historyState.canUndo}
+              suppressHydrationWarning
+            >
               <Undo2 size={16} />
             </button>
-            <button type="button" className="icon-button" aria-label="Redo" onClick={redo} disabled={!historyState.canRedo}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Redo"
+              onClick={redo}
+              disabled={!hydrated || !historyState.canRedo}
+              suppressHydrationWarning
+            >
               <Redo2 size={16} />
             </button>
             <button type="button" className="primary-button" aria-label="Export SVG" onClick={openExport}>

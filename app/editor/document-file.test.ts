@@ -46,6 +46,34 @@ describe('SynapTable project backups', () => {
     expect(concept.data.title.content?.[0].content?.[0].marks).toEqual([{ type: 'bold' }]);
   });
 
+  it('removes trailing empty checklist rows while loading saved documents', () => {
+    const stored = structuredClone(initialDocument);
+    const concept = stored.nodes.find((node) => node.data.kind === 'concept');
+    if (!concept || concept.data.kind !== 'concept') throw new Error('Missing concept fixture.');
+    concept.data.body = {
+      type: 'doc',
+      content: [{
+        type: 'taskList',
+        content: [
+          {
+            type: 'taskItem',
+            attrs: { checked: false },
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Keep' }] }],
+          },
+          {
+            type: 'taskItem',
+            attrs: { checked: false },
+            content: [{ type: 'paragraph' }],
+          },
+        ],
+      }],
+    };
+
+    const restored = validateEditorDocument(stored);
+    const restoredConcept = restored.nodes.find((node) => node.id === concept.id);
+    expect(restoredConcept?.data.kind === 'concept' && restoredConcept.data.body.content?.[0].content).toHaveLength(1);
+  });
+
   it('rejects multiline concept titles', () => {
     const invalid = structuredClone(initialDocument);
     const concept = invalid.nodes.find((node) => node.data.kind === 'concept');

@@ -12,6 +12,7 @@ import { graphIntegrityIssues } from './graph-rules';
 import {
   conceptTitleFromPlainText,
   emptyRichText,
+  normalizeRichTextDocument,
   richTextToPlainText,
   sanitizeLinkHref,
 } from './rich-text';
@@ -165,7 +166,7 @@ function parseRichTextDocument(value: unknown): RichTextDocument {
   };
   assertStructure(document);
   if (!document.content?.length) document.content = [{ type: 'paragraph' }];
-  return document as RichTextDocument;
+  return normalizeRichTextDocument(document as RichTextDocument);
 }
 
 function parseConceptTitle(value: unknown): RichTextDocument {

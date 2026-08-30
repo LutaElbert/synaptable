@@ -109,4 +109,31 @@ describe('buildSvgDocument', () => {
     expect(svg).toContain('supports &amp; explains');
     expect(svg).toContain('stroke-dasharray="6 5"');
   });
+
+  it('omits trailing empty checklist rows from exported SVG content and height', () => {
+    const nodes = structuredClone(initialDocument.nodes);
+    const concept = nodes[0];
+    if (concept.data.kind !== 'concept') throw new Error('Expected a concept fixture.');
+    concept.data.body = {
+      type: 'doc',
+      content: [{
+        type: 'taskList',
+        content: [
+          {
+            type: 'taskItem',
+            attrs: { checked: false },
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Only item' }] }],
+          },
+          {
+            type: 'taskItem',
+            attrs: { checked: false },
+            content: [{ type: 'paragraph' }],
+          },
+        ],
+      }],
+    };
+
+    const svg = buildSvgDocument([concept], []);
+    expect(svg.match(/☐/g)).toHaveLength(1);
+  });
 });

@@ -388,8 +388,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   gap: 5px;
   inline-size: 100%;
   min-inline-size: 150px;
-  block-size: 100%;
-  min-block-size: 68px;
+  block-size: auto;
+  min-block-size: var(--concept-min-block-size, 68px);
   padding: 15px 17px;
   border: 1px solid var(--line-strong);
   border-radius: 15px;
@@ -406,7 +406,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .tone-mint > .concept-title-rich-text, .tone-mint > .concept-title-placeholder { color: #24795d; }
 .concept-node.is-editing {
   min-inline-size: 250px;
-  min-block-size: 150px;
+  min-block-size: max(150px, var(--concept-min-block-size, 68px));
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent), 0 14px 34px rgb(31 33 40 / 12%);
 }
@@ -419,11 +419,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 }
 .concept-rich-text p { margin: 0; }
 .concept-rich-text p + p { margin-block-start: .35em; }
+.concept-rich-text :where(p, li) { text-wrap: pretty; }
 .concept-rich-text ul, .concept-rich-text ol { margin: .25em 0; padding-inline-start: 1.4em; }
+.concept-rich-text :where(ul, ol) :where(ul, ol) { margin-block: .2em; }
 .concept-rich-text li + li { margin-block-start: .2em; }
 .concept-rich-text a { color: var(--accent); text-decoration: underline; text-underline-offset: .15em; }
 .concept-task-list { padding-inline-start: 0 !important; list-style: none; }
 .concept-task-item { display: grid; grid-template-columns: 1.2em minmax(0, 1fr); gap: .35em; }
+.concept-task-item > div { min-inline-size: 0; }
+.concept-task-item > div > p { margin: 0; }
 .concept-checkbox {
   display: inline-grid;
   place-items: center;
@@ -489,11 +493,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .concept-body-editor:focus { border-color: color-mix(in srgb, var(--accent) 46%, white); outline: 2px solid color-mix(in srgb, var(--accent) 20%, transparent); }
 .concept-body-editor p { margin: 0; }
 .concept-body-editor p + p { margin-block-start: .4em; }
+.concept-body-editor :where(p, li) { text-wrap: pretty; }
 .concept-body-editor ul, .concept-body-editor ol { margin: .3em 0; padding-inline-start: 1.5em; }
+.concept-body-editor :where(ul, ol) :where(ul, ol) { margin-block: .2em; }
 .concept-body-editor ul[data-type='taskList'] { padding-inline-start: 0; list-style: none; }
-.concept-body-editor li[data-type='taskItem'] { display: flex; align-items: flex-start; gap: .45em; }
-.concept-body-editor li[data-type='taskItem'] > label { margin-block-start: .15em; }
-.concept-body-editor li[data-type='taskItem'] > div { flex: 1; min-inline-size: 0; }
+.concept-body-editor ul[data-type='taskList'] > li[data-checked] { display: flex; align-items: flex-start; gap: .45em; }
+.concept-body-editor ul[data-type='taskList'] > li[data-checked] > label { margin-block-start: .15em; }
+.concept-body-editor ul[data-type='taskList'] > li[data-checked] > div { flex: 1; min-inline-size: 0; }
+.concept-body-editor ul[data-type='taskList'] > li[data-checked] > label input { accent-color: var(--accent); }
+.concept-body-editor ul[data-type='taskList'] > li[data-checked] > div > p { margin: 0; }
 .concept-body-editor a { color: var(--accent); text-decoration: underline; text-underline-offset: .15em; }
 .concept-body-editor p.is-editor-empty:first-child::before {
   content: 'Add notes, bullets, or a checklist…';

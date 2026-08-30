@@ -1,4 +1,4 @@
-import { sanitizeLinkHref } from './rich-text';
+import { normalizeRichTextDocument, sanitizeLinkHref } from './rich-text';
 import type {
   EditorEdge,
   EditorNode,
@@ -88,7 +88,7 @@ function wrapLine(line: TextLine, maxCharacters: number): TextLine[] {
 
 function layoutRichText(document: RichTextDocument, width: number) {
   const maxCharacters = Math.max(12, Math.floor((width - 34) / 5.8));
-  return blockLines(document).flatMap((line) => wrapLine(line, maxCharacters));
+  return blockLines(normalizeRichTextDocument(document)).flatMap((line) => wrapLine(line, maxCharacters));
 }
 
 function conceptContentHeight(node: EditorNode, width: number) {

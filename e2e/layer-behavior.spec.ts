@@ -23,7 +23,7 @@ test('double-click edits a canvas concept and cancel is a clean no-op', async ({
   expect(await research.getAttribute('style')).toContain(originalTransform!);
 });
 
-test('outside-click commits concept text without persisting temporary editor dimensions', async ({ page }) => {
+test('outside-click commits concept text and only grows geometry when committed content needs it', async ({ page }) => {
   await openEditor(page);
   const research = canvasNode(page, 'Research');
   const originalBox = await research.boundingBox();
@@ -44,7 +44,12 @@ test('outside-click commits concept text without persisting temporary editor dim
   await expect(committed.getByText('Outside click commit', { exact: true })).toBeVisible();
   const committedBox = await committed.boundingBox();
   expect(Math.abs(committedBox!.width - originalBox!.width)).toBeLessThan(2);
-  expect(Math.abs(committedBox!.height - originalBox!.height)).toBeLessThan(2);
+  expect(committedBox!.height).toBeGreaterThanOrEqual(originalBox!.height - 2);
+  const cardBox = await committed.locator('.concept-node').boundingBox();
+  const titleBox = await committed.locator('.concept-title-rich-text').boundingBox();
+  expect(cardBox).toBeTruthy();
+  expect(titleBox).toBeTruthy();
+  expect(titleBox!.y + titleBox!.height).toBeLessThanOrEqual(cardBox!.y + cardBox!.height);
   expect(await committed.getAttribute('style')).toContain(originalTransform!);
 
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
@@ -56,7 +61,7 @@ test('outside-click commits concept text without persisting temporary editor dim
   const restored = canvasNode(page, 'Outside click commit');
   const restoredBox = await restored.boundingBox();
   expect(Math.abs(restoredBox!.width - originalBox!.width)).toBeLessThan(2);
-  expect(Math.abs(restoredBox!.height - originalBox!.height)).toBeLessThan(2);
+  expect(Math.abs(restoredBox!.height - committedBox!.height)).toBeLessThan(2);
 });
 
 test('all formatting tools target the active title or body and can be toggled off', async ({ page }) => {
@@ -149,6 +154,87 @@ test('all formatting tools target the active title or body and can be toggled of
   await page.reload();
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
   await expect(canvasNode(page, 'Research').locator('.concept-title-rich-text strong')).toHaveCount(1);
+});
+
+test('checklist content auto-sizes its layer and removes the trailing empty row on commit', async ({ page }) => {
+  await openEditor(page);
+  const research = canvasNode(page, 'Research');
+  const originalBox = await research.boundingBox();
+  expect(originalBox).toBeTruthy();
+
+  await research.locator('.concept-node').dblclick();
+  const title = page.getByLabel('Concept title');
+  const body = page.getByLabel('Concept body');
+  await title.fill('Checklist sizing');
+  const items = [
+    'First action item',
+    'Second action item with enough detail to wrap inside a narrow concept layer',
+    'Third action item',
+    'Fourth action item',
+    'Fifth action item',
+    'Sixth action item',
+    'Seventh action item',
+    'Eighth action item',
+  ];
+  await body.fill(items[0]);
+  for (const item of items.slice(1)) {
+    await page.keyboard.press('Enter');
+    await page.keyboard.type(item);
+  }
+  await body.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+  await page.getByRole('button', { name: 'Checklist', exact: true }).click();
+  const editingTaskItems = body.locator('ul[data-type="taskList"] > li[data-checked]');
+  await expect(editingTaskItems).toHaveCount(items.length);
+  await body.evaluate((editor) => {
+    const paragraph = editor.querySelector('ul[data-type="taskList"] > li[data-checked]:last-child p');
+    if (!paragraph) throw new Error('The final checklist paragraph is missing.');
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  });
+  await page.keyboard.press('Enter');
+  await expect(editingTaskItems).toHaveCount(items.length + 1);
+
+  await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
+  const committed = canvasNode(page, 'Checklist sizing');
+  const renderedItems = committed.locator('.concept-task-item');
+  await expect(renderedItems).toHaveCount(items.length);
+  await expect(renderedItems.last()).toContainText('Eighth action item');
+
+  const committedBox = await committed.boundingBox();
+  const cardBox = await committed.locator('.concept-node').boundingBox();
+  const bodyBox = await committed.locator('.concept-rich-text').boundingBox();
+  expect(committedBox).toBeTruthy();
+  expect(cardBox).toBeTruthy();
+  expect(bodyBox).toBeTruthy();
+  expect(Math.abs(committedBox!.width - originalBox!.width)).toBeLessThan(2);
+  expect(committedBox!.height).toBeGreaterThan(originalBox!.height + 80);
+  expect(bodyBox!.y + bodyBox!.height).toBeLessThanOrEqual(cardBox!.y + cardBox!.height + 1);
+
+  const sourceHandle = committed.locator('.react-flow__handle.source').first();
+  const handleBox = await sourceHandle.boundingBox();
+  expect(handleBox).toBeTruthy();
+  const handleCenter = handleBox!.y + handleBox!.height / 2;
+  const cardCenter = cardBox!.y + cardBox!.height / 2;
+  expect(Math.abs(handleCenter - cardCenter)).toBeLessThan(3);
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(canvasNode(page, 'Research').locator('.concept-task-item')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(canvasNode(page, 'Checklist sizing').locator('.concept-task-item')).toHaveCount(items.length);
+  await waitForSaved(page);
+  await page.reload();
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  const restored = canvasNode(page, 'Checklist sizing');
+  await expect(restored.locator('.concept-task-item')).toHaveCount(items.length);
+  const restoredCardBox = await restored.locator('.concept-node').boundingBox();
+  const restoredBodyBox = await restored.locator('.concept-rich-text').boundingBox();
+  expect(restoredCardBox).toBeTruthy();
+  expect(restoredBodyBox).toBeTruthy();
+  expect(restoredBodyBox!.y + restoredBodyBox!.height).toBeLessThanOrEqual(restoredCardBox!.y + restoredCardBox!.height + 1);
 });
 
 test('double-click and F2 rename a layer with commit, cancel, undo, and redo', async ({ page }) => {
