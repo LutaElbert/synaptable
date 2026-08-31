@@ -17,13 +17,15 @@ import {
   Unlink,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { sanitizeLinkHref } from './rich-text';
 import type { RichTextDocument } from './types';
 
 type InlineConceptEditorProps = {
   title: RichTextDocument;
   body: RichTextDocument;
+  activeField: 'title' | 'body';
+  onActiveFieldChange: (field: 'title' | 'body') => void;
   onTitleChange: (title: RichTextDocument) => void;
   onBodyChange: (body: RichTextDocument) => void;
   onCommit: () => void;
@@ -57,6 +59,8 @@ function FormatButton({ label, active = false, toggle = false, disabled = false,
 export default function InlineConceptEditor({
   title,
   body,
+  activeField,
+  onActiveFieldChange,
   onTitleChange,
   onBodyChange,
   onCommit,
@@ -64,7 +68,7 @@ export default function InlineConceptEditor({
 }: InlineConceptEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const didFocusTitleRef = useRef(false);
-  const [activeField, setActiveField] = useState<'title' | 'body'>('title');
+  const activeFieldRef = useRef(activeField);
   const [linkEditorOpen, setLinkEditorOpen] = useState(false);
   const [linkValue, setLinkValue] = useState('');
   const bodyEditor = useEditor({
@@ -88,8 +92,21 @@ export default function InlineConceptEditor({
         'aria-label': 'Concept body',
       },
     },
-    onFocus: () => setActiveField('body'),
-    onUpdate: ({ editor: current }) => onBodyChange(current.getJSON() as RichTextDocument),
+    onFocus: () => {
+      activeFieldRef.current = 'body';
+      onActiveFieldChange('body');
+    },
+    onUpdate: ({ editor: current }) => {
+      const shouldRestoreFocus = current.isFocused;
+      onBodyChange(current.getJSON() as RichTextDocument);
+      if (shouldRestoreFocus) {
+        queueMicrotask(() => {
+          if (activeFieldRef.current === 'body' && !current.isDestroyed && !current.isFocused) {
+            current.commands.focus();
+          }
+        });
+      }
+    },
   }, []);
 
   const titleEditor = useEditor({
@@ -133,11 +150,28 @@ export default function InlineConceptEditor({
         return true;
       },
     },
-    onFocus: () => setActiveField('title'),
-    onUpdate: ({ editor: current }) => onTitleChange(current.getJSON() as RichTextDocument),
+    onFocus: () => {
+      activeFieldRef.current = 'title';
+      onActiveFieldChange('title');
+    },
+    onUpdate: ({ editor: current }) => {
+      const shouldRestoreFocus = current.isFocused;
+      onTitleChange(current.getJSON() as RichTextDocument);
+      if (shouldRestoreFocus) {
+        queueMicrotask(() => {
+          if (activeFieldRef.current === 'title' && !current.isDestroyed && !current.isFocused) {
+            current.commands.focus();
+          }
+        });
+      }
+    },
   }, []);
 
   const activeEditor = activeField === 'title' ? titleEditor : bodyEditor;
+
+  useLayoutEffect(() => {
+    activeFieldRef.current = activeField;
+  }, [activeField]);
 
   const formatState = useEditorState({
     editor: activeEditor,
@@ -153,11 +187,16 @@ export default function InlineConceptEditor({
     }),
   });
 
-  useEffect(() => {
-    if (!titleEditor || didFocusTitleRef.current) return;
+  useLayoutEffect(() => {
+    // Wait for both independently initialized editors so title autofocus
+    // cannot arrive late while the user is already typing in the body.
+    if (!bodyEditor || !titleEditor || didFocusTitleRef.current) return;
     didFocusTitleRef.current = true;
+    // The ref changes synchronously in Tiptap's focus callback, unlike React
+    // state, so this guard also holds during a slow WebKit render.
+    if (activeFieldRef.current === 'body' || bodyEditor.isFocused) return;
     titleEditor.chain().focus().selectAll().run();
-  }, [titleEditor]);
+  }, [bodyEditor, titleEditor]);
 
   useEffect(() => {
     const commitOnOutsidePointer = (event: PointerEvent) => {

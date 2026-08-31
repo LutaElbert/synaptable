@@ -198,6 +198,8 @@ const CONCEPT_TEMPLATES = {
 type NodeActionContextValue = {
   convertingId: string | null;
   editingConceptId: string | null;
+  editingConceptField: 'title' | 'body';
+  setEditingConceptField: (field: 'title' | 'body') => void;
   keepImage: (id: string) => void;
   vectorizeImage: (id: string, expandLayers?: boolean) => void;
   cancelVectorization: () => void;
@@ -271,6 +273,8 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
             <InlineConceptEditor
               title={data.title}
               body={data.body}
+              activeField={actions.editingConceptField}
+              onActiveFieldChange={actions.setEditingConceptField}
               onTitleChange={(title) => actions.updateConceptTitle(id, title)}
               onBodyChange={(body) => actions.updateConceptBody(id, body)}
               onCommit={actions.commitConceptEdit}
@@ -536,6 +540,7 @@ function EditorInner() {
   const [backupOpen, setBackupOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [editingConceptId, setEditingConceptId] = useState<string | null>(null);
+  const [editingConceptField, setEditingConceptField] = useState<'title' | 'body'>('title');
   const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [conceptTemplate, setConceptTemplate] = useState<keyof typeof CONCEPT_TEMPLATES>('idea');
@@ -593,11 +598,15 @@ function EditorInner() {
   useLayoutEffect(() => {
     titleRef.current = title;
   }, [title]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const next = { title, nodes, edges };
     const previous = autosaveInputRef.current;
     autosaveInputRef.current = next;
     if (!persistableEditorStateEqual(previous, next)) {
+      // Mark the document dirty before the changed canvas is painted. This
+      // prevents an older queued write from presenting a stale "saved" state.
+      saveTicketRef.current += 1;
+      setSaveState('saving');
       setAutosaveRevision((current) => current + 1);
     }
   }, [edges, nodes, title]);
@@ -655,8 +664,9 @@ function EditorInner() {
     updatedAt: Date.now(),
   }), []);
 
-  const queueDocumentSave = useCallback((document: EditorDocument) => {
-    const ticket = ++saveTicketRef.current;
+  const queueDocumentSave = useCallback((document: EditorDocument, pendingTicket?: number) => {
+    const ticket = pendingTicket ?? ++saveTicketRef.current;
+    if (ticket !== saveTicketRef.current) return Promise.resolve();
     setSaveState('saving');
     const nextSave = saveQueueRef.current
       .catch(() => undefined)
@@ -695,12 +705,13 @@ function EditorInner() {
 
   useEffect(() => {
     if (!hydrated) return;
-    const dirtyTimeout = window.setTimeout(() => setSaveState('saving'), 0);
+    // The layout effect already invalidated older writes for changed content.
+    // Allocate a ticket here only for the initial hydrated document.
+    const ticket = saveTicketRef.current || ++saveTicketRef.current;
     const saveTimeout = window.setTimeout(() => {
-      void queueDocumentSave(getCurrentDocument());
+      void queueDocumentSave(getCurrentDocument(), ticket);
     }, 450);
     return () => {
-      window.clearTimeout(dirtyTimeout);
       window.clearTimeout(saveTimeout);
     };
   }, [autosaveRevision, getCurrentDocument, hydrated, queueDocumentSave]);
@@ -1316,6 +1327,7 @@ function EditorInner() {
       recordHistory(conceptEditOriginRef.current);
     }
     conceptEditOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
+    setEditingConceptField('title');
     setNodes((current) => current.map((item) => item.id === id ? {
       ...item,
       style: {
@@ -1783,6 +1795,8 @@ function EditorInner() {
     () => ({
       convertingId,
       editingConceptId,
+      editingConceptField,
+      setEditingConceptField,
       keepImage,
       vectorizeImage,
       cancelVectorization,
@@ -1834,6 +1848,7 @@ function EditorInner() {
       cancelVectorization,
       commitConceptEdit,
       convertingId,
+      editingConceptField,
       editingConceptId,
       hasChildren,
       keepImage,

@@ -2,9 +2,13 @@ import { expect, type Locator, type Page } from '@playwright/test';
 
 export async function openEditor(page: Page) {
   await page.goto('/');
-  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  // The first request can include a cold Vinext compile on CI. Give the app
+  // time to hydrate before asserting the already-rendered document shape.
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('.react-flow__node')).toHaveCount(3);
-  await expect(page.locator('.react-flow__edge')).toHaveCount(2);
+  // React Flow measures node handles before it can paint edges. Cold WebKit
+  // workers can finish document hydration several seconds before that pass.
+  await expect(page.locator('.react-flow__edge')).toHaveCount(2, { timeout: 15_000 });
 }
 
 export function canvasNode(page: Page, name: string): Locator {
@@ -30,10 +34,12 @@ export async function connectLayers(page: Page, sourceName: string, targetName: 
 
 export async function waitForSaved(page: Page) {
   const workspace = page.locator('main[data-ready="true"]');
-  // Observe the save cycle triggered by the latest mutation. Checking only for
-  // "saved" can accidentally accept the previous revision before React has
-  // scheduled the 450 ms autosave debounce.
-  await expect(workspace).toHaveAttribute('data-save-state', 'saving');
+  // Let React flush the mutation and autosave scheduling work. The save can
+  // already be complete for large renders, so "saving" is not a required
+  // intermediate assertion; callers reload to verify persistence.
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
   await expect(workspace).toHaveAttribute('data-save-state', 'saved');
 }
 
