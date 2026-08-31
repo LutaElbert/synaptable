@@ -30,10 +30,12 @@ export async function connectLayers(page: Page, sourceName: string, targetName: 
 
 export async function waitForSaved(page: Page) {
   const workspace = page.locator('main[data-ready="true"]');
-  // Observe the save cycle triggered by the latest mutation. Checking only for
-  // "saved" can accidentally accept the previous revision before React has
-  // scheduled the 450 ms autosave debounce.
-  await expect(workspace).toHaveAttribute('data-save-state', 'saving');
+  // Let React flush the mutation and autosave scheduling work. The save can
+  // already be complete for large renders, so "saving" is not a required
+  // intermediate assertion; callers reload to verify persistence.
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
   await expect(workspace).toHaveAttribute('data-save-state', 'saved');
 }
 

@@ -361,6 +361,7 @@ test('image actions add editable concept children and parent-aware siblings', as
   await expect(page.getByRole('button', { name: 'Image sibling', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Image sibling', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Connector from Research to Image sibling')).toBeVisible();
   await waitForSaved(page);
   await page.reload();
   await expect(page.getByLabel('Connector from story-reference.png to Image observation')).toBeVisible();

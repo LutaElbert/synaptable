@@ -593,11 +593,15 @@ function EditorInner() {
   useLayoutEffect(() => {
     titleRef.current = title;
   }, [title]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const next = { title, nodes, edges };
     const previous = autosaveInputRef.current;
     autosaveInputRef.current = next;
     if (!persistableEditorStateEqual(previous, next)) {
+      // Mark the document dirty before the changed canvas is painted. This
+      // prevents an older queued write from presenting a stale "saved" state.
+      saveTicketRef.current += 1;
+      setSaveState('saving');
       setAutosaveRevision((current) => current + 1);
     }
   }, [edges, nodes, title]);
@@ -655,8 +659,9 @@ function EditorInner() {
     updatedAt: Date.now(),
   }), []);
 
-  const queueDocumentSave = useCallback((document: EditorDocument) => {
-    const ticket = ++saveTicketRef.current;
+  const queueDocumentSave = useCallback((document: EditorDocument, pendingTicket?: number) => {
+    const ticket = pendingTicket ?? ++saveTicketRef.current;
+    if (ticket !== saveTicketRef.current) return Promise.resolve();
     setSaveState('saving');
     const nextSave = saveQueueRef.current
       .catch(() => undefined)
@@ -695,12 +700,13 @@ function EditorInner() {
 
   useEffect(() => {
     if (!hydrated) return;
-    const dirtyTimeout = window.setTimeout(() => setSaveState('saving'), 0);
+    // The layout effect already invalidated older writes for changed content.
+    // Allocate a ticket here only for the initial hydrated document.
+    const ticket = saveTicketRef.current || ++saveTicketRef.current;
     const saveTimeout = window.setTimeout(() => {
-      void queueDocumentSave(getCurrentDocument());
+      void queueDocumentSave(getCurrentDocument(), ticket);
     }, 450);
     return () => {
-      window.clearTimeout(dirtyTimeout);
       window.clearTimeout(saveTimeout);
     };
   }, [autosaveRevision, getCurrentDocument, hydrated, queueDocumentSave]);

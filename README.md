@@ -22,7 +22,7 @@ Semantic AI reconstruction, cloud sync, collaboration, and video vectorization a
 
 ## Requirements
 
-- Node.js 22.13 or newer
+- Node.js 24.15 or newer
 - npm
 - A current Chrome, Edge, Firefox, or Safari release
 

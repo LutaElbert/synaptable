@@ -17,7 +17,7 @@ import {
   Unlink,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { sanitizeLinkHref } from './rich-text';
 import type { RichTextDocument } from './types';
 
@@ -153,11 +153,15 @@ export default function InlineConceptEditor({
     }),
   });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!titleEditor || didFocusTitleRef.current) return;
     didFocusTitleRef.current = true;
+    // Tiptap initializes the title and body independently. On slower engines,
+    // the title may become ready after the user has already entered the body.
+    // Never let the one-time title autofocus steal an established body focus.
+    if (bodyEditor?.isFocused) return;
     titleEditor.chain().focus().selectAll().run();
-  }, [titleEditor]);
+  }, [bodyEditor, titleEditor]);
 
   useEffect(() => {
     const commitOnOutsidePointer = (event: PointerEvent) => {

@@ -175,9 +175,12 @@ test('edits rich concept text directly with formatting, commit, cancel, undo, an
 
   const body = page.locator('.concept-body-editor');
   await body.fill('First milestone');
+  await expect(page.locator('.formatting-context')).toHaveText('Body');
   await body.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
   await body.press(process.platform === 'darwin' ? 'Meta+B' : 'Control+B');
-  await page.getByRole('button', { name: 'Bulleted list', exact: true }).click();
+  const bulletedList = page.getByRole('button', { name: 'Bulleted list', exact: true });
+  await expect(bulletedList).toBeEnabled();
+  await bulletedList.click();
   await page.getByRole('button', { name: 'Finish editing', exact: true }).click();
 
   await expect(researchNode.getByText('Research plan', { exact: true })).toBeVisible();
