@@ -30,7 +30,7 @@ jobs:
         run: |
           npx wrangler dev --config dist/server/wrangler.json --port 8787 > /tmp/synaptable-wrangler.log 2>&1 &
           worker_pid=$!
-          trap 'kill "$worker_pid"' EXIT
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
           for attempt in {1..60}; do
             if curl --fail --silent --show-error http://localhost:8787/ > /dev/null; then
               break
@@ -41,4 +41,9 @@ jobs:
             fi
             sleep 1
           done
-          PLAYWRIGHT_BASE_URL=http://localhost:8787 npm run test:e2e
+          test_status=0
+          PLAYWRIGHT_BASE_URL=http://localhost:8787 npm run test:e2e || test_status=$?
+          if [ "$test_status" -ne 0 ] || ! kill -0 "$worker_pid" 2>/dev/null; then
+            tail -n 200 /tmp/synaptable-wrangler.log
+          fi
+          exit "$test_status"

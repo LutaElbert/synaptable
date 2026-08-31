@@ -8,6 +8,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
+  // Keep the built Worker and browser processes below hosted-runner memory
+  // limits. Five parallel WebKit workers can terminate Wrangler mid-suite.
+  workers: process.env.CI ? 3 : undefined,
   reporter: process.env.CI ? 'github' : 'list',
   timeout: 60_000,
   use: {
