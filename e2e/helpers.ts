@@ -2,7 +2,9 @@ import { expect, type Locator, type Page } from '@playwright/test';
 
 export async function openEditor(page: Page) {
   await page.goto('/');
-  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  // The first request can include a cold Vinext compile on CI. Give the app
+  // time to hydrate before asserting the already-rendered document shape.
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('.react-flow__node')).toHaveCount(3);
   // React Flow measures node handles before it can paint edges. Cold WebKit
   // workers can finish document hydration several seconds before that pass.
