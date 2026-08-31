@@ -198,6 +198,8 @@ const CONCEPT_TEMPLATES = {
 type NodeActionContextValue = {
   convertingId: string | null;
   editingConceptId: string | null;
+  editingConceptField: 'title' | 'body';
+  setEditingConceptField: (field: 'title' | 'body') => void;
   keepImage: (id: string) => void;
   vectorizeImage: (id: string, expandLayers?: boolean) => void;
   cancelVectorization: () => void;
@@ -271,6 +273,8 @@ function ConceptNode({ id, data, selected }: NodeProps<EditorNode>) {
             <InlineConceptEditor
               title={data.title}
               body={data.body}
+              activeField={actions.editingConceptField}
+              onActiveFieldChange={actions.setEditingConceptField}
               onTitleChange={(title) => actions.updateConceptTitle(id, title)}
               onBodyChange={(body) => actions.updateConceptBody(id, body)}
               onCommit={actions.commitConceptEdit}
@@ -536,6 +540,7 @@ function EditorInner() {
   const [backupOpen, setBackupOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [editingConceptId, setEditingConceptId] = useState<string | null>(null);
+  const [editingConceptField, setEditingConceptField] = useState<'title' | 'body'>('title');
   const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [conceptTemplate, setConceptTemplate] = useState<keyof typeof CONCEPT_TEMPLATES>('idea');
@@ -1322,6 +1327,7 @@ function EditorInner() {
       recordHistory(conceptEditOriginRef.current);
     }
     conceptEditOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
+    setEditingConceptField('title');
     setNodes((current) => current.map((item) => item.id === id ? {
       ...item,
       style: {
@@ -1789,6 +1795,8 @@ function EditorInner() {
     () => ({
       convertingId,
       editingConceptId,
+      editingConceptField,
+      setEditingConceptField,
       keepImage,
       vectorizeImage,
       cancelVectorization,
@@ -1840,6 +1848,7 @@ function EditorInner() {
       cancelVectorization,
       commitConceptEdit,
       convertingId,
+      editingConceptField,
       editingConceptId,
       hasChildren,
       keepImage,

@@ -24,6 +24,8 @@ import type { RichTextDocument } from './types';
 type InlineConceptEditorProps = {
   title: RichTextDocument;
   body: RichTextDocument;
+  activeField: 'title' | 'body';
+  onActiveFieldChange: (field: 'title' | 'body') => void;
   onTitleChange: (title: RichTextDocument) => void;
   onBodyChange: (body: RichTextDocument) => void;
   onCommit: () => void;
@@ -57,6 +59,8 @@ function FormatButton({ label, active = false, toggle = false, disabled = false,
 export default function InlineConceptEditor({
   title,
   body,
+  activeField,
+  onActiveFieldChange,
   onTitleChange,
   onBodyChange,
   onCommit,
@@ -64,8 +68,7 @@ export default function InlineConceptEditor({
 }: InlineConceptEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const didFocusTitleRef = useRef(false);
-  const activeFieldRef = useRef<'title' | 'body'>('title');
-  const [activeField, setActiveField] = useState<'title' | 'body'>('title');
+  const activeFieldRef = useRef(activeField);
   const [linkEditorOpen, setLinkEditorOpen] = useState(false);
   const [linkValue, setLinkValue] = useState('');
   const bodyEditor = useEditor({
@@ -91,7 +94,7 @@ export default function InlineConceptEditor({
     },
     onFocus: () => {
       activeFieldRef.current = 'body';
-      setActiveField('body');
+      onActiveFieldChange('body');
     },
     onUpdate: ({ editor: current }) => {
       const shouldRestoreFocus = current.isFocused;
@@ -149,7 +152,7 @@ export default function InlineConceptEditor({
     },
     onFocus: () => {
       activeFieldRef.current = 'title';
-      setActiveField('title');
+      onActiveFieldChange('title');
     },
     onUpdate: ({ editor: current }) => {
       const shouldRestoreFocus = current.isFocused;
@@ -165,6 +168,10 @@ export default function InlineConceptEditor({
   }, []);
 
   const activeEditor = activeField === 'title' ? titleEditor : bodyEditor;
+
+  useLayoutEffect(() => {
+    activeFieldRef.current = activeField;
+  }, [activeField]);
 
   const formatState = useEditorState({
     editor: activeEditor,
