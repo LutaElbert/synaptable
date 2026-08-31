@@ -93,7 +93,17 @@ export default function InlineConceptEditor({
       activeFieldRef.current = 'body';
       setActiveField('body');
     },
-    onUpdate: ({ editor: current }) => onBodyChange(current.getJSON() as RichTextDocument),
+    onUpdate: ({ editor: current }) => {
+      const shouldRestoreFocus = current.isFocused;
+      onBodyChange(current.getJSON() as RichTextDocument);
+      if (shouldRestoreFocus) {
+        queueMicrotask(() => {
+          if (activeFieldRef.current === 'body' && !current.isDestroyed && !current.isFocused) {
+            current.commands.focus();
+          }
+        });
+      }
+    },
   }, []);
 
   const titleEditor = useEditor({
@@ -141,7 +151,17 @@ export default function InlineConceptEditor({
       activeFieldRef.current = 'title';
       setActiveField('title');
     },
-    onUpdate: ({ editor: current }) => onTitleChange(current.getJSON() as RichTextDocument),
+    onUpdate: ({ editor: current }) => {
+      const shouldRestoreFocus = current.isFocused;
+      onTitleChange(current.getJSON() as RichTextDocument);
+      if (shouldRestoreFocus) {
+        queueMicrotask(() => {
+          if (activeFieldRef.current === 'title' && !current.isDestroyed && !current.isFocused) {
+            current.commands.focus();
+          }
+        });
+      }
+    },
   }, []);
 
   const activeEditor = activeField === 'title' ? titleEditor : bodyEditor;
