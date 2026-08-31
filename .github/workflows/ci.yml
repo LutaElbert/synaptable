@@ -26,7 +26,9 @@ jobs:
       - run: npm run build
       - run: npm audit --audit-level=high
       - run: npx playwright install --with-deps chromium firefox webkit
-      - name: Test the built Cloudflare Worker
+      - name: Run the full browser suite
+        run: npm run test:e2e
+      - name: Smoke-test the built Cloudflare Worker
         run: |
           npx wrangler dev --config dist/server/wrangler.json --port 8787 > /tmp/synaptable-wrangler.log 2>&1 &
           worker_pid=$!
@@ -42,7 +44,12 @@ jobs:
             sleep 1
           done
           test_status=0
-          PLAYWRIGHT_BASE_URL=http://localhost:8787 npm run test:e2e || test_status=$?
+          PLAYWRIGHT_BASE_URL=http://localhost:8787 npx playwright test e2e/editor.spec.ts e2e/stress.spec.ts \
+            --project=chromium --workers=1 \
+            --grep "imports, persists, backs up, and exports locally|keeps a 500-layer" || test_status=$?
+          PLAYWRIGHT_BASE_URL=http://localhost:8787 npx playwright test e2e/editor.spec.ts \
+            --project=webkit --workers=1 \
+            --grep "edits rich concept text directly" || test_status=$?
           if [ "$test_status" -ne 0 ] || ! kill -0 "$worker_pid" 2>/dev/null; then
             tail -n 200 /tmp/synaptable-wrangler.log
           fi

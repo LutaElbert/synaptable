@@ -4,7 +4,9 @@ export async function openEditor(page: Page) {
   await page.goto('/');
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
   await expect(page.locator('.react-flow__node')).toHaveCount(3);
-  await expect(page.locator('.react-flow__edge')).toHaveCount(2);
+  // React Flow measures node handles before it can paint edges. Cold WebKit
+  // workers can finish document hydration several seconds before that pass.
+  await expect(page.locator('.react-flow__edge')).toHaveCount(2, { timeout: 15_000 });
 }
 
 export function canvasNode(page: Page, name: string): Locator {
