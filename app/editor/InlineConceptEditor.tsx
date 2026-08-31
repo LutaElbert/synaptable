@@ -64,6 +64,7 @@ export default function InlineConceptEditor({
 }: InlineConceptEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const didFocusTitleRef = useRef(false);
+  const activeFieldRef = useRef<'title' | 'body'>('title');
   const [activeField, setActiveField] = useState<'title' | 'body'>('title');
   const [linkEditorOpen, setLinkEditorOpen] = useState(false);
   const [linkValue, setLinkValue] = useState('');
@@ -88,7 +89,10 @@ export default function InlineConceptEditor({
         'aria-label': 'Concept body',
       },
     },
-    onFocus: () => setActiveField('body'),
+    onFocus: () => {
+      activeFieldRef.current = 'body';
+      setActiveField('body');
+    },
     onUpdate: ({ editor: current }) => onBodyChange(current.getJSON() as RichTextDocument),
   }, []);
 
@@ -133,7 +137,10 @@ export default function InlineConceptEditor({
         return true;
       },
     },
-    onFocus: () => setActiveField('title'),
+    onFocus: () => {
+      activeFieldRef.current = 'title';
+      setActiveField('title');
+    },
     onUpdate: ({ editor: current }) => onTitleChange(current.getJSON() as RichTextDocument),
   }, []);
 
@@ -154,12 +161,13 @@ export default function InlineConceptEditor({
   });
 
   useLayoutEffect(() => {
-    if (!titleEditor || didFocusTitleRef.current) return;
+    // Wait for both independently initialized editors so title autofocus
+    // cannot arrive late while the user is already typing in the body.
+    if (!bodyEditor || !titleEditor || didFocusTitleRef.current) return;
     didFocusTitleRef.current = true;
-    // Tiptap initializes the title and body independently. On slower engines,
-    // the title may become ready after the user has already entered the body.
-    // Never let the one-time title autofocus steal an established body focus.
-    if (bodyEditor?.isFocused) return;
+    // The ref changes synchronously in Tiptap's focus callback, unlike React
+    // state, so this guard also holds during a slow WebKit render.
+    if (activeFieldRef.current === 'body' || bodyEditor.isFocused) return;
     titleEditor.chain().focus().selectAll().run();
   }, [bodyEditor, titleEditor]);
 

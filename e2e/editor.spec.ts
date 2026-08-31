@@ -178,6 +178,7 @@ test('edits rich concept text directly with formatting, commit, cancel, undo, an
   await expect(page.locator('.formatting-context')).toHaveText('Body');
   await body.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
   await body.press(process.platform === 'darwin' ? 'Meta+B' : 'Control+B');
+  await expect(body).toBeFocused();
   const bulletedList = page.getByRole('button', { name: 'Bulleted list', exact: true });
   await expect(bulletedList).toBeEnabled();
   await bulletedList.click();
