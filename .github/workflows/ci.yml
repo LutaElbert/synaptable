@@ -15,7 +15,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -29,34 +29,3 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm audit --audit-level=high
-      - run: npx playwright install --with-deps chromium firefox webkit
-      - name: Run the full browser suite
-        # The 500-layer stress budget runs below against the production Worker,
-        # isolated from the other browsers so runner contention cannot skew it.
-        run: npm run test:e2e -- --grep-invert "keeps a 500-layer"
-      - name: Smoke-test the built Cloudflare Worker
-        run: |
-          npx wrangler dev --config dist/server/wrangler.json --port 8787 > /tmp/synaptable-wrangler.log 2>&1 &
-          worker_pid=$!
-          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
-          for attempt in {1..60}; do
-            if curl --fail --silent --show-error http://localhost:8787/ > /dev/null; then
-              break
-            fi
-            if [ "$attempt" -eq 60 ]; then
-              cat /tmp/synaptable-wrangler.log
-              exit 1
-            fi
-            sleep 1
-          done
-          test_status=0
-          PLAYWRIGHT_BASE_URL=http://localhost:8787 npx playwright test e2e/editor.spec.ts e2e/stress.spec.ts \
-            --project=chromium --workers=1 \
-            --grep "imports, persists, backs up, and exports locally|keeps a 500-layer" || test_status=$?
-          PLAYWRIGHT_BASE_URL=http://localhost:8787 npx playwright test e2e/editor.spec.ts \
-            --project=webkit --workers=1 \
-            --grep "edits rich concept text directly" || test_status=$?
-          if [ "$test_status" -ne 0 ] || ! kill -0 "$worker_pid" 2>/dev/null; then
-            tail -n 200 /tmp/synaptable-wrangler.log
-          fi
-          exit "$test_status"

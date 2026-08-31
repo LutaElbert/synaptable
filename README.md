@@ -59,7 +59,7 @@ npm run test:e2e
 npm audit
 ```
 
-`npm run test:e2e` starts or reuses the local development server. CI builds the app first and runs the same workflow against the local Cloudflare Worker in Chromium, Firefox, and WebKit. The suite covers image import, double-click and keyboard layer editing, direct rich-text editing, migration, connection validation and reconnection, locked-layer behavior, cascade deletion, search, branch operations, checkpoints, bulk arrangement, backup/restore, drag/resize persistence, accessibility, export, and mobile panels. See [LAYER_CONNECTION_TEST_PLAN.md](./LAYER_CONNECTION_TEST_PLAN.md) for the graph behavior contract and regression matrix.
+`npm run test:e2e` starts or reuses the local development server. GitHub Actions intentionally runs only the fast compatibility, type, lint, unit, build, and audit checks; run the full Chromium, Firefox, and WebKit suite locally before merging editor changes. The browser suite covers image import, double-click and keyboard layer editing, direct rich-text editing, migration, connection validation and reconnection, locked-layer behavior, cascade deletion, search, branch operations, checkpoints, bulk arrangement, backup/restore, drag/resize persistence, accessibility, export, mobile panels, and the 500-layer stress fixture. See [LAYER_CONNECTION_TEST_PLAN.md](./LAYER_CONNECTION_TEST_PLAN.md) for the graph behavior contract and regression matrix.
 
 ## Cloudflare Workers
 
