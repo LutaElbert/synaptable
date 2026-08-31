@@ -3,6 +3,8 @@
 > Status: implemented locally on `codex/table-layer-mvp`; awaiting the intended user's representative-table review before merge.
 >
 > Product assumption: the first release is a simple visual table for comparisons, schedules, lists, and lightweight planning. It is not a database or spreadsheet.
+>
+> The next-pass interaction specification and full QA matrix are in [`TABLE_BEHAVIOR_AND_TEST_PLAN.md`](./TABLE_BEHAVIOR_AND_TEST_PLAN.md).
 
 ## Outcome
 
