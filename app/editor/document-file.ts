@@ -6,9 +6,25 @@ import type {
   RichTextDocument,
   RichTextMark,
   RichTextNode,
+  TableCell,
+  TableCellTone,
+  TableColumn,
+  TableRow,
   VectorPathLayer,
 } from './types';
 import { graphIntegrityIssues } from './graph-rules';
+import {
+  TABLE_CELL_TONES,
+  TABLE_MAX_CELLS,
+  TABLE_MAX_CELL_TEXT,
+  TABLE_MAX_COLUMNS,
+  TABLE_MAX_COLUMN_WIDTH,
+  TABLE_MAX_ROWS,
+  TABLE_MAX_ROW_HEIGHT,
+  TABLE_MIN_COLUMN_WIDTH,
+  TABLE_MIN_ROW_HEIGHT,
+  tableDimensions,
+} from './table-grid';
 import {
   conceptTitleFromPlainText,
   emptyRichText,
@@ -18,7 +34,7 @@ import {
 } from './rich-text';
 
 export const PROJECT_FORMAT = 'synaptable-project';
-export const PROJECT_FILE_VERSION = 4;
+export const PROJECT_FILE_VERSION = 5;
 export const MAX_PROJECT_FILE_SIZE = 40 * 1024 * 1024;
 
 const MAX_TITLE_LENGTH = 120;
@@ -197,7 +213,52 @@ function parseVectorPath(value: unknown, index: number): VectorPathLayer {
   };
 }
 
-function parseNode(value: unknown, index: number, sourceVersion: 1 | 2 | 3 | 4): EditorNode {
+function parseTableColumn(value: unknown, index: number): TableColumn {
+  if (!isRecord(value)) throw new Error(`Table column ${index + 1} is invalid.`);
+  const width = finiteNumber(value.width, 'Table column width');
+  if (width < TABLE_MIN_COLUMN_WIDTH || width > TABLE_MAX_COLUMN_WIDTH) {
+    throw new Error(`Table column ${index + 1} has an invalid width.`);
+  }
+  return {
+    id: boundedString(value.id, 'Table column id', 160),
+    width,
+  };
+}
+
+function parseTableCell(value: unknown, rowIndex: number, columnIndex: number): TableCell {
+  if (!isRecord(value)) throw new Error(`Table cell ${rowIndex + 1}, ${columnIndex + 1} is invalid.`);
+  const tone = value.tone;
+  if (typeof tone !== 'string' || !TABLE_CELL_TONES.includes(tone as TableCellTone)) {
+    throw new Error(`Table cell ${rowIndex + 1}, ${columnIndex + 1} has an invalid color.`);
+  }
+  const horizontalAlign = value.horizontalAlign;
+  if (horizontalAlign !== 'left' && horizontalAlign !== 'center' && horizontalAlign !== 'right') {
+    throw new Error(`Table cell ${rowIndex + 1}, ${columnIndex + 1} has invalid alignment.`);
+  }
+  return {
+    id: boundedString(value.id, 'Table cell id', 160),
+    text: boundedString(value.text, 'Table cell text', TABLE_MAX_CELL_TEXT),
+    tone: tone as TableCellTone,
+    horizontalAlign,
+  };
+}
+
+function parseTableRow(value: unknown, index: number, columnCount: number): TableRow {
+  if (!isRecord(value) || !Array.isArray(value.cells) || value.cells.length !== columnCount) {
+    throw new Error(`Table row ${index + 1} does not match the table columns.`);
+  }
+  const height = finiteNumber(value.height, 'Table row height');
+  if (height < TABLE_MIN_ROW_HEIGHT || height > TABLE_MAX_ROW_HEIGHT) {
+    throw new Error(`Table row ${index + 1} has an invalid height.`);
+  }
+  return {
+    id: boundedString(value.id, 'Table row id', 160),
+    height,
+    cells: value.cells.map((cell, columnIndex) => parseTableCell(cell, index, columnIndex)),
+  };
+}
+
+function parseNode(value: unknown, index: number, sourceVersion: 1 | 2 | 3 | 4 | 5): EditorNode {
   if (!isRecord(value) || !isRecord(value.position) || !isRecord(value.data)) {
     throw new Error(`Layer ${index + 1} is invalid.`);
   }
@@ -323,6 +384,54 @@ function parseNode(value: unknown, index: number, sourceVersion: 1 | 2 | 3 | 4):
     };
   }
 
+  if (kind === 'table') {
+    if (sourceVersion < 5) throw new Error('Table layers require document version 5.');
+    if (!Array.isArray(data.columns) || data.columns.length < 1 || data.columns.length > TABLE_MAX_COLUMNS) {
+      throw new Error(`Layer ${index + 1} has an invalid number of table columns.`);
+    }
+    if (!Array.isArray(data.rows) || data.rows.length < 1 || data.rows.length > TABLE_MAX_ROWS) {
+      throw new Error(`Layer ${index + 1} has an invalid number of table rows.`);
+    }
+    if (data.columns.length * data.rows.length > TABLE_MAX_CELLS) {
+      throw new Error(`Layer ${index + 1} exceeds the table cell limit.`);
+    }
+    const columns = data.columns.map(parseTableColumn);
+    const rows = data.rows.map((row, rowIndex) => parseTableRow(row, rowIndex, columns.length));
+    const nestedIds = [
+      ...columns.map((column) => column.id),
+      ...rows.map((row) => row.id),
+      ...rows.flatMap((row) => row.cells.map((cell) => cell.id)),
+    ];
+    if (new Set(nestedIds).size !== nestedIds.length) {
+      throw new Error(`Layer ${index + 1} contains duplicate table ids.`);
+    }
+    const dimensions = tableDimensions({
+      kind: 'table',
+      name,
+      opacity,
+      locked,
+      columns,
+      rows,
+      headerRow: data.headerRow === true,
+      headerColumn: data.headerColumn === true,
+    });
+    return {
+      ...common,
+      type: 'table',
+      style: dimensions,
+      data: {
+        kind,
+        name,
+        opacity,
+        locked,
+        columns,
+        rows,
+        headerRow: data.headerRow === true,
+        headerColumn: data.headerColumn === true,
+      },
+    };
+  }
+
   throw new Error(`Layer ${index + 1} has an unsupported type.`);
 }
 
@@ -361,7 +470,7 @@ export function validateEditorDocument(
   value: unknown,
   options: { strictGraph?: boolean } = {},
 ): EditorDocument {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4)) {
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5)) {
     throw new Error('This project uses an unsupported document version.');
   }
   const sourceVersion = value.schemaVersion;
@@ -407,7 +516,7 @@ export function validateEditorDocument(
   });
 
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     title: boundedString(value.title, 'Project title', MAX_TITLE_LENGTH),
     nodes,
     edges,
@@ -436,7 +545,7 @@ export function parseProjectBackup(source: string): EditorDocument {
   } catch {
     throw new Error('The selected file is not valid JSON.');
   }
-  if (!isRecord(value) || value.format !== PROJECT_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4)) {
+  if (!isRecord(value) || value.format !== PROJECT_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== 5)) {
     throw new Error('This is not a supported SynapTable project backup.');
   }
   return validateEditorDocument(value.document, { strictGraph: true });

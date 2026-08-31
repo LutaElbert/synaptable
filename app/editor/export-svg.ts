@@ -1,10 +1,13 @@
 import { normalizeRichTextDocument, sanitizeLinkHref } from './rich-text';
+import { TABLE_CAPTION_HEIGHT, tableDimensions } from './table-grid';
 import type {
   EditorEdge,
   EditorNode,
   RichTextDocument,
   RichTextMark,
   RichTextNode,
+  TableCellTone,
+  TableNodeData,
   VectorNodeData,
 } from './types';
 
@@ -101,6 +104,7 @@ function conceptContentHeight(node: EditorNode, width: number) {
 }
 
 function nodeSize(node: EditorNode) {
+  if (node.data.kind === 'table') return tableDimensions(node.data);
   const style = node.style ?? {};
   const width = Number(style.width) || Number(node.measured?.width) || (node.data.kind === 'concept' ? 220 : 320);
   const preferredHeight = Number(style.height) || Number(node.measured?.height) || (node.data.kind === 'concept' ? 78 : 240);
@@ -108,6 +112,74 @@ function nodeSize(node: EditorNode) {
     width,
     height: node.data.kind === 'concept' ? Math.max(preferredHeight, conceptContentHeight(node, width)) : preferredHeight,
   };
+}
+
+const TABLE_CELL_FILLS: Record<TableCellTone, string> = {
+  none: '#ffffff',
+  gray: '#f0f1f4',
+  indigo: '#efedff',
+  mint: '#e8f7ef',
+  amber: '#fff4d8',
+  rose: '#ffecef',
+};
+
+function wrapTableCellText(text: string, width: number, height: number) {
+  const maxCharacters = Math.max(4, Math.floor((width - 18) / 6.4));
+  const maxLines = Math.max(1, Math.floor((height - 12) / 14));
+  const lines: string[] = [];
+  for (const sourceLine of text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
+    const words = sourceLine.split(/(\s+)/).filter(Boolean);
+    let current = '';
+    for (const word of words) {
+      if (current && current.length + word.length > maxCharacters && word.trim()) {
+        lines.push(current.trimEnd());
+        current = '';
+      }
+      current += word;
+    }
+    lines.push(current.trimEnd());
+  }
+  const visible = lines.slice(0, maxLines);
+  if (lines.length > maxLines && visible.length) {
+    const last = visible.length - 1;
+    visible[last] = `${visible[last].slice(0, Math.max(1, maxCharacters - 1)).trimEnd()}…`;
+  }
+  return visible.length ? visible : [''];
+}
+
+function renderTableNode(data: TableNodeData, id: string, x: number, y: number) {
+  const { width, height } = tableDimensions(data);
+  const caption = `<rect x="${x}" y="${y}" width="${width}" height="${TABLE_CAPTION_HEIGHT}" rx="12" fill="#18191d" />
+    <text x="${x + 14}" y="${y + 24}" fill="#ffffff" font-family="system-ui, sans-serif" font-size="12" font-weight="700">${xmlEscape(data.name)}</text>`;
+  let rowY = y + TABLE_CAPTION_HEIGHT;
+  const rows: string[] = [];
+  data.rows.forEach((row, rowIndex) => {
+    let columnX = x;
+    row.cells.forEach((cell, columnIndex) => {
+      const column = data.columns[columnIndex];
+      const header = (data.headerRow && rowIndex === 0) || (data.headerColumn && columnIndex === 0);
+      const fill = header && cell.tone === 'none' ? '#f0f1f4' : TABLE_CELL_FILLS[cell.tone];
+      const anchor = cell.horizontalAlign === 'center' ? 'middle' : cell.horizontalAlign === 'right' ? 'end' : 'start';
+      const textX = cell.horizontalAlign === 'center'
+        ? columnX + column.width / 2
+        : cell.horizontalAlign === 'right'
+          ? columnX + column.width - 9
+          : columnX + 9;
+      const lines = wrapTableCellText(cell.text, column.width, row.height);
+      const lineHeight = 14;
+      const firstLineY = rowY + (row.height - lines.length * lineHeight) / 2 + 11;
+      const text = lines.map((line, lineIndex) => (
+        `<tspan x="${textX}" y="${firstLineY + lineIndex * lineHeight}">${xmlEscape(line)}</tspan>`
+      )).join('');
+      rows.push(`<rect x="${columnX}" y="${rowY}" width="${column.width}" height="${row.height}" fill="${fill}" stroke="#d6d9e0" />
+    <text text-anchor="${anchor}" fill="#26272b" font-family="system-ui, sans-serif" font-size="11"${header ? ' font-weight="700"' : ''}>${text}</text>`);
+      columnX += column.width;
+    });
+    rowY += row.height;
+  });
+  return `<g id="${xmlEscape(id)}" opacity="${data.opacity}">${caption}
+    ${rows.join('\n    ')}
+    <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="12" fill="none" stroke="#b7bbc4" /></g>`;
 }
 
 function markAttributes(marks: RichTextMark[]) {
@@ -175,6 +247,10 @@ function renderNode(node: EditorNode, offsetX: number, offsetY: number) {
 
   if (node.data.kind === 'raster') {
     return `<g id="${xmlEscape(node.id)}" opacity="${opacity}"><image href="${xmlEscape(node.data.src)}" x="${x}" y="${y}" width="${width}" height="${height}" preserveAspectRatio="none" /></g>`;
+  }
+
+  if (node.data.kind === 'table') {
+    return renderTableNode(node.data, node.id, x, y);
   }
 
   if (node.data.kind === 'vector') {

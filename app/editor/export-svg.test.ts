@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildSvgDocument } from './export-svg';
 import { initialDocument } from './initial-document';
+import { createTableData, tableDimensions } from './table-grid';
 import type { EditorNode } from './types';
 
 describe('buildSvgDocument', () => {
@@ -158,5 +159,32 @@ describe('buildSvgDocument', () => {
 
     const svg = buildSvgDocument([concept], []);
     expect(svg.match(/☐/g)).toHaveLength(1);
+  });
+
+  it('exports table captions, cells, headers, styling, and escaped text', () => {
+    const data = createTableData({
+      name: 'Shoot & schedule',
+      rows: 2,
+      columns: 2,
+      values: [['Scene', 'Status'], ['Opening <shot>', 'Ready']],
+      headerRow: true,
+    });
+    data.rows[1].cells[1].tone = 'mint';
+    data.rows[1].cells[1].horizontalAlign = 'right';
+    const node: EditorNode = {
+      id: 'table-a',
+      type: 'table',
+      position: { x: 20, y: 30 },
+      style: tableDimensions(data),
+      data,
+    };
+
+    const svg = buildSvgDocument([node], []);
+
+    expect(svg).toContain('Shoot &amp; schedule');
+    expect(svg).toContain('Opening &lt;shot&gt;');
+    expect(svg).toContain('fill="#e8f7ef"');
+    expect(svg).toContain('text-anchor="end"');
+    expect(svg).toContain('font-weight="700"');
   });
 });

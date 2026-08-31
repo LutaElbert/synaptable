@@ -6,6 +6,8 @@
  */
 export const EDITOR_FEATURES: Readonly<{
   imageVectorization: boolean;
+  tableLayer: boolean;
 }> = Object.freeze({
   imageVectorization: false,
+  tableLayer: true,
 });

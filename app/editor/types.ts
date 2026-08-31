@@ -36,11 +36,39 @@ export type RichTextNode = {
 
 export type RichTextDocument = RichTextNode & { type: 'doc' };
 
-type BaseNodeData = Record<string, unknown> & {
-  kind: 'concept' | 'raster' | 'vector';
+export type BaseNodeData = Record<string, unknown> & {
+  kind: 'concept' | 'raster' | 'vector' | 'table';
   name: string;
   opacity: number;
   locked: boolean;
+};
+
+export type TableCellTone = 'none' | 'gray' | 'indigo' | 'mint' | 'amber' | 'rose';
+
+export type TableCell = {
+  id: string;
+  text: string;
+  tone: TableCellTone;
+  horizontalAlign: 'left' | 'center' | 'right';
+};
+
+export type TableColumn = {
+  id: string;
+  width: number;
+};
+
+export type TableRow = {
+  id: string;
+  height: number;
+  cells: TableCell[];
+};
+
+export type TableNodeData = BaseNodeData & {
+  kind: 'table';
+  columns: TableColumn[];
+  rows: TableRow[];
+  headerRow: boolean;
+  headerColumn: boolean;
 };
 
 export type ConceptNodeData = BaseNodeData & {
@@ -70,7 +98,7 @@ export type VectorNodeData = BaseNodeData & {
   paths: VectorPathLayer[];
 };
 
-export type EditorNodeData = ConceptNodeData | RasterNodeData | VectorNodeData;
+export type EditorNodeData = ConceptNodeData | RasterNodeData | VectorNodeData | TableNodeData;
 export type EditorNode = Node<EditorNodeData>;
 export type ConnectorKind = 'default' | 'dashed' | 'emphasis';
 export type EditorEdgeData = Record<string, unknown> & {
@@ -80,7 +108,7 @@ export type EditorEdgeData = Record<string, unknown> & {
 export type EditorEdge = Edge<EditorEdgeData>;
 
 export type EditorDocument = {
-  schemaVersion: 4;
+  schemaVersion: 5;
   title: string;
   nodes: EditorNode[];
   edges: EditorEdge[];
