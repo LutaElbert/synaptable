@@ -844,10 +844,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   border-radius: 7px;
   background: rgb(255 255 255 / 96%);
   color: var(--accent);
+  line-height: 0;
   box-shadow: 0 2px 8px rgb(31 33 40 / 14%);
   opacity: 0;
   pointer-events: auto;
   cursor: pointer;
+}
+.table-edge-add > svg {
+  display: block;
+  inline-size: 12px;
+  block-size: 12px;
+  pointer-events: none;
+  stroke-width: 2.5;
 }
 .table-node:hover .table-edge-add,
 .table-edge-add:focus-visible { opacity: 1; }

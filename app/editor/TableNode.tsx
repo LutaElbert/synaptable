@@ -7,6 +7,7 @@ import {
   type NodeProps,
   type ResizeParams,
 } from '@xyflow/react';
+import { Plus } from 'lucide-react';
 import {
   createContext,
   useEffect,
@@ -541,7 +542,7 @@ export function TableNode({ id, data, selected }: NodeProps<EditorNode>) {
                 event.stopPropagation();
                 actions.insertRow(id, data.rows.length);
               }}
-            >+</button>
+            ><Plus aria-hidden="true" /></button>
             <button
               type="button"
               className="table-edge-add table-add-column"
@@ -551,7 +552,7 @@ export function TableNode({ id, data, selected }: NodeProps<EditorNode>) {
                 event.stopPropagation();
                 actions.insertColumn(id, data.columns.length);
               }}
-            >+</button>
+            ><Plus aria-hidden="true" /></button>
           </div>
         ) : null}
       </article>

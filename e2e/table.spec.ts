@@ -47,6 +47,21 @@ function expectSizeClose(actual: { width: number; height: number }, expected: { 
   expect(Math.abs(actual.height - expected.height)).toBeLessThan(2);
 }
 
+async function expectSvgCentered(button: Locator, tolerance = 0.6) {
+  const offset = await button.evaluate((element) => {
+    const icon = element.querySelector('svg');
+    if (!icon) throw new Error('Expected the button to contain an SVG icon.');
+    const buttonBox = element.getBoundingClientRect();
+    const iconBox = icon.getBoundingClientRect();
+    return {
+      x: (iconBox.left + iconBox.width / 2) - (buttonBox.left + buttonBox.width / 2),
+      y: (iconBox.top + iconBox.height / 2) - (buttonBox.top + buttonBox.height / 2),
+    };
+  });
+  expect(Math.abs(offset.x)).toBeLessThanOrEqual(tolerance);
+  expect(Math.abs(offset.y)).toBeLessThanOrEqual(tolerance);
+}
+
 test('creates, edits, pastes, restructures, searches, undoes, and persists a table layer', async ({ page }) => {
   const runtimeErrors: string[] = [];
   page.on('pageerror', (error) => runtimeErrors.push(error.message));
@@ -430,6 +445,25 @@ test('offers directional insert, duplicate, delete, edge add, and sizing command
   await inspector.getByRole('button', { name: 'Fit row' }).click();
   await inspector.getByRole('button', { name: 'Reset sizing' }).click();
 
+});
+
+test('centers row and column add icons at normal and maximum canvas zoom', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  const addRow = tableNode.getByRole('button', { name: 'Add row below' });
+  const addColumn = tableNode.getByRole('button', { name: 'Add column right' });
+  await expect(addRow.locator('svg')).toHaveCount(1);
+  await expect(addColumn.locator('svg')).toHaveCount(1);
+  await expectSvgCentered(addRow);
+  await expectSvgCentered(addColumn);
+
+  const zoomIn = page.getByRole('button', { name: 'Zoom in' });
+  for (let index = 0; index < 9 && await zoomIn.isEnabled(); index += 1) await zoomIn.click();
+  await expect(page.getByRole('button', { name: /Reset zoom to 100%/ }))
+    .toHaveAttribute('aria-label', /currently 400%/);
+  await expectSvgCentered(addRow);
+  await expectSvgCentered(addColumn);
 });
 
 test('copies and cuts a selected range as TSV and escaped HTML', async ({ page }) => {
