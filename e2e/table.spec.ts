@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { canvasNode, openEditor, waitForSaved } from './helpers';
 
@@ -476,6 +477,208 @@ test('copies and cuts a selected range as TSV and escaped HTML', async ({ page }
   await expect(tableNode.getByText('D', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(tableNode.getByText('D', { exact: true })).toBeVisible();
+});
+
+test('grows multiline edits, preserves one-step history, and marks manually constrained overflow', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  const bodyCell = tableNode.locator('.table-cell').nth(3);
+  const originalHeight = (await bodyCell.boundingBox())!.height;
+
+  await bodyCell.dblclick();
+  const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  await editor.fill('Scene one\nScene two');
+  await editor.press('Enter');
+  await expect(editor).toHaveValue('Scene one\nScene two\n');
+  await editor.fill('Scene one\nScene two\nScene three');
+  await expect(editor).toHaveValue('Scene one\nScene two\nScene three');
+  const caret = await editor.evaluate((element) => (element as HTMLTextAreaElement).selectionStart);
+  await editor.press('ArrowLeft');
+  await expect(editor).toBeFocused();
+  expect(await editor.evaluate((element) => (element as HTMLTextAreaElement).selectionStart)).toBe(caret - 1);
+  await editor.press('Control+Enter');
+
+  const grownHeight = (await bodyCell.boundingBox())!.height;
+  expect(grownHeight).toBeGreaterThan(originalHeight + 8);
+  await expect(bodyCell).not.toHaveAttribute('data-cell-overflow', 'true');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(bodyCell).not.toContainText('Scene one');
+  await expect.poll(async () => (await bodyCell.boundingBox())!.height).toBeCloseTo(originalHeight, 0);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(bodyCell).toContainText('Scene three');
+  await expect.poll(async () => (await bodyCell.boundingBox())!.height).toBeCloseTo(grownHeight, 0);
+
+  const height = page.locator('.inspector-panel').getByRole('spinbutton', { name: 'Height' });
+  await height.fill('36');
+  await height.blur();
+  await expect(bodyCell).toHaveAttribute('data-cell-overflow', 'true');
+  await expect(bodyCell).toHaveAttribute('aria-label', /content clipped/);
+  await bodyCell.dblclick();
+  await expect(tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ }))
+    .toHaveValue('Scene one\nScene two\nScene three');
+});
+
+test('enforces the 2,000-character cell limit as one undoable edit', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  const firstCell = tableNode.locator('.table-cell').first();
+  await firstCell.dblclick();
+  const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 1, column 1/ });
+  await expect(editor).toHaveAttribute('maxlength', '2000');
+  await editor.evaluate((element) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+    setter?.call(element, 'x'.repeat(2_001));
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await expect.poll(async () => (await editor.inputValue()).length).toBe(2_000);
+  await editor.press('Control+Enter');
+  await expect.poll(async () => (await firstCell.textContent())?.length).toBe(2_000);
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(firstCell).toContainText('Column 1');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect.poll(async () => (await firstCell.textContent())?.length).toBe(2_000);
+});
+
+test('adds a row from the final cell and restores it with one undo', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  const cells = tableNode.locator('.table-cell');
+  await cells.nth(8).click();
+  await cells.nth(8).press('Tab');
+  await expect(cells).toHaveCount(12);
+  await expect(cells.nth(9)).toBeFocused();
+  await expect(page.locator('.inspector-panel').getByText('4 rows × 3 columns')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(cells).toHaveCount(9);
+  await expect(tableNode.locator('.table-cell[tabindex="0"]')).toHaveCount(1);
+});
+
+test('moves focus to the nearest surviving cell after explicit row and column deletion', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  const cells = tableNode.locator('.table-cell');
+  await cells.nth(4).click();
+  const nextRowId = await cells.nth(7).getAttribute('data-table-row-id');
+  const activeColumnId = await cells.nth(4).getAttribute('data-table-column-id');
+  const rowControls = page.locator('.inspector-panel').getByRole('group', { name: 'Table row controls' });
+  await rowControls.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(cells).toHaveCount(6);
+  const afterRowDelete = tableNode.locator(
+    `.table-cell[data-table-row-id="${nextRowId}"][data-table-column-id="${activeColumnId}"]`,
+  );
+  await expect(afterRowDelete).toBeFocused();
+  await expect(tableNode.locator('.table-cell[tabindex="0"]')).toHaveCount(1);
+
+  const rowId = await afterRowDelete.getAttribute('data-table-row-id');
+  const nextColumnId = await cells.nth(5).getAttribute('data-table-column-id');
+  const columnControls = page.locator('.inspector-panel').getByRole('group', { name: 'Table column controls' });
+  await columnControls.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(cells).toHaveCount(4);
+  await expect(tableNode.locator(
+    `.table-cell[data-table-row-id="${rowId}"][data-table-column-id="${nextColumnId}"]`,
+  )).toBeFocused();
+  await expect(tableNode.locator('.table-cell[tabindex="0"]')).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(cells).toHaveCount(6);
+  await expect(tableNode.locator('.table-cell[tabindex="0"]')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(cells).toHaveCount(4);
+  await expect(tableNode.locator('.table-cell[tabindex="0"]')).toHaveCount(1);
+});
+
+test('preserves Unicode and RTL cell text through search, reload, and SVG export', async ({ page }) => {
+  const unicodeText = 'Café 👩🏽‍💻 中文 العربية';
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  const bodyCell = tableNode.locator('.table-cell').nth(3);
+  await bodyCell.dblclick();
+  const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  await expect(editor).toHaveAttribute('dir', 'auto');
+  await editor.fill(unicodeText);
+  await editor.press('Control+Enter');
+  await expect(bodyCell).toHaveAttribute('dir', 'auto');
+  await page.getByPlaceholder('Search layers and notes').fill('العربية');
+  await expect(page.getByRole('button', { name: 'New table', exact: true })).toBeVisible();
+  await page.getByPlaceholder('Search layers and notes').fill('');
+  await waitForSaved(page);
+
+  await page.reload();
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  await expect(page.locator('.react-flow__node-table').getByText(unicodeText, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Export SVG' }).click();
+  const svgDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download SVG' }).click();
+  const downloadPath = await (await svgDownload).path();
+  expect(downloadPath).toBeTruthy();
+  const svg = await readFile(downloadPath!, 'utf8');
+  expect(svg).toContain('Café 👩🏽‍💻 中文');
+  expect(svg).toContain('العربية');
+});
+
+test('applies every supported cell tone and text alignment to a range', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  const cells = tableNode.locator('.table-cell');
+  await cells.nth(4).click();
+  await cells.nth(8).click({ modifiers: ['Shift'] });
+  const selected = tableNode.locator('.table-cell[data-table-selected="true"]');
+  await expect(selected).toHaveCount(4);
+  const inspector = page.locator('.inspector-panel');
+
+  for (const tone of ['gray', 'indigo', 'mint', 'amber', 'rose', 'none']) {
+    await inspector.getByLabel('Background').selectOption(tone);
+    await expect(selected.filter({ has: page.locator(`:scope.cell-tone-${tone}`) })).toHaveCount(4);
+  }
+  for (const alignment of ['left', 'center', 'right']) {
+    await inspector.getByRole('button', { name: alignment, exact: true }).click();
+    await expect(selected.first()).toHaveCSS('text-align', alignment);
+    expect(await selected.evaluateAll((elements, expected) => (
+      elements.every((element) => getComputedStyle(element).textAlign === expected)
+    ), alignment)).toBe(true);
+  }
+  await inspector.getByRole('button', { name: 'Clear formatting' }).click();
+  await expect(tableNode.locator('.table-cell[data-table-selected="true"].cell-tone-none')).toHaveCount(4);
+  await expect(selected.first()).toHaveCSS('text-align', 'left');
+});
+
+test('keeps cell hit targets and non-color selection cues at zoom extremes', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Contrast emulation is validated once in Chromium.');
+  await page.emulateMedia({ contrast: 'more' });
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  const cells = tableNode.locator('.table-cell');
+  const zoomReadout = page.getByRole('button', { name: /Reset zoom to 100%/ });
+
+  const zoomOut = page.getByRole('button', { name: 'Zoom out' });
+  for (let index = 0; index < 14 && await zoomOut.isEnabled(); index += 1) await zoomOut.click();
+  await expect(zoomReadout).toHaveAttribute('aria-label', /currently 15%/);
+  await cells.nth(4).click();
+  await expect(cells.nth(4)).toHaveAttribute('data-range-focus', 'true');
+  const lowZoomSeparator = tableNode.getByRole('separator', { name: 'Resize column 2' });
+  await expect(lowZoomSeparator).toBeVisible();
+  const lowZoomWidth = (await cells.nth(4).boundingBox())!.width;
+  await lowZoomSeparator.press('ArrowRight');
+  await expect.poll(async () => (await cells.nth(4).boundingBox())!.width).toBeGreaterThan(lowZoomWidth);
+
+  await zoomReadout.click();
+  await expect(zoomReadout).toHaveText('100%');
+  const zoomIn = page.getByRole('button', { name: 'Zoom in' });
+  for (let index = 0; index < 9 && await zoomIn.isEnabled(); index += 1) await zoomIn.click();
+  await expect(zoomReadout).toHaveAttribute('aria-label', /currently 400%/);
+  await cells.nth(8).click({ modifiers: ['Shift'] });
+  await expect(tableNode.locator('.table-cell[data-table-selected="true"]')).toHaveCount(4);
+  await expect(cells.nth(8)).toHaveCSS('outline-width', '4px');
+  expect(await cells.nth(4).evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe('none');
 });
 
 test('hides inner mutation controls while locked or canvas-multiselected', async ({ page }) => {

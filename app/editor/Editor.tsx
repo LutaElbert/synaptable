@@ -128,6 +128,7 @@ import {
   type TableNavigationDirection,
 } from './TableNode';
 import {
+  nearestTableCellAfterStructureRemoval,
   normalizeTableInteraction,
   tableColumnRange,
   tableInteractionCells,
@@ -150,6 +151,7 @@ import {
   firstTableCell,
   fitTableColumnToContent,
   fitTableRowToContent,
+  growTableRowToContent,
   insertTableColumn,
   insertTableRow,
   moveTableColumn,
@@ -2018,9 +2020,26 @@ function EditorInner() {
   const commitTableCellEdit = useCallback(() => {
     const origin = tableEditOriginRef.current;
     const active = tableInteraction?.mode === 'editing' ? tableInteraction : null;
+    let currentNodes = nodesRef.current;
+    if (active) {
+      const grownNodes = currentNodes.map((node) => {
+        if (node.id !== active.nodeId || node.data.kind !== 'table') return node;
+        const cell = tableCellAt(node.data, active.cell);
+        if (!cell) return node;
+        const data = growTableRowToContent(node.data, cell.rowIndex);
+        return data === node.data
+          ? node
+          : { ...node, data, style: { ...node.style, ...tableDimensions(data) } };
+      });
+      if (grownNodes.some((node, index) => node !== currentNodes[index])) {
+        currentNodes = grownNodes;
+        nodesRef.current = currentNodes;
+        setNodes(currentNodes);
+      }
+    }
     if (origin && active) {
       const before = origin.nodes.find((node) => node.id === active.nodeId);
-      const after = nodesRef.current.find((node) => node.id === active.nodeId);
+      const after = currentNodes.find((node) => node.id === active.nodeId);
       if (before && after && JSON.stringify(before.data) !== JSON.stringify(after.data)) recordHistory(origin);
     }
     tableEditOriginRef.current = null;
@@ -2029,6 +2048,36 @@ function EditorInner() {
     setTableInteraction(next);
     focusTableCell(active.nodeId, active.cell);
   }, [focusTableCell, recordHistory, tableInteraction]);
+
+  const removeSelectedTableStructure = useCallback((
+    id: string,
+    kind: 'row' | 'column',
+    indexes: number[],
+  ) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || !indexes.length) return;
+    const before = node.data;
+    const descending = [...new Set(indexes)].sort((left, right) => right - left);
+    if (kind === 'row' && before.rows.length - descending.length < 1) return;
+    if (kind === 'column' && before.columns.length - descending.length < 1) return;
+    const after = descending.reduce(
+      (data, index) => kind === 'row' ? removeTableRow(data, index) : removeTableColumn(data, index),
+      before,
+    );
+    const previousFocus = tableInteraction?.nodeId === id
+      ? tableInteractionFocus(before, tableInteraction)
+      : firstTableCell(before);
+    const nextFocus = nearestTableCellAfterStructureRemoval(before, after, previousFocus);
+    recordHistory();
+    const nextNodes = nodesRef.current.map((item) => item.id === id
+      ? { ...item, data: after, style: { ...item.style, ...tableDimensions(after) } }
+      : item);
+    nodesRef.current = nextNodes;
+    setNodes(nextNodes);
+    setTableInteraction({ mode: 'cell', nodeId: id, anchor: nextFocus, focus: nextFocus });
+    focusTableCell(id, nextFocus);
+    announce(`Deleted ${descending.length} table ${kind}${descending.length === 1 ? '' : 's'}.`);
+  }, [announce, focusTableCell, recordHistory, tableInteraction]);
 
   const cancelTableCellEdit = useCallback(() => {
     const origin = tableEditOriginRef.current;
@@ -3019,6 +3068,7 @@ function EditorInner() {
               conversionOptions={conversionOptions}
               onConversionOptionsChange={setConversionOptions}
               onUpdate={updateNode}
+              onRemoveTableStructure={removeSelectedTableStructure}
               onVectorize={() => void vectorizeImage(selectedNode.id)}
               onCancelVectorize={cancelVectorization}
               onDuplicate={duplicateSelected}
@@ -3145,6 +3195,7 @@ type NodeInspectorProps = {
   conversionOptions: ConversionOptions;
   onConversionOptionsChange: (options: ConversionOptions) => void;
   onUpdate: (id: string, updater: (node: EditorNode) => EditorNode, shouldRecord?: boolean) => void;
+  onRemoveTableStructure: (id: string, kind: 'row' | 'column', indexes: number[]) => void;
   onVectorize: () => void;
   onCancelVectorize: () => void;
   onDuplicate: () => void;
@@ -3284,6 +3335,7 @@ function NodeInspector({
   conversionOptions,
   onConversionOptionsChange,
   onUpdate,
+  onRemoveTableStructure,
   onVectorize,
   onCancelVectorize,
   onDuplicate,
@@ -3499,10 +3551,7 @@ function NodeInspector({
               <button
                 type="button"
                 disabled={node.data.locked || !selectedTableRowIndexes.length || node.data.rows.length - selectedTableRowIndexes.length < 1}
-                onClick={() => updateTableData((data) => [...selectedTableRowIndexes].reverse().reduce(
-                  (next, rowIndex) => removeTableRow(next, rowIndex),
-                  data,
-                ))}
+                onClick={() => onRemoveTableStructure(node.id, 'row', selectedTableRowIndexes)}
               ><Trash2 size={12} /> Delete</button>
               <button
                 type="button"
@@ -3539,10 +3588,7 @@ function NodeInspector({
               <button
                 type="button"
                 disabled={node.data.locked || !selectedTableColumnIndexes.length || node.data.columns.length - selectedTableColumnIndexes.length < 1}
-                onClick={() => updateTableData((data) => [...selectedTableColumnIndexes].reverse().reduce(
-                  (next, columnIndex) => removeTableColumn(next, columnIndex),
-                  data,
-                ))}
+                onClick={() => onRemoveTableStructure(node.id, 'column', selectedTableColumnIndexes)}
               ><Trash2 size={12} /> Delete</button>
               <button
                 type="button"

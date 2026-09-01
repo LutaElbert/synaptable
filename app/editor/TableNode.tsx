@@ -12,6 +12,7 @@ import {
   useEffect,
   useContext,
   useRef,
+  type CSSProperties,
   type ClipboardEvent,
   type KeyboardEvent,
   type MouseEvent,
@@ -25,6 +26,7 @@ import {
   TABLE_MIN_COLUMN_WIDTH,
   TABLE_MIN_ROW_HEIGHT,
   clipboardGrid,
+  tableCellRequiredHeight,
   type ClipboardGrid,
   type TableCellAddress,
 } from './table-grid';
@@ -259,22 +261,22 @@ export function TableNode({ id, data, selected }: NodeProps<EditorNode>) {
   };
 
   const handleEditorKeyboard = (event: KeyboardEvent<HTMLTextAreaElement>, address: TableCellAddress) => {
+    // Editing keys belong to the native textarea. Do not let the surrounding
+    // cell interpret Enter, arrows, Home/End, or Delete as grid commands.
+    event.stopPropagation();
     if (event.key === 'Escape') {
       event.preventDefault();
-      event.stopPropagation();
       actions.cancelCellEdit();
       return;
     }
     if (event.key === 'Tab') {
       event.preventDefault();
-      event.stopPropagation();
       actions.commitCellEdit();
       actions.navigateCell(id, address, event.shiftKey ? 'previous' : 'next');
       return;
     }
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
-      event.stopPropagation();
       actions.commitCellEdit();
     }
   };
@@ -315,6 +317,7 @@ export function TableNode({ id, data, selected }: NodeProps<EditorNode>) {
         <textarea
           className="table-cell-editor nodrag nowheel"
           aria-label={`Edit ${data.name}, row ${rowIndex + 1}, column ${columnIndex + 1}`}
+          dir="auto"
           value={cell.text}
           maxLength={TABLE_MAX_CELL_TEXT}
           autoFocus
@@ -339,9 +342,13 @@ export function TableNode({ id, data, selected }: NodeProps<EditorNode>) {
     const isAnchor = interaction?.mode === 'cell'
       && interaction.anchor.rowId === address.rowId
       && interaction.anchor.columnId === address.columnId;
+    const isOverflowing = tableCellRequiredHeight(data, rowIndex, columnIndex) > data.rows[rowIndex].height;
     return {
-      className: `table-cell nodrag cell-tone-${cell.tone} ${isSelected ? 'is-selected' : ''} ${isFocus ? 'is-active' : ''} ${data.locked ? 'is-locked' : ''}`,
-      style: { textAlign: cell.horizontalAlign } as const,
+      className: `table-cell nodrag cell-tone-${cell.tone} ${isSelected ? 'is-selected' : ''} ${isFocus ? 'is-active' : ''} ${isOverflowing ? 'has-overflow' : ''} ${data.locked ? 'is-locked' : ''}`,
+      style: {
+        textAlign: cell.horizontalAlign,
+        '--table-cell-content-height': `${Math.max(0, data.rows[rowIndex].height - 14)}px`,
+      } as CSSProperties,
       tabIndex: data.locked || !hasSingleCanvasSelection || !isFocus ? -1 : 0,
       'data-table-node-id': id,
       'data-table-row-id': address.rowId,
@@ -349,7 +356,9 @@ export function TableNode({ id, data, selected }: NodeProps<EditorNode>) {
       'data-table-selected': isSelected ? 'true' : undefined,
       'data-range-anchor': isAnchor ? 'true' : undefined,
       'data-range-focus': isFocus ? 'true' : undefined,
-      'aria-label': `${data.name}, row ${rowIndex + 1}, column ${columnIndex + 1}${cell.text ? `: ${cell.text}` : ''}${isSelected ? ', selected' : ''}`,
+      'data-cell-overflow': isOverflowing ? 'true' : undefined,
+      dir: 'auto' as const,
+      'aria-label': `${data.name}, row ${rowIndex + 1}, column ${columnIndex + 1}${cell.text ? `: ${cell.text}` : ''}${isSelected ? ', selected' : ''}${isOverflowing ? ', content clipped' : ''}`,
       onClick: (event: MouseEvent<HTMLElement>) => {
         if (event.target instanceof Element && event.target.closest('textarea')) return;
         event.stopPropagation();

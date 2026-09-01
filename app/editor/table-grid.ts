@@ -364,18 +364,37 @@ export function fitTableColumnToContent(data: TableNodeData, index: number): Tab
   return resizeTableColumn(data, index, Math.ceil(longestLine * 6.2 + 24));
 }
 
+export function tableCellRequiredHeight(data: TableNodeData, rowIndex: number, columnIndex: number) {
+  const cell = data.rows[rowIndex]?.cells[columnIndex];
+  const column = data.columns[columnIndex];
+  if (!cell || !column) return TABLE_MIN_ROW_HEIGHT;
+  const charactersPerLine = Math.max(1, Math.floor((column.width - 18) / 6.2));
+  const wrappedLines = cell.text.split('\n').reduce(
+    (total, line) => total + Math.max(1, Math.ceil([...line].length / charactersPerLine)),
+    0,
+  );
+  return Math.ceil(wrappedLines * 14 + 16);
+}
+
+export function tableRowRequiredHeight(data: TableNodeData, index: number) {
+  if (!data.rows[index]) return TABLE_MIN_ROW_HEIGHT;
+  return Math.max(
+    TABLE_MIN_ROW_HEIGHT,
+    ...data.columns.map((_, columnIndex) => tableCellRequiredHeight(data, index, columnIndex)),
+  );
+}
+
 export function fitTableRowToContent(data: TableNodeData, index: number): TableNodeData {
   const row = data.rows[index];
   if (!row) return data;
-  const lines = row.cells.reduce((maximum, cell, columnIndex) => {
-    const charactersPerLine = Math.max(1, Math.floor((data.columns[columnIndex].width - 18) / 6.2));
-    const wrappedLines = cell.text.split('\n').reduce(
-      (total, line) => total + Math.max(1, Math.ceil([...line].length / charactersPerLine)),
-      0,
-    );
-    return Math.max(maximum, wrappedLines);
-  }, 1);
-  return resizeTableRow(data, index, Math.ceil(lines * 14 + 16));
+  return resizeTableRow(data, index, tableRowRequiredHeight(data, index));
+}
+
+export function growTableRowToContent(data: TableNodeData, index: number): TableNodeData {
+  const row = data.rows[index];
+  if (!row) return data;
+  const requiredHeight = tableRowRequiredHeight(data, index);
+  return requiredHeight > row.height ? resizeTableRow(data, index, requiredHeight) : data;
 }
 
 export function resetTableSizing(data: TableNodeData): TableNodeData {

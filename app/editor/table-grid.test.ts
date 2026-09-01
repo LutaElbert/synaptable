@@ -15,6 +15,7 @@ import {
   duplicateTableRow,
   fitTableColumnToContent,
   fitTableRowToContent,
+  growTableRowToContent,
   insertTableColumn,
   insertTableRow,
   moveTableColumn,
@@ -30,6 +31,8 @@ import {
   tableCellAt,
   tableDimensions,
   tableFromNodes,
+  tableCellRequiredHeight,
+  tableRowRequiredHeight,
   updateTableCell,
   updateTableCells,
 } from './table-grid';
@@ -143,6 +146,28 @@ describe('table grid operations', () => {
     const reset = resetTableSizing(table);
     expect(reset.columns.map((column) => column.width)).toEqual([120, 120]);
     expect(reset.rows.map((row) => row.height)).toEqual([44, 44]);
+  });
+
+  it('measures wrapped cell content and only grows rows that need more room', () => {
+    let table = createTableData({
+      rows: 1,
+      columns: 2,
+      headerRow: false,
+      values: [['Line one\nLine two\nLine three', 'Short']],
+    });
+    const required = tableCellRequiredHeight(table, 0, 0);
+    expect(required).toBeGreaterThan(table.rows[0].height);
+    expect(tableRowRequiredHeight(table, 0)).toBe(required);
+    table = growTableRowToContent(table, 0);
+    expect(table.rows[0].height).toBe(required);
+    expect(growTableRowToContent(table, 0)).toBe(table);
+
+    table = updateTableCell(table, {
+      rowId: table.rows[0].id,
+      columnId: table.columns[0].id,
+    }, (cell) => ({ ...cell, text: Array.from({ length: 20 }, (_, index) => `Line ${index}`).join('\n') }));
+    expect(tableRowRequiredHeight(table, 0)).toBeGreaterThan(180);
+    expect(growTableRowToContent(table, 0).rows[0].height).toBe(180);
   });
 
   it('navigates by row and column ids rather than transient indexes', () => {

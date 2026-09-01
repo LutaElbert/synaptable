@@ -684,10 +684,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   cursor: text;
 }
 .table-cell > span {
-  display: -webkit-box;
+  display: block;
+  max-block-size: var(--table-cell-content-height);
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
+}
+.table-cell.has-overflow:not(:has(.table-cell-editor))::after {
+  position: absolute;
+  inset-inline-end: 3px;
+  inset-block-end: 1px;
+  min-inline-size: 13px;
+  content: '…';
+  border-radius: 4px;
+  background: inherit;
+  color: currentColor;
+  font-weight: 800;
+  line-height: 12px;
+  text-align: center;
 }
 .table-cell:is(th) { background: #f6f6f8; color: #34363c; font-weight: 700; }
 .table-cell.cell-tone-gray { background: #f1f2f4; }
@@ -849,6 +861,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .table-cell.is-active { outline-width: 4px; outline-color: currentColor; }
   .table-grabber { border-width: 2px; opacity: 1; }
   .table-edge-add { border-width: 2px; opacity: 1; }
+  .table-cell.has-overflow::after { outline: 2px solid currentColor; }
 }
 .react-flow__node:has(.table-cell-editor) .react-flow__handle { opacity: 0; pointer-events: none; }
 .react-flow__handle {

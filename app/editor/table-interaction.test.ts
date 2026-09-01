@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createTableData } from './table-grid';
+import { createTableData, removeTableColumn, removeTableRow } from './table-grid';
 import {
+  nearestTableCellAfterStructureRemoval,
   normalizeTableInteraction,
   tableCellRange,
   tableColumnRange,
@@ -102,6 +103,23 @@ describe('table interaction helpers', () => {
       nodeId: 'table',
       anchor: { rowId: data.rows[0].id, columnId: data.columns[0].id },
       focus: { rowId: data.rows[0].id, columnId: data.columns[0].id },
+    });
+  });
+
+  it('finds the nearest surviving cell after active rows or columns are removed', () => {
+    const before = createTableData({ rows: 4, columns: 4, headerRow: false });
+    const focus = { rowId: before.rows[2].id, columnId: before.columns[2].id };
+    const withoutMiddle = removeTableColumn(removeTableRow(before, 2), 2);
+    expect(nearestTableCellAfterStructureRemoval(before, withoutMiddle, focus)).toEqual({
+      rowId: before.rows[3].id,
+      columnId: before.columns[3].id,
+    });
+
+    const last = { rowId: before.rows[3].id, columnId: before.columns[3].id };
+    const withoutLast = removeTableColumn(removeTableRow(before, 3), 3);
+    expect(nearestTableCellAfterStructureRemoval(before, withoutLast, last)).toEqual({
+      rowId: before.rows[2].id,
+      columnId: before.columns[2].id,
     });
   });
 });

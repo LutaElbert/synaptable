@@ -167,3 +167,31 @@ export function normalizeTableInteraction(
   const cell = firstTableCell(data);
   return { mode: 'cell', nodeId: interaction.nodeId, anchor: cell, focus: cell };
 }
+
+export function nearestTableCellAfterStructureRemoval(
+  before: TableNodeData,
+  after: TableNodeData,
+  focus: TableCellAddress | null,
+): TableCellAddress {
+  const previous = tableCellAt(before, focus) ?? tableCellAt(before, firstTableCell(before))!;
+  const survivingRow = after.rows.find((row) => row.id === previous.row.id);
+  const survivingColumn = after.columns.find((column) => column.id === previous.column.id);
+  const removedRowsBefore = before.rows
+    .slice(0, previous.rowIndex)
+    .filter((row) => !after.rows.some((candidate) => candidate.id === row.id)).length;
+  const removedColumnsBefore = before.columns
+    .slice(0, previous.columnIndex)
+    .filter((column) => !after.columns.some((candidate) => candidate.id === column.id)).length;
+  const rowIndex = Math.max(0, Math.min(
+    previous.rowIndex - removedRowsBefore,
+    after.rows.length - 1,
+  ));
+  const columnIndex = Math.max(0, Math.min(
+    previous.columnIndex - removedColumnsBefore,
+    after.columns.length - 1,
+  ));
+  return {
+    rowId: survivingRow?.id ?? after.rows[rowIndex].id,
+    columnId: survivingColumn?.id ?? after.columns[columnIndex].id,
+  };
+}

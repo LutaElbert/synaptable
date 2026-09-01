@@ -935,21 +935,28 @@ This record validates the current `feat/table-layer-mvp` branch. It does not mar
 
 | Check | Result | Scope |
 | --- | --- | --- |
-| `npm test` | **Pass — 69/69** | Eight unit-test files, including table matrix and interaction helpers |
-| Focused table Playwright run | **Pass — 33/33** | Eleven table scenarios in Chromium, Firefox, and WebKit |
+| `npm test` | **Pass — 71/71** | Eight unit-test files, including wrapped-content sizing and nearest-focus helpers |
+| Focused table Playwright run | **Pass — 52; 2 intentional skips** | Eighteen table scenarios across Chromium, Firefox, and WebKit; contrast emulation runs once in Chromium |
 | Focused accessibility Playwright run | **Pass — 12/12** | Four accessibility scenarios in Chromium, Firefox, and WebKit |
-| Full Playwright run | **Pass — 146; 4 intentional skips** | Full editor regression suite across three engines; two deterministic stress fixtures run once in Chromium and are intentionally skipped in Firefox/WebKit |
-| 2,000-cell browser boundary | **Pass — 1.9 seconds focused; 3.2 seconds in full parallel run** | Chromium render, limit guards, search, SVG export, autosave, and reload |
+| Full Playwright run | **Pass — 165; 6 intentional skips** | Full editor regression suite across three engines; two stress fixtures and contrast emulation use intentional engine-specific skips |
+| 2,000-cell browser boundary | **Pass — 3.5 seconds in full parallel run** | Chromium render, limit guards, search, SVG export, autosave, and reload |
 | `npm run check` | **Pass** | vinext compatibility: 100%, with no partial or unsupported findings |
 | `npm run typecheck` | **Pass** | TypeScript without emitted output |
 | `npm run lint` | **Pass** | ESLint repository scan |
 | `npm run build` | **Pass** | Production vinext build |
+| `npm audit --audit-level=high` | **Pass — 0 vulnerabilities** | Installed dependency tree |
 
 The focused browser suite currently proves these implemented flows:
 
 - default table creation, semantic rows/headers/cells, editing, in-table paste, search, autosave, and reload;
 - table/cell/range/row/column selection levels and the Escape ladder;
 - arrow, Home/End, printable-key editing, commit/cancel, and range clearing;
+- native textarea isolation for caret arrows, ordinary deletion, and multiline `Enter`, while `Ctrl/Cmd+Enter` remains the explicit commit command;
+- automatic row growth for committed multiline text, a visible and announced overflow state after manual constraint, and one-step Undo/Redo for content plus geometry;
+- the exact 2,000-character cell boundary, final-cell `Tab` row creation, and nearest surviving focus after explicit row/column deletion;
+- Unicode and RTL text through editing, search, autosave, reload, and SVG export;
+- all supported cell tones and alignments across rectangular ranges;
+- cell and boundary interaction at 15% zoom, range interaction at 400% zoom, and non-color focus/selection cues under increased contrast;
 - directional insertion, edge addition, duplication, explicit deletion, move buttons, fitting, distribution, and reset sizing;
 - real pointer and keyboard internal-boundary resizing, resize cancellation, and one-step Undo;
 - proportional whole-table corner resizing, top-left anchoring, one-step history, and persistence;
@@ -986,7 +993,8 @@ The visible result remained coherent at the canvas zoom levels chosen by Fit Vie
 | Search, SVG export, selection-to-table, locking, canvas regressions | **Automated baseline passes** | Add golden-export visual comparisons and search-to-cell reveal after implementation |
 | Whole-table outer resize and connector geometry | **Validated baseline** | Corner scaling, top-left anchoring, persistence, all four connection sides, and connector Undo/Redo pass in three engines; add side-only handles if exposed separately |
 | 2,000-cell render, growth guards, search, export, and reload | **Validated in Chromium** | Boundary fixture passes without runtime errors; keep as a Chromium-only local stress gate |
-| Corrupt-data recovery, long Unicode/RTL content, and detailed performance budgets | **Partially unit-tested; release matrix incomplete** | Complete `EDT-09`, `PER-05`, and navigation/edit/large-paste measurements from `PRF-02`–`PRF-05` |
+| 2,000-character cells and Unicode/RTL content | **Validated baseline** | Limit enforcement, Undo/Redo, search, reload, and SVG preservation pass in all three engines |
+| Corrupt-data recovery and detailed performance budgets | **Partially unit-tested; release matrix incomplete** | Complete `PER-05` and navigation/edit/large-paste measurements from `PRF-02`–`PRF-05` |
 | Grid-size picker, `Shift+T`, empty-canvas matrix paste, search-to-cell reveal | **Not implemented** | Implement before running `CRT-02`, `CRT-03`, `CRT-05`, `CLP-14`, and `INT-02` |
 | Drag row/column reorder, insertion guides, and auto-pan | **Not implemented** | Implement before running `STR-09` and `STR-10` |
 | Touch resize and long-press controls | **Not implemented** | Implement before running `RSZ-16` and `MOB-01`–`MOB-06` |
