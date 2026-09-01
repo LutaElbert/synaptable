@@ -9,7 +9,7 @@ Protect the editor's graph integrity and make layer editing predictable across p
 - Double-clicking a concept on the canvas enters rich-text editing. Double-clicking a layer name in the layer panel enters rename mode; `F2` is the keyboard equivalent.
 - Inline editing temporarily enlarges a small concept for usable controls, then restores its exact saved position and dimensions on finish, outside-click commit, or cancel.
 - Concept titles and bodies support reversible bold, italic, underline, strikethrough, and safe-link formatting. Bodies additionally support reversible bullets, numbering, and checklists; title list controls remain unavailable.
-- A single selected, unlocked concept or image layer exposes child and sibling actions. Children are compact editable concepts connected from the source bottom to the child top. Siblings reuse the selected layer's incoming parent and row; an unconnected root sibling is placed beside the source without inventing a connector.
+- A single selected, unlocked concept or image layer exposes child and sibling actions. A new branch follows the parent's established connector direction: horizontal branches continue from right to left, vertical branches continue from bottom to top, and an isolated parent defaults to a vertical child. Existing connectors are never rewritten as a side effect. Siblings reuse the selected layer's incoming parent and branch direction; an unconnected root sibling is placed beside the source without inventing a connector.
 - `Tab` creates a child and `Shift+Enter` creates a sibling when an unlocked concept or image node has canvas focus. Plain `Enter` starts rich-text editing only for concepts.
 - `Enter` commits a layer rename, while `Escape` cancels without creating a history entry. Focus returns to the edited concept or layer control after cancellation and to the renamed layer after commit.
 - Locked layers cannot be renamed, edited on the canvas, moved, resized, styled, deleted through a mixed bulk operation, or used as an endpoint for a new or reconnected connector.
@@ -23,7 +23,7 @@ Protect the editor's graph integrity and make layer editing predictable across p
 | Area | Coverage |
 | --- | --- |
 | Double-click and keyboard editing | Canvas concept edit/cancel, layer-panel rename commit/cancel, `F2`, raster parity, clean history, focus restoration |
-| Branch creation | Concept and image toolbar actions, `Tab`/`Shift+Enter`, mixed-size layout, bottom/top connectors, parent-aware siblings, locked images, undo/redo, and reload |
+| Branch creation | Concept and image toolbar actions, `Tab`/`Shift+Enter`, mixed-size horizontal/vertical layout, inherited connector direction, unchanged existing connectors, parent-aware siblings, locked images, undo/redo, and reload |
 | Rich formatting toolbar | Title/body focus routing; bold, italic, underline, strikethrough, safe link apply/remove/cancel; bullets, numbering, checklists; toggle-off behavior; finish, outside-click, cancel, undo/redo, and reload |
 | Connection rules | Missing endpoints, self-edge, duplicate direction, reverse cycle, locked endpoints, reconnection, duplicate reconnect rejection |
 | Mutation safety | Keyboard and inspector deletion, cascade cleanup, mixed locked selection, ordering, duplicate-layer isolation, undo/redo |

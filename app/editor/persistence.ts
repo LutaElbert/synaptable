@@ -6,7 +6,8 @@ const STORE_NAME = 'documents';
 const CHECKPOINT_STORE_NAME = 'checkpoints';
 const DOCUMENT_ID = 'current';
 const DATABASE_VERSION = 3;
-const MAX_CHECKPOINTS = 20;
+export const MAX_CHECKPOINTS = 20;
+export const MAX_CHECKPOINT_BYTES = 80 * 1024 * 1024;
 
 type StoredDocument = EditorDocument & { id: string };
 
@@ -14,8 +15,30 @@ export type LocalCheckpoint = {
   id: string;
   createdAt: number;
   title: string;
+  bytes: number;
   document: EditorDocument;
 };
+
+export function serializedDocumentBytes(document: EditorDocument): number {
+  return new TextEncoder().encode(JSON.stringify(document)).byteLength;
+}
+
+export function checkpointIdsToPrune(
+  checkpoints: LocalCheckpoint[],
+  maxCount = MAX_CHECKPOINTS,
+  maxBytes = MAX_CHECKPOINT_BYTES,
+): string[] {
+  const retained = [...checkpoints].sort((left, right) => right.createdAt - left.createdAt);
+  let bytes = retained.reduce((total, checkpoint) => total + checkpoint.bytes, 0);
+  const pruned: string[] = [];
+  while (retained.length > maxCount || (retained.length > 1 && bytes > maxBytes)) {
+    const oldest = retained.pop();
+    if (!oldest) break;
+    bytes -= oldest.bytes;
+    pruned.push(oldest.id);
+  }
+  return pruned;
+}
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -95,7 +118,16 @@ export async function listLocalCheckpoints(): Promise<LocalCheckpoint[]> {
       request.onerror = () => reject(request.error);
     });
     return stored
-      .map((checkpoint) => ({ ...checkpoint, document: validateEditorDocument(checkpoint.document) }))
+      .map((checkpoint) => {
+        const document = validateEditorDocument(checkpoint.document);
+        return {
+          ...checkpoint,
+          bytes: Number.isFinite(checkpoint.bytes) && checkpoint.bytes > 0
+            ? checkpoint.bytes
+            : serializedDocumentBytes(document),
+          document,
+        };
+      })
       .sort((a, b) => b.createdAt - a.createdAt);
   } finally {
     database.close();
@@ -103,11 +135,17 @@ export async function listLocalCheckpoints(): Promise<LocalCheckpoint[]> {
 }
 
 export async function createLocalCheckpoint(document: EditorDocument): Promise<LocalCheckpoint> {
+  const validated = validateEditorDocument(document);
+  const bytes = serializedDocumentBytes(validated);
+  if (bytes > MAX_CHECKPOINT_BYTES) {
+    throw new Error('This project is too large for a local checkpoint. Download a backup instead.');
+  }
   const checkpoint: LocalCheckpoint = {
     id: crypto.randomUUID(),
     createdAt: Date.now(),
     title: document.title,
-    document: validateEditorDocument(document),
+    bytes,
+    document: validated,
   };
   const database = await openDatabase();
   try {
@@ -122,7 +160,7 @@ export async function createLocalCheckpoint(document: EditorDocument): Promise<L
     database.close();
   }
   const checkpoints = await listLocalCheckpoints();
-  await Promise.all(checkpoints.slice(MAX_CHECKPOINTS).map((item) => deleteLocalCheckpoint(item.id)));
+  await Promise.all(checkpointIdsToPrune(checkpoints).map((id) => deleteLocalCheckpoint(id)));
   return checkpoint;
 }
 

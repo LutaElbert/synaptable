@@ -106,6 +106,7 @@ import {
   removeNodesAndConnections,
   tidyGraphPositions,
 } from './graph-rules';
+import { trimHistory, type EditorSnapshot } from './history-budget';
 import { initialDocument } from './initial-document';
 import {
   CONCEPT_DEFAULT_WIDTH,
@@ -125,6 +126,14 @@ import {
   saveLocalDocument,
   type LocalCheckpoint,
 } from './persistence';
+import {
+  formatStorageBytes,
+  inspectStorageHealth,
+  isQuotaExceededError,
+  requestPersistentStorage,
+  storageUsageRatio,
+  type StorageHealth,
+} from './storage-health';
 import {
   conceptTitleFromPlainText,
   emptyRichText,
@@ -207,7 +216,6 @@ import type {
 } from './types';
 import { vectorizeDataUrl } from './vectorize';
 
-type EditorSnapshot = Pick<EditorDocument, 'nodes' | 'edges'>;
 type ToolMode = 'select' | 'hand';
 type SelectionOperation = 'replace' | 'add' | 'subtract';
 type MobilePanel = 'layers' | 'inspector' | null;
@@ -561,31 +569,6 @@ function safeFileBase(fileName: string) {
   );
 }
 
-function estimateSnapshotBytes(snapshot: EditorSnapshot) {
-  let characters = snapshot.edges.length * 280 + snapshot.nodes.length * 360;
-  for (const node of snapshot.nodes) {
-    characters += node.data.name.length;
-    if (node.data.kind === 'raster') characters += node.data.src.length;
-    if (node.data.kind === 'concept') {
-      characters += node.data.label.length + node.data.eyebrow.length + JSON.stringify(node.data.body).length;
-    }
-    if (node.data.kind === 'vector') {
-      for (const path of node.data.paths) {
-        characters += path.d.length + path.name.length + path.fill.length + path.stroke.length;
-      }
-    }
-  }
-  return characters * 2;
-}
-
-function trimHistory(history: EditorSnapshot[], maxEntries = 40, maxBytes = 48 * 1024 * 1024) {
-  let bytes = history.reduce((total, item) => total + estimateSnapshotBytes(item), 0);
-  while (history.length > maxEntries || (history.length > 1 && bytes > maxBytes)) {
-    const removed = history.shift();
-    if (removed) bytes -= estimateSnapshotBytes(removed);
-  }
-}
-
 function connectorPresentation(kind: 'default' | 'dashed' | 'emphasis') {
   return {
     stroke: kind === 'emphasis' ? '#635bff' : '#a9adb7',
@@ -604,6 +587,7 @@ function EditorInner() {
   const [dragActive, setDragActive] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [saveFailure, setSaveFailure] = useState<'quota' | 'unknown' | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [convertingId, setConvertingId] = useState<string | null>(null);
   const [expandedVectors, setExpandedVectors] = useState<Set<string>>(new Set());
@@ -634,6 +618,8 @@ function EditorInner() {
   const [searchQuery, setSearchQuery] = useState('');
   const [conceptTemplate, setConceptTemplate] = useState<QuickTemplate>('idea');
   const [checkpoints, setCheckpoints] = useState<LocalCheckpoint[]>([]);
+  const [storageHealth, setStorageHealth] = useState<StorageHealth | null>(null);
+  const [storageHealthBusy, setStorageHealthBusy] = useState(false);
   const [autosaveRevision, setAutosaveRevision] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
@@ -657,6 +643,7 @@ function EditorInner() {
   const conversionControllerRef = useRef<AbortController | null>(null);
   const saveQueueRef = useRef(Promise.resolve());
   const saveTicketRef = useRef(0);
+  const saveFailureRef = useRef<'quota' | 'unknown' | null>(null);
   const autosaveInputRef = useRef<PersistableEditorState>({ title, nodes, edges });
   const {
     screenToFlowPosition,
@@ -765,13 +752,25 @@ function EditorInner() {
     saveQueueRef.current = nextSave;
     void nextSave
       .then(() => {
-        if (ticket === saveTicketRef.current) setSaveState('saved');
+        if (ticket === saveTicketRef.current) {
+          saveFailureRef.current = null;
+          setSaveFailure(null);
+          setSaveState('saved');
+        }
       })
-      .catch(() => {
-        if (ticket === saveTicketRef.current) setSaveState('error');
+      .catch((error) => {
+        if (ticket === saveTicketRef.current) {
+          const failure = isQuotaExceededError(error) ? 'quota' : 'unknown';
+          if (failure === 'quota' && saveFailureRef.current !== 'quota') {
+            announce('Browser storage is full. Open backup and restore to download a safe copy.', 'error');
+          }
+          saveFailureRef.current = failure;
+          setSaveFailure(failure);
+          setSaveState('error');
+        }
       });
     return nextSave;
-  }, []);
+  }, [announce]);
 
   useEffect(() => {
     let active = true;
@@ -1543,16 +1542,13 @@ function EditorInner() {
     ]);
     if (layout.parentId) {
       const parentId = layout.parentId;
-      setEdges((current) => [...current.map((edge) => edge.source === parentId ? {
-        ...edge,
-        sourceHandle: 'bottom',
-        targetHandle: 'top',
-      } : edge), {
+      setEdges((current) => [...current, {
         id: crypto.randomUUID(),
         source: parentId,
         target: newId,
-        sourceHandle: 'bottom',
-        targetHandle: 'top',
+        ...(layout.direction === 'vertical'
+          ? { sourceHandle: 'bottom', targetHandle: 'top' }
+          : {}),
         type: 'smoothstep',
         animated: false,
         markerEnd: { type: MarkerType.ArrowClosed },
@@ -1883,7 +1879,38 @@ function EditorInner() {
     setExportBackground('white');
     setExportOpen(true);
   }, [tableInteraction]);
-  const openBackup = useCallback(() => setBackupOpen(true), []);
+  const refreshStorageHealth = useCallback(async () => {
+    setStorageHealthBusy(true);
+    try {
+      setStorageHealth(await inspectStorageHealth());
+    } catch {
+      setStorageHealth({ supported: false, usage: null, quota: null, persisted: null });
+    } finally {
+      setStorageHealthBusy(false);
+    }
+  }, []);
+  const openBackup = useCallback(() => {
+    setBackupOpen(true);
+    void refreshStorageHealth();
+  }, [refreshStorageHealth]);
+  const protectLocalStorage = useCallback(async () => {
+    setStorageHealthBusy(true);
+    try {
+      const persisted = await requestPersistentStorage();
+      announce(
+        persisted === true
+          ? 'The browser granted persistent local storage.'
+          : persisted === false
+            ? 'The browser did not grant persistent storage. Keep downloading backups.'
+            : 'Persistent storage is not available in this browser.',
+        persisted === true ? 'success' : 'info',
+      );
+    } catch {
+      announce('The browser could not update local storage protection.', 'error');
+    } finally {
+      await refreshStorageHealth();
+    }
+  }, [announce, refreshStorageHealth]);
   const performBackup = useCallback(() => {
     try {
       downloadProjectBackup(
@@ -1901,10 +1928,12 @@ function EditorInner() {
       await createLocalCheckpoint(getCurrentDocument());
       setCheckpoints(await listLocalCheckpoints());
       announce('Local checkpoint created.', 'success');
-    } catch {
-      announce('The checkpoint could not be created.', 'error');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The checkpoint could not be created.', 'error');
+    } finally {
+      void refreshStorageHealth();
     }
-  }, [announce, getCurrentDocument]);
+  }, [announce, getCurrentDocument, refreshStorageHealth]);
 
   const restoreCheckpoint = useCallback(async (checkpoint: LocalCheckpoint) => {
     if (!window.confirm(`Restore “${checkpoint.title}” from ${new Date(checkpoint.createdAt).toLocaleString()}?`)) return;
@@ -1925,10 +1954,11 @@ function EditorInner() {
       await deleteLocalCheckpoint(id);
       setCheckpoints((current) => current.filter((checkpoint) => checkpoint.id !== id));
       announce('Checkpoint deleted.');
+      void refreshStorageHealth();
     } catch {
       announce('The checkpoint could not be deleted.', 'error');
     }
-  }, [announce]);
+  }, [announce, refreshStorageHealth]);
 
   const restoreProject = useCallback(async (file: File) => {
     try {
@@ -2678,7 +2708,11 @@ function EditorInner() {
             <span className="visually-hidden">Document title</span>
             <input value={title} maxLength={120} onChange={(event) => setTitle(event.target.value)} />
             <span className="save-label" aria-live="polite">
-              {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save failed' : 'Saved on device'}
+              {saveState === 'saving'
+                ? 'Saving…'
+                : saveState === 'error'
+                  ? saveFailure === 'quota' ? 'Storage full — backup needed' : 'Save failed'
+                  : 'Saved on device'}
             </span>
           </label>
           <div className="topbar-actions">
@@ -2700,7 +2734,14 @@ function EditorInner() {
             >
               <SlidersHorizontal size={16} />
             </button>
-            <button type="button" className="icon-button backup-button" aria-label="Project backup and restore" onClick={openBackup}>
+            <button
+              type="button"
+              className={`icon-button backup-button ${saveFailure === 'quota' ? 'has-storage-warning' : ''}`}
+              aria-label={saveFailure === 'quota'
+                ? 'Project backup and restore — browser storage is full'
+                : 'Project backup and restore'}
+              onClick={openBackup}
+            >
               <HardDrive size={16} />
             </button>
             <button type="button" className="ghost-button new-button" onClick={() => void resetDocument()}>
@@ -3343,6 +3384,37 @@ function EditorInner() {
               </button>
             </div>
             <p className="backup-warning">Restoring a valid backup replaces the current canvas after confirmation.</p>
+            <section className="storage-summary" aria-labelledby="storage-summary-title">
+              <div>
+                <span className="eyebrow">Browser storage</span>
+                <h3 id="storage-summary-title">Local data protection</h3>
+              </div>
+              {storageHealthBusy && !storageHealth ? (
+                <p>Checking approximate storage use…</p>
+              ) : storageHealth?.supported ? (
+                <>
+                  <dl>
+                    <div><dt>Approximate use</dt><dd>{formatStorageBytes(storageHealth.usage)}</dd></div>
+                    <div><dt>Available quota</dt><dd>{formatStorageBytes(storageHealth.quota)}</dd></div>
+                    <div>
+                      <dt>Retention</dt>
+                      <dd>{storageHealth.persisted === true ? 'Protected' : storageHealth.persisted === false ? 'Best effort' : 'Unknown'}</dd>
+                    </div>
+                  </dl>
+                  {storageUsageRatio(storageHealth) !== null ? (
+                    <p>{Math.round(storageUsageRatio(storageHealth)! * 100)}% of this origin&apos;s approximate browser quota is in use.</p>
+                  ) : <p>The browser did not provide a usage estimate.</p>}
+                  {storageHealth.persisted === false ? (
+                    <button type="button" className="secondary-button" disabled={storageHealthBusy} onClick={() => void protectLocalStorage()}>
+                      <HardDrive size={13} /> Protect local storage
+                    </button>
+                  ) : null}
+                </>
+              ) : (
+                <p>Storage estimates and persistent-storage requests are unavailable in this browser. Download backups regularly.</p>
+              )}
+              <p>Browser storage can still be cleared by you, device policy, or browser settings. A downloaded backup is the safest portable copy.</p>
+            </section>
             <section className="checkpoint-section" aria-labelledby="checkpoint-title">
               <div className="checkpoint-heading">
                 <div><span className="eyebrow">On this device</span><h3 id="checkpoint-title">Version checkpoints</h3></div>

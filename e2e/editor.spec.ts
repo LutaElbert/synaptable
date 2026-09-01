@@ -1,6 +1,38 @@
 import { expect, test } from '@playwright/test';
 import { createDiagramPng } from './helpers';
 
+test('reports local storage health and requests protection only from a user action', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('storage-persist-calls', '0');
+    Object.defineProperty(navigator, 'storage', {
+      configurable: true,
+      value: {
+        estimate: async () => ({ usage: 12 * 1024 * 1024, quota: 120 * 1024 * 1024 }),
+        persisted: async () => localStorage.getItem('storage-persist-calls') === '1',
+        persist: async () => {
+          localStorage.setItem('storage-persist-calls', '1');
+          return true;
+        },
+      },
+    });
+  });
+  await page.goto('/');
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('storage-persist-calls'))).toBe('0');
+
+  await page.getByRole('button', { name: 'Project backup and restore' }).click();
+  await expect(page.getByRole('heading', { name: 'Local data protection' })).toBeVisible();
+  await expect(page.getByText('12 MB', { exact: true })).toBeVisible();
+  await expect(page.getByText('120 MB', { exact: true })).toBeVisible();
+  await expect(page.getByText("10% of this origin's approximate browser quota is in use.")).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('storage-persist-calls'))).toBe('0');
+
+  await page.getByRole('button', { name: 'Protect local storage' }).click();
+  await expect(page.getByText('The browser granted persistent local storage.')).toBeVisible();
+  await expect(page.getByText('Protected', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('storage-persist-calls'))).toBe('1');
+});
+
 test('imports, persists, backs up, and exports locally with vectorization disabled', async ({ page, baseURL }) => {
   const externalRequests: string[] = [];
   const appOrigin = new URL(baseURL ?? page.url()).origin;

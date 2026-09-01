@@ -1,6 +1,6 @@
 # SynapTable implementation plan
 
-> Current product direction: image vectorization is temporarily disabled through the centralized editor feature switch. The implementation below is retained for possible future evaluation, but its controls are not exposed in the application.
+> **Archived implementation record.** Current work is governed by `CURRENT_FEATURE_AUDIT.md` and `AUDIT_REMEDIATION_IMPLEMENTATION_PLAN.md`. Image vectorization is disabled through the centralized editor feature switch; this historical plan is retained only for possible future evaluation.
 
 ## Outcome
 
