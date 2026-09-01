@@ -358,9 +358,13 @@ test('formats one rich cell with toolbar marks, links, commit, cancel, and histo
 
   await toolbar.getByRole('button', { name: 'Add or edit link' }).click();
   const linkInput = page.getByRole('textbox', { name: 'Link URL' });
-  await linkInput.fill('javascript:alert(1)');
+  await linkInput.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+  await linkInput.pressSequentially('javascript:alert(1)');
   await expect(page.getByRole('button', { name: 'Apply' })).toBeDisabled();
-  await linkInput.fill('https://example.com/scene');
+  await expect(editor).toHaveText('Opening scene');
+  await expect(toolbar).toBeVisible();
+  await linkInput.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+  await linkInput.pressSequentially('https://example.com/scene');
   await page.getByRole('button', { name: 'Apply' }).click();
   await expect(editor.locator('a')).toHaveAttribute('href', 'https://example.com/scene');
 

@@ -42,40 +42,40 @@ Implemented on `feat/table-layer-mvp`. Local validation completed with 83 unit t
 
 ### Editing and formatting
 
-- [ ] The toolbar exists only for one unlocked cell in editing mode.
-- [ ] Each mark can be applied, removed, combined, and continued at a collapsed caret.
-- [ ] Toolbar presses preserve the text selection and return focus to the editor.
-- [ ] Toolbar toggle state follows the current selection/caret.
-- [ ] Link creation rejects empty, malformed, `javascript:`, and `data:` values; unlink removes only the link mark.
-- [ ] Empty and multiline cells remain editable, including IME composition.
-- [ ] Printable-key replacement selects/replaces prior content without creating a premature history entry.
+- [x] The toolbar exists only for one unlocked cell in editing mode.
+- [x] Each mark can be applied, removed, combined, and continued at a collapsed caret.
+- [x] Toolbar presses preserve the text selection and return focus to the editor.
+- [x] Toolbar toggle state follows the current selection/caret.
+- [x] Link creation rejects empty, malformed, `javascript:`, and `data:` values; unlink removes only the link mark.
+- [x] Empty and multiline cells remain editable, including IME composition.
+- [x] Printable-key replacement selects/replaces prior content without creating a premature history entry.
 
 ### Commit, cancel, navigation, and history
 
-- [ ] Confirm, outside click, `Cmd/Ctrl+Enter`, and Tab commit once.
-- [ ] Escape and Cancel restore the exact original rich content and row height.
-- [ ] One undo restores the pre-edit content; one redo restores the committed rich content.
-- [ ] Tab/Shift+Tab retain existing adjacent-cell and end-of-table behavior.
-- [ ] Cell editing never triggers grid arrows, canvas deletion, browser shortcuts, or node dragging.
-- [ ] Row height grows after commit when plain text wraps; cancelling does not grow it.
+- [x] Confirm, outside click, `Cmd/Ctrl+Enter`, and Tab commit once.
+- [x] Escape and Cancel restore the exact original rich content and row height.
+- [x] One undo restores the pre-edit content; one redo restores the committed rich content.
+- [x] Tab/Shift+Tab retain existing adjacent-cell and end-of-table behavior.
+- [x] Cell editing never triggers grid arrows, canvas deletion, browser shortcuts, or node dragging.
+- [x] Row height grows after commit when plain text wraps; cancelling does not grow it.
 
 ### Persistence, interoperability, and output
 
-- [ ] Existing schema 1–5 projects load with identical visible table text.
-- [ ] Schema 6 backup, restore, reload, and local persistence retain all supported marks and links.
-- [ ] Search and layer discovery find formatted cell text.
-- [ ] Table-range copy and CSV export contain readable plain text with no markup artifacts.
-- [ ] Grid paste and spreadsheet paste create valid rich cell documents.
-- [ ] SVG, PNG, and PDF preserve bold, italic, underline, strikethrough, and safe links where the format supports them.
-- [ ] Unsafe links are never interactive in the canvas or exports.
+- [x] Existing schema 1–5 projects load with identical visible table text.
+- [x] Schema 6 backup, restore, reload, and local persistence retain all supported marks and links.
+- [x] Search and layer discovery find formatted cell text.
+- [x] Table-range copy and CSV export contain readable plain text with no markup artifacts.
+- [x] Grid paste and spreadsheet paste create valid rich cell documents.
+- [x] SVG, PNG, and PDF preserve bold, italic, underline, strikethrough, and safe links where the format supports them.
+- [x] Unsafe links are never interactive in the canvas or exports.
 
 ### Accessibility and regression
 
-- [ ] The formatting bar has a toolbar label, named native buttons, accurate toggle state, and logical DOM/tab order.
-- [ ] Keyboard-only editing, formatting, linking, committing, and cancelling are possible with visible focus.
-- [ ] The canvas retains semantic table headers/cells and useful plain-text accessible labels.
-- [ ] Axe reports no serious or critical violations in table edit mode.
-- [ ] Zoom, pan, wheel routing, resize handles, selection, multi-cell styling, lock/hide, duplicate, undo/redo, and exports continue to work.
+- [x] The formatting bar has a toolbar label, named native buttons, accurate toggle state, and logical DOM/tab order.
+- [x] Keyboard-only editing, formatting, linking, committing, and cancelling are possible with visible focus.
+- [x] The canvas retains semantic table headers/cells and useful plain-text accessible labels.
+- [x] Axe reports no serious or critical violations in table edit mode.
+- [x] Zoom, pan, wheel routing, resize handles, selection, multi-cell styling, lock/hide, duplicate, undo/redo, and exports continue to work.
 
 ## Test plan
 

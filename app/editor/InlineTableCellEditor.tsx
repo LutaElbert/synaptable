@@ -218,11 +218,14 @@ export default function InlineTableCellEditor({
               className="table-link-editor"
               onSubmit={(event) => { event.preventDefault(); applyLink(); }}
               onKeyDown={(event) => {
+                event.stopPropagation();
                 if (event.key !== 'Escape') return;
                 event.preventDefault();
-                event.stopPropagation();
                 closeLinkEditor();
               }}
+              onCopy={(event) => event.stopPropagation()}
+              onCut={(event) => event.stopPropagation()}
+              onPaste={(event) => event.stopPropagation()}
             >
               <label htmlFor="table-cell-link-url">Link URL</label>
               <input
