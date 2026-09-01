@@ -665,6 +665,8 @@ function EditorInner() {
   const tablePickerTriggerRef = useRef<HTMLElement | null>(null);
   const onboardingDialogRef = useRef<HTMLDialogElement>(null);
   const onboardingTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileLayersTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileInspectorTriggerRef = useRef<HTMLButtonElement>(null);
   const onboardingRequestedRef = useRef(false);
   const lastCanvasPointerRef = useRef<{ x: number; y: number } | null>(null);
   const activeProjectIdRef = useRef<string | null>(null);
@@ -696,6 +698,26 @@ function EditorInner() {
     zoomOut,
   } = useReactFlow<EditorNode, EditorEdge>();
   const updateNodeInternals = useUpdateNodeInternals();
+
+  const closeMobilePanel = useCallback(() => {
+    const panel = mobilePanel;
+    if (!panel) return;
+    setMobilePanel(null);
+    window.requestAnimationFrame(() => {
+      (panel === 'layers' ? mobileLayersTriggerRef : mobileInspectorTriggerRef).current?.focus();
+    });
+  }, [mobilePanel]);
+
+  useEffect(() => {
+    if (!mobilePanel) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key !== 'Escape') return;
+      event.preventDefault();
+      closeMobilePanel();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [closeMobilePanel, mobilePanel]);
 
   useEffect(() => {
     // React Flow can trigger these browser-generated notifications while its
@@ -3097,18 +3119,22 @@ function EditorInner() {
           </label>
           <div className="topbar-actions">
             <button
+              ref={mobileLayersTriggerRef}
               type="button"
               className="icon-button mobile-layers-button"
               aria-label="Open layers panel"
+              aria-controls="layers-panel"
               aria-expanded={mobilePanel === 'layers'}
               onClick={() => setMobilePanel((current) => current === 'layers' ? null : 'layers')}
             >
               <Layers3 size={16} />
             </button>
             <button
+              ref={mobileInspectorTriggerRef}
               type="button"
               className="icon-button mobile-inspector-button"
               aria-label="Open properties panel"
+              aria-controls="inspector-panel"
               aria-expanded={mobilePanel === 'inspector'}
               onClick={() => setMobilePanel((current) => current === 'inspector' ? null : 'inspector')}
             >
@@ -3169,13 +3195,13 @@ function EditorInner() {
           </div>
         </header>
 
-        <aside className={`panel layers-panel ${mobilePanel === 'layers' ? 'panel-open' : ''}`} aria-labelledby="layers-title">
+        <aside id="layers-panel" className={`panel layers-panel ${mobilePanel === 'layers' ? 'panel-open' : ''}`} aria-labelledby="layers-title">
           <div className="panel-heading">
             <div><span className="eyebrow">Document</span><h1 id="layers-title">Layers</h1></div>
             <div className="panel-heading-actions">
               <button type="button" className="icon-button" aria-label="Add concept layer" onClick={addConceptNode}><Plus size={16} /></button>
               {EDITOR_FEATURES.tableLayer ? <button type="button" className="icon-button" aria-label="Add table layer" title="Add table (Shift+T)" onClick={(event) => openTablePicker(event.currentTarget)}><Table2 size={15} /></button> : null}
-              <button type="button" className="icon-button panel-close-button" aria-label="Close layers panel" onClick={() => setMobilePanel(null)}><X size={16} /></button>
+              <button type="button" className="icon-button panel-close-button" aria-label="Close layers panel" onClick={closeMobilePanel}><X size={16} /></button>
             </div>
           </div>
           <div className="layer-search">
@@ -3552,7 +3578,7 @@ function EditorInner() {
           />
         </section>
 
-        <aside className={`panel inspector-panel ${mobilePanel === 'inspector' ? 'panel-open' : ''}`} aria-labelledby="inspector-title">
+        <aside id="inspector-panel" className={`panel inspector-panel ${mobilePanel === 'inspector' ? 'panel-open' : ''}`} aria-labelledby="inspector-title">
           <div className="panel-heading">
             <div><span className="eyebrow">Selection</span><h2 id="inspector-title">Properties</h2></div>
             <div className="panel-heading-actions">
@@ -3563,7 +3589,7 @@ function EditorInner() {
                   : selectedNode
                     ? <span className="selection-kind">{selectedNode.data.kind}</span>
                     : null}
-              <button type="button" className="icon-button panel-close-button" aria-label="Close properties panel" onClick={() => setMobilePanel(null)}><X size={16} /></button>
+              <button type="button" className="icon-button panel-close-button" aria-label="Close properties panel" onClick={closeMobilePanel}><X size={16} /></button>
             </div>
           </div>
           {selectedVectorPath ? (
@@ -3635,7 +3661,7 @@ function EditorInner() {
           )}
         </aside>
 
-        {mobilePanel ? <button type="button" className="panel-scrim" aria-label="Close side panel" onClick={() => setMobilePanel(null)} /> : null}
+        {mobilePanel ? <button type="button" className="panel-scrim" data-panel={mobilePanel} aria-label="Close side panel" onClick={closeMobilePanel} /> : null}
 
         <div className="toast-region" aria-live="polite" aria-atomic="false">
           {toasts.map((toast) => (

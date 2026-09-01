@@ -182,13 +182,42 @@ test('keeps layers and properties usable on a phone viewport', async ({ page }) 
   await page.goto('/');
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Open layers panel' }).click();
+  const layersTrigger = page.getByRole('button', { name: 'Open layers panel' });
+  const propertiesTrigger = page.getByRole('button', { name: 'Open properties panel' });
+
+  await layersTrigger.click();
   await expect(page.locator('.layers-panel')).toHaveClass(/panel-open/);
   await page.getByRole('button', { name: 'Close layers panel' }).click();
+  await expect(page.locator('.layers-panel')).not.toHaveClass(/panel-open/);
+  await expect(layersTrigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(layersTrigger).toBeFocused();
 
-  await page.getByRole('button', { name: 'Open properties panel' }).click();
+  await propertiesTrigger.click();
   await expect(page.locator('.inspector-panel')).toHaveClass(/panel-open/);
   await expect(page.getByRole('heading', { name: 'Properties' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close properties panel' }).click();
+  await expect(page.locator('.inspector-panel')).not.toHaveClass(/panel-open/);
+  await expect(page.locator('.inspector-panel')).toBeHidden();
+  await expect(propertiesTrigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(propertiesTrigger).toBeFocused();
+
+  await propertiesTrigger.click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.inspector-panel')).toBeHidden();
+  await expect(propertiesTrigger).toBeFocused();
+});
+
+test('does not expose responsive panel controls while desktop panels are pinned', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/');
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+
+  await expect(page.locator('button[aria-label="Open layers panel"]')).toBeHidden();
+  await expect(page.locator('button[aria-label="Open properties panel"]')).toBeHidden();
+  await expect(page.locator('button[aria-label="Close layers panel"]')).toBeHidden();
+  await expect(page.locator('button[aria-label="Close properties panel"]')).toBeHidden();
+  await expect(page.locator('.layers-panel')).toBeVisible();
+  await expect(page.locator('.inspector-panel')).toBeVisible();
 });
 
 test('edits rich concept text directly with formatting, commit, cancel, undo, and persistence', async ({ page }) => {

@@ -127,7 +127,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .status-error { background: var(--danger); box-shadow: 0 0 0 3px #fbe8ea; }
 .backup-button.has-storage-warning { background: #fff2f3; color: var(--danger); }
 .topbar-actions { justify-content: flex-end; gap: 6px; }
-.mobile-layers-button, .mobile-inspector-button, .panel-close-button, .panel-scrim { display: none; }
+.icon-button.mobile-layers-button,
+.icon-button.mobile-inspector-button,
+.icon-button.panel-close-button,
+.panel-scrim { display: none; }
 
 .icon-button, .tool, .ghost-button, .layer-disclosure, .layer-main, .layer-control, .path-row, .inspector-actions button {
   border: 0;
@@ -1535,7 +1538,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 
 @media (max-width: 1020px) {
   .editor-shell { grid-template-columns: 220px minmax(420px, 1fr); grid-template-areas: 'topbar topbar' 'layers canvas'; }
-  .mobile-inspector-button { display: grid; }
+  .icon-button.mobile-inspector-button,
+  .inspector-panel .icon-button.panel-close-button { display: grid; }
   .inspector-panel {
     position: fixed;
     inset-block: 64px 0;
@@ -1545,12 +1549,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
     inline-size: min(340px, 88vw);
     border-inline-start: 1px solid var(--line);
     box-shadow: var(--shadow-lg);
+    visibility: hidden;
+    pointer-events: none;
     translate: 102% 0;
-    transition: translate 180ms ease;
+    transition: translate 180ms ease, visibility 0s linear 180ms;
   }
-  .inspector-panel.panel-open { translate: 0; }
-  .panel-close-button { display: grid; }
-  .panel-scrim {
+  .inspector-panel.panel-open {
+    visibility: visible;
+    pointer-events: auto;
+    translate: 0;
+    transition-delay: 0s;
+  }
+  .panel-scrim[data-panel="inspector"] {
     position: fixed;
     inset: 64px 0 0;
     z-index: 45;
@@ -1566,7 +1576,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 @media (max-width: 720px) {
   .editor-shell { grid-template: 58px minmax(0, 1fr) / 1fr; grid-template-areas: 'topbar' 'canvas'; }
   .document-title, .new-button, .backup-button { display: none; }
-  .mobile-layers-button { display: grid; }
+  .icon-button.mobile-layers-button,
+  .layers-panel .icon-button.panel-close-button { display: grid; }
   .layers-panel {
     position: fixed;
     inset-block: 58px 0;
@@ -1575,12 +1586,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
     display: flex;
     inline-size: min(310px, 88vw);
     box-shadow: var(--shadow-lg);
+    visibility: hidden;
+    pointer-events: none;
     translate: -102% 0;
-    transition: translate 180ms ease;
+    transition: translate 180ms ease, visibility 0s linear 180ms;
   }
-  .layers-panel.panel-open { translate: 0; }
+  .layers-panel.panel-open {
+    visibility: visible;
+    pointer-events: auto;
+    translate: 0;
+    transition-delay: 0s;
+  }
   .inspector-panel { inset-block-start: 58px; }
   .panel-scrim { inset-block-start: 58px; }
+  .panel-scrim[data-panel="layers"] { display: block; }
   .topbar { grid-template-columns: 1fr auto; gap: 10px; padding-inline: 12px; }
   .brand-mark { inline-size: 30px; block-size: 30px; }
   .topbar-actions { gap: 3px; }
