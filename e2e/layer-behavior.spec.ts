@@ -259,7 +259,7 @@ test('checklist content auto-sizes its layer and removes the trailing empty row 
   expect(restoredBodyBox!.y + restoredBodyBox!.height).toBeLessThanOrEqual(restoredCardBox!.y + restoredCardBox!.height + 1);
 });
 
-test('child and sibling actions create compact layers below the parent with vertical connections', async ({ page }) => {
+test('child and sibling actions inherit the parent branch direction without rewriting connectors', async ({ page }) => {
   await openEditor(page);
   await expect(page.locator('.react-flow__edge')).toHaveCount(2);
   const originalEdgeCount = await page.locator('.react-flow__edge').count();
@@ -275,15 +275,15 @@ test('child and sibling actions create compact layers below the parent with vert
   expect(parentBox).toBeTruthy();
   expect(childBox).toBeTruthy();
   expect(childBox!.height).toBeLessThan(100);
-  expect(childBox!.y).toBeGreaterThan(parentBox!.y + parentBox!.height);
+  expect(childBox!.x).toBeGreaterThan(parentBox!.x + parentBox!.width);
   await expect(page.locator('.react-flow__edge')).toHaveCount(originalEdgeCount + 1);
 
-  const parentBottom = await parent.locator('.react-flow__handle.source[data-handleid="bottom"]').boundingBox();
-  const childTop = await child.locator('.react-flow__handle.target[data-handleid="top"]').boundingBox();
-  expect(parentBottom).toBeTruthy();
-  expect(childTop).toBeTruthy();
-  expect(Math.abs(parentBottom!.y + parentBottom!.height / 2 - (parentBox!.y + parentBox!.height))).toBeLessThan(4);
-  expect(Math.abs(childTop!.y + childTop!.height / 2 - childBox!.y)).toBeLessThan(4);
+  const parentRight = await parent.locator('.react-flow__handle.source').first().boundingBox();
+  const childLeft = await child.locator('.react-flow__handle.target').first().boundingBox();
+  expect(parentRight).toBeTruthy();
+  expect(childLeft).toBeTruthy();
+  expect(Math.abs(parentRight!.x + parentRight!.width / 2 - (parentBox!.x + parentBox!.width))).toBeLessThan(4);
+  expect(Math.abs(childLeft!.x + childLeft!.width / 2 - childBox!.x)).toBeLessThan(4);
 
   await page.getByRole('button', { name: 'Compact child', exact: true }).click();
   await page.getByRole('button', { name: 'Add sibling', exact: true }).click();
@@ -299,8 +299,8 @@ test('child and sibling actions create compact layers below the parent with vert
   await page.getByRole('button', { name: 'Compact sibling', exact: true }).click();
   const siblingX = Number(await page.locator('.inspector-panel').getByRole('spinbutton', { name: 'X', exact: true }).inputValue());
   const siblingY = Number(await page.locator('.inspector-panel').getByRole('spinbutton', { name: 'Y', exact: true }).inputValue());
-  expect(siblingY).toBe(childY);
-  expect(siblingX - childX).toBeGreaterThanOrEqual(260);
+  expect(siblingX).toBe(childX);
+  expect(siblingY - childY).toBeGreaterThanOrEqual(100);
   expect(siblingBox!.height).toBeLessThan(100);
   await expect(page.locator('.react-flow__edge')).toHaveCount(originalEdgeCount + 2);
 });
@@ -349,7 +349,7 @@ test('image actions add editable concept children and parent-aware siblings', as
   const childBox = await canvasNode(page, 'Image observation').boundingBox();
   expect(imageBox).toBeTruthy();
   expect(childBox).toBeTruthy();
-  expect(childBox!.y).toBeGreaterThan(imageBox!.y + imageBox!.height);
+  expect(childBox!.x).toBeGreaterThan(imageBox!.x + imageBox!.width);
 
   await imageLayer.click();
   await page.getByRole('button', { name: 'Add sibling', exact: true }).click();

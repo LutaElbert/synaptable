@@ -5,10 +5,23 @@ export async function openEditor(page: Page) {
   // The first request can include a cold Vinext compile on CI. Give the app
   // time to hydrate before asserting the already-rendered document shape.
   await expect(page.locator('main[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
+  const onboarding = page.getByRole('dialog', { name: 'Move ideas between canvas and table' });
+  await onboarding.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
+  if (await onboarding.isVisible()) {
+    await onboarding.getByRole('button', { name: 'Got it' }).click();
+    await expect(onboarding).not.toBeVisible();
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  }
   await expect(page.locator('.react-flow__node')).toHaveCount(3);
   // React Flow measures node handles before it can paint edges. Cold WebKit
   // workers can finish document hydration several seconds before that pass.
   await expect(page.locator('.react-flow__edge')).toHaveCount(2, { timeout: 15_000 });
+}
+
+export async function addDefaultTable(page: Page) {
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await expect(page.getByRole('dialog', { name: 'Choose a table size' })).toBeVisible();
+  await page.getByRole('button', { name: '3 rows by 3 columns' }).click();
 }
 
 export function canvasNode(page: Page, name: string): Locator {

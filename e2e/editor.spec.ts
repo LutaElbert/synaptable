@@ -1,6 +1,38 @@
 import { expect, test } from '@playwright/test';
 import { createDiagramPng } from './helpers';
 
+test('reports local storage health and requests protection only from a user action', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('storage-persist-calls', '0');
+    Object.defineProperty(navigator, 'storage', {
+      configurable: true,
+      value: {
+        estimate: async () => ({ usage: 12 * 1024 * 1024, quota: 120 * 1024 * 1024 }),
+        persisted: async () => localStorage.getItem('storage-persist-calls') === '1',
+        persist: async () => {
+          localStorage.setItem('storage-persist-calls', '1');
+          return true;
+        },
+      },
+    });
+  });
+  await page.goto('/');
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('storage-persist-calls'))).toBe('0');
+
+  await page.getByRole('button', { name: 'Project backup and restore' }).click();
+  await expect(page.getByRole('heading', { name: 'Local data protection' })).toBeVisible();
+  await expect(page.getByText('12 MB', { exact: true })).toBeVisible();
+  await expect(page.getByText('120 MB', { exact: true })).toBeVisible();
+  await expect(page.getByText("10% of this origin's approximate browser quota is in use.")).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('storage-persist-calls'))).toBe('0');
+
+  await page.getByRole('button', { name: 'Protect local storage' }).click();
+  await expect(page.getByText('The browser granted persistent local storage.')).toBeVisible();
+  await expect(page.getByText('Protected', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('storage-persist-calls'))).toBe('1');
+});
+
 test('imports, persists, backs up, and exports locally with vectorization disabled', async ({ page, baseURL }) => {
   const externalRequests: string[] = [];
   const appOrigin = new URL(baseURL ?? page.url()).origin;
@@ -35,14 +67,14 @@ test('imports, persists, backs up, and exports locally with vectorization disabl
   expect(backupPath).toBeTruthy();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 
-  page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await page.getByLabel('Starter').selectOption('blank');
+  await page.getByRole('button', { name: 'New project', exact: true }).click();
   await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Project backup and restore' }).click();
-  page.once('dialog', (dialog) => dialog.accept());
   await page.getByLabel('Choose a SynapTable project backup').setInputFiles(backupPath!);
-  await expect(page.getByText('Project backup restored.')).toBeVisible();
+  await expect(page.getByText('Backup imported as a new local project.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Export canvas' }).click();
@@ -150,13 +182,42 @@ test('keeps layers and properties usable on a phone viewport', async ({ page }) 
   await page.goto('/');
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Open layers panel' }).click();
+  const layersTrigger = page.getByRole('button', { name: 'Open layers panel' });
+  const propertiesTrigger = page.getByRole('button', { name: 'Open properties panel' });
+
+  await layersTrigger.click();
   await expect(page.locator('.layers-panel')).toHaveClass(/panel-open/);
   await page.getByRole('button', { name: 'Close layers panel' }).click();
+  await expect(page.locator('.layers-panel')).not.toHaveClass(/panel-open/);
+  await expect(layersTrigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(layersTrigger).toBeFocused();
 
-  await page.getByRole('button', { name: 'Open properties panel' }).click();
+  await propertiesTrigger.click();
   await expect(page.locator('.inspector-panel')).toHaveClass(/panel-open/);
   await expect(page.getByRole('heading', { name: 'Properties' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close properties panel' }).click();
+  await expect(page.locator('.inspector-panel')).not.toHaveClass(/panel-open/);
+  await expect(page.locator('.inspector-panel')).toBeHidden();
+  await expect(propertiesTrigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(propertiesTrigger).toBeFocused();
+
+  await propertiesTrigger.click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.inspector-panel')).toBeHidden();
+  await expect(propertiesTrigger).toBeFocused();
+});
+
+test('does not expose responsive panel controls while desktop panels are pinned', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/');
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+
+  await expect(page.locator('button[aria-label="Open layers panel"]')).toBeHidden();
+  await expect(page.locator('button[aria-label="Open properties panel"]')).toBeHidden();
+  await expect(page.locator('button[aria-label="Close layers panel"]')).toBeHidden();
+  await expect(page.locator('button[aria-label="Close properties panel"]')).toBeHidden();
+  await expect(page.locator('.layers-panel')).toBeVisible();
+  await expect(page.locator('.inspector-panel')).toBeVisible();
 });
 
 test('edits rich concept text directly with formatting, commit, cancel, undo, and persistence', async ({ page }) => {

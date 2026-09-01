@@ -34,8 +34,37 @@ export function editorNodeDimensions(node: EditorNode): NodeDimensions {
 
 export type RelativeConceptLayout = {
   parentId: string | null;
+  direction: BranchDirection;
   positions: Map<string, NodePosition>;
 };
+
+export type BranchDirection = 'horizontal' | 'vertical';
+
+function edgeDirection(edge: EditorEdge): BranchDirection {
+  return edge.sourceHandle === 'bottom' && edge.targetHandle === 'top'
+    ? 'vertical'
+    : 'horizontal';
+}
+
+/**
+ * Keeps a branch moving in its established direction. A sibling follows its
+ * own incoming connector first; a new child follows an existing outgoing
+ * branch, then its parent's incoming connector. Isolated roots retain the
+ * editor's original vertical child default.
+ */
+export function branchDirection(
+  edges: EditorEdge[],
+  parentId: string,
+  referenceChildId?: string,
+): BranchDirection {
+  const reference = referenceChildId
+    ? edges.find((edge) => edge.source === parentId && edge.target === referenceChildId)
+    : undefined;
+  const outgoing = reference ?? edges.find((edge) => edge.source === parentId);
+  if (outgoing) return edgeDirection(outgoing);
+  const incoming = edges.find((edge) => edge.target === parentId);
+  return incoming ? edgeDirection(incoming) : 'vertical';
+}
 
 /**
  * Calculates a predictable mind-map row for a new child or sibling. Children
@@ -54,7 +83,7 @@ export function relativeConceptLayout(
   },
 ): RelativeConceptLayout {
   const source = nodes.find((node) => node.id === sourceId);
-  if (!source) return { parentId: null, positions: new Map() };
+  if (!source) return { parentId: null, direction: 'vertical', positions: new Map() };
 
   const incoming = edges.find((edge) => edge.target === sourceId);
   const parentId = relation === 'child' ? sourceId : incoming?.source ?? null;
@@ -62,6 +91,7 @@ export function relativeConceptLayout(
     const sourceSize = editorNodeDimensions(source);
     return {
       parentId: null,
+      direction: 'horizontal',
       positions: new Map([[
         newId,
         {
@@ -73,7 +103,13 @@ export function relativeConceptLayout(
   }
 
   const parent = nodes.find((node) => node.id === parentId);
-  if (!parent) return { parentId: null, positions: new Map() };
+  if (!parent) return { parentId: null, direction: 'vertical', positions: new Map() };
+
+  const direction = branchDirection(
+    edges,
+    parentId,
+    relation === 'sibling' ? sourceId : undefined,
+  );
 
   const childIds = edges
     .filter((edge) => edge.source === parentId)
@@ -93,16 +129,28 @@ export function relativeConceptLayout(
   orderedChildren.splice(insertionIndex, 0, { id: newId, dimensions: newDimensions });
 
   const parentSize = editorNodeDimensions(parent);
+  const positions = new Map<string, NodePosition>();
+  if (direction === 'horizontal') {
+    const totalHeight = orderedChildren.reduce((sum, child) => sum + child.dimensions.height, 0)
+      + Math.max(0, orderedChildren.length - 1) * CONCEPT_BRANCH_GAP;
+    const columnX = parent.position.x + parentSize.width + CONCEPT_LEVEL_GAP;
+    let cursorY = parent.position.y + parentSize.height / 2 - totalHeight / 2;
+    for (const child of orderedChildren) {
+      positions.set(child.id, { x: columnX, y: cursorY });
+      cursorY += child.dimensions.height + CONCEPT_BRANCH_GAP;
+    }
+    return { parentId, direction, positions };
+  }
+
   const totalWidth = orderedChildren.reduce((sum, child) => sum + child.dimensions.width, 0)
     + Math.max(0, orderedChildren.length - 1) * CONCEPT_BRANCH_GAP;
   const rowY = parent.position.y + parentSize.height + CONCEPT_LEVEL_GAP;
   let cursorX = parent.position.x + parentSize.width / 2 - totalWidth / 2;
-  const positions = new Map<string, NodePosition>();
 
   for (const child of orderedChildren) {
     positions.set(child.id, { x: cursorX, y: rowY });
     cursorX += child.dimensions.width + CONCEPT_BRANCH_GAP;
   }
 
-  return { parentId, positions };
+  return { parentId, direction, positions };
 }

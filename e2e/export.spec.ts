@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import { PDFDocument } from 'pdf-lib';
-import { openEditor } from './helpers';
+import { addDefaultTable, openEditor } from './helpers';
 
 test('keeps the export dialog accessible and returns focus when cancelled', async ({ page }) => {
   await openEditor(page);
@@ -90,7 +90,7 @@ test('exports only selected layers and keeps connectors inside the selection', a
 
 test('exports a selected cell rectangle as spreadsheet-compatible Unicode CSV', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const table = page.locator('.react-flow__node-table');
   const cells = table.locator('.table-cell');
 

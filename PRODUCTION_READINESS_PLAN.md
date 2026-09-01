@@ -1,6 +1,6 @@
 # SynapTable production-readiness plan
 
-> Product-direction update — 2026-08-30: image vectorization is temporarily disabled through the centralized editor feature switch and is no longer part of the current release acceptance path. Historical verification notes below are retained as implementation records.
+> **Historical readiness record.** Current work and release gaps are tracked in `CURRENT_FEATURE_AUDIT.md` and `AUDIT_REMEDIATION_IMPLEMENTATION_PLAN.md`. Image vectorization is disabled through the centralized editor feature switch and is not part of the current release acceptance path. Test counts and verification notes below describe the earlier 2026-08-30 baseline.
 
 ## Outcome
 

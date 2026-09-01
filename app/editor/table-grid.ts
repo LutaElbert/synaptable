@@ -137,6 +137,18 @@ export function createTableData({
   };
 }
 
+export function nextTableName(nodes: EditorNode[]): string {
+  const used = new Set<number>();
+  for (const node of nodes) {
+    if (node.data.kind !== 'table') continue;
+    const match = /^table\s+([1-9]\d*)$/i.exec(node.data.name.trim().replace(/\s+/g, ' '));
+    if (match) used.add(Number(match[1]));
+  }
+  let index = 1;
+  while (used.has(index)) index += 1;
+  return `Table ${index}`;
+}
+
 export function tableDimensions(data: TableNodeData) {
   return {
     width: data.columns.reduce((total, column) => total + column.width, 0),
