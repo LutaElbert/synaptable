@@ -7,8 +7,8 @@ Use a copy of this record for each release candidate. Production deployment rema
 | Field | Value |
 | --- | --- |
 | Date | 2026-09-01 |
-| Branch | `feat/local-project-library` |
-| Commit | The commit containing this record; resolve with `git rev-parse HEAD` after checkout |
+| Branch | `feat/audit-remediation-workflows` |
+| Commit | `a37ab1f7dfde7410f1019e5088fc54b10c828f4a` |
 | Tester | Codex automated local validation; physical-device and assistive-technology owner checks pending |
 | Host | Apple M4, arm64, macOS 26.5.2 (25F84) |
 | Content model | Local-only IndexedDB; no project-content backend |
@@ -23,17 +23,17 @@ Use a copy of this record for each release candidate. Production deployment rema
 | `npm test` | Pass — 106 tests in 14 files |
 | `npm run build` | Pass |
 | `npm audit --audit-level=high` | Pass — 0 vulnerabilities |
-| Playwright Chromium | 74/74 cases pass, including both stress fixtures |
-| Playwright Firefox | 71 pass, 3 intentional skips; the skipped cases are the two Chromium-only stress budgets and browser-specific zoom-extreme geometry check |
-| Playwright WebKit | 71 pass, 3 intentional skips for the same documented reasons |
+| Playwright Chromium | 75/75 cases pass, including both stress fixtures |
+| Playwright Firefox | 72 pass, 3 intentional skips; the skipped cases are the two Chromium-only stress budgets and browser-specific zoom-extreme geometry check |
+| Playwright WebKit | 72 pass, 3 intentional skips for the same documented reasons |
 
-The complete suite defines 222 browser cases: 216 passing executions and 6 intentional skips. Run browser projects serially with one worker when collecting release evidence; concurrent cold browser workers previously produced React Flow handle-measurement timeouts that did not reproduce in the serial verification. The editor now explicitly refreshes React Flow node internals after project hydration to make connector rendering deterministic.
+The complete suite defines 225 browser cases: 219 passing executions and 6 intentional skips. Run browser projects serially with one worker when collecting release evidence; concurrent cold browser workers previously produced React Flow handle-measurement timeouts that did not reproduce in the serial verification. The editor now explicitly refreshes React Flow node internals after project hydration to make connector rendering deterministic.
 
 ## Bundle evidence
 
 | Asset | Uncompressed | Gzip | Budget result |
 | --- | ---: | ---: | --- |
-| Editor application chunk | 271,740 B | 77,778 B | Pass — about 8% above the approximate 72 KB Phase-0 gzip baseline and below the 10% review threshold |
+| Editor application chunk | 272,070 B | 77,861 B | Pass — about 8% above the approximate 72 KB Phase-0 gzip baseline and below the 10% review threshold |
 | Dynamically loaded PDF-related chunk | 510,588 B | 203,159 B | Pass — remains outside the editor chunk |
 
 Build filenames are content-hashed and will change. Re-run the measurements for the final release commit.
@@ -45,6 +45,7 @@ Build filenames are content-hashed and will change. Re-run the measurements for 
 - Canvas→table and table rows/ranges→canvas both preserve source content and are one-step undoable operations.
 - Table-size picker pointer/keyboard/fallback paths, `Shift+T` guards, unique naming, spreadsheet paste, and pre-mutation size rejection are covered.
 - Keyboard entry, focus return, non-blocking onboarding, table semantics, rich editing, export dialogs, and automated serious/critical accessibility scans are covered.
+- Responsive side-panel dismissal and cross-browser table-picker focus restoration are covered on Chromium, Firefox, and WebKit.
 - PNG, SVG, PDF, CSV, Unicode/RTL, large graph, and 2,000-cell fixtures are covered.
 
 ## Manual release gates — not yet completed
