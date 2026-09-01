@@ -18,6 +18,7 @@ import {
   applyNodeChanges,
   reconnectEdge,
   useReactFlow,
+  useUpdateNodeInternals,
   type Connection,
   type EdgeChange,
   type NodeChange,
@@ -34,10 +35,12 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  CircleHelp,
   Copy,
   Download,
   Eye,
   EyeOff,
+  FolderOpen,
   Hand,
   HardDrive,
   Image as ImageIcon,
@@ -47,7 +50,6 @@ import {
   MousePointer2,
   Plus,
   Redo2,
-  RotateCcw,
   Search,
   Shapes,
   SlidersHorizontal,
@@ -118,14 +120,27 @@ import {
   relativeConceptLayout,
 } from './node-layout';
 import {
-  clearLocalDocument,
   createLocalCheckpoint,
+  createLocalProject,
   deleteLocalCheckpoint,
+  deleteLocalProject,
+  initializeLocalWorkspace,
+  getLocalPreference,
   listLocalCheckpoints,
-  loadLocalDocument,
+  listLocalProjects,
+  loadLocalProject,
+  renameLocalProject,
   saveLocalDocument,
+  setLocalPreference,
+  setActiveLocalProject,
   type LocalCheckpoint,
+  type LocalProjectSummary,
 } from './persistence';
+import {
+  createStarterDocument,
+  duplicateProjectDocument,
+  type ProjectStarter,
+} from './project-library';
 import {
   formatStorageBytes,
   inspectStorageHealth,
@@ -160,9 +175,11 @@ import {
   tableRowRange,
   type TableInteraction,
 } from './table-interaction';
+import { canvasNodesFromTable } from './table-to-canvas';
 import {
   adjacentTableCell,
   cloneTableData,
+  clipboardGrid,
   clipboardGridToHtml,
   clipboardGridToText,
   createTableData,
@@ -178,6 +195,7 @@ import {
   insertTableRow,
   moveTableColumn,
   moveTableRow,
+  nextTableName,
   pasteTableGrid,
   removeTableColumn,
   removeTableRow,
@@ -195,6 +213,7 @@ import {
   updateTableCells,
   replaceTableCellPlainText,
   TABLE_MAX_CELLS,
+  TABLE_MAX_CELL_TEXT,
   TABLE_MAX_COLUMNS,
   TABLE_MAX_COLUMN_WIDTH,
   TABLE_MAX_ROWS,
@@ -577,6 +596,8 @@ function connectorPresentation(kind: 'default' | 'dashed' | 'emphasis') {
   };
 }
 
+const ONBOARDING_PREFERENCE = 'onboardingCanvasTableV1Dismissed';
+
 function EditorInner() {
   const [nodes, setNodes] = useState<EditorNode[]>(initialDocument.nodes);
   const [edges, setEdges] = useState<EditorEdge[]>(initialDocument.edges);
@@ -610,6 +631,18 @@ function EditorInner() {
   const [pdfQuality, setPdfQuality] = useState(2);
   const [exportBusy, setExportBusy] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
+  const [projectsOpen, setProjectsOpen] = useState(false);
+  const [tablePickerOpen, setTablePickerOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [tablePickerRows, setTablePickerRows] = useState(3);
+  const [tablePickerColumns, setTablePickerColumns] = useState(3);
+  const [tablePickerPreview, setTablePickerPreview] = useState({ rows: 3, columns: 3 });
+  const [projects, setProjects] = useState<LocalProjectSummary[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectStarter, setProjectStarter] = useState<ProjectStarter>('blank');
+  const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null);
+  const [projectNameDraft, setProjectNameDraft] = useState('');
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [editingConceptId, setEditingConceptId] = useState<string | null>(null);
   const [editingConceptField, setEditingConceptField] = useState<'title' | 'body'>('title');
@@ -626,6 +659,15 @@ function EditorInner() {
   const exportDialogRef = useRef<HTMLDialogElement>(null);
   const exportTriggerRef = useRef<HTMLButtonElement>(null);
   const backupDialogRef = useRef<HTMLDialogElement>(null);
+  const projectsDialogRef = useRef<HTMLDialogElement>(null);
+  const projectsTriggerRef = useRef<HTMLButtonElement>(null);
+  const tablePickerDialogRef = useRef<HTMLDialogElement>(null);
+  const tablePickerTriggerRef = useRef<HTMLElement | null>(null);
+  const onboardingDialogRef = useRef<HTMLDialogElement>(null);
+  const onboardingTriggerRef = useRef<HTMLButtonElement>(null);
+  const onboardingRequestedRef = useRef(false);
+  const lastCanvasPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const activeProjectIdRef = useRef<string | null>(null);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   const titleRef = useRef(title);
@@ -653,6 +695,7 @@ function EditorInner() {
     zoomIn,
     zoomOut,
   } = useReactFlow<EditorNode, EditorEdge>();
+  const updateNodeInternals = useUpdateNodeInternals();
 
   useEffect(() => {
     // React Flow can trigger these browser-generated notifications while its
@@ -676,6 +719,9 @@ function EditorInner() {
   useLayoutEffect(() => {
     titleRef.current = title;
   }, [title]);
+  useLayoutEffect(() => {
+    activeProjectIdRef.current = activeProjectId;
+  }, [activeProjectId]);
   useLayoutEffect(() => {
     const next = { title, nodes, edges };
     const previous = autosaveInputRef.current;
@@ -742,16 +788,58 @@ function EditorInner() {
     updatedAt: Date.now(),
   }), []);
 
-  const queueDocumentSave = useCallback((document: EditorDocument, pendingTicket?: number) => {
+  const applyLoadedDocument = useCallback((document: EditorDocument) => {
+    conversionControllerRef.current?.abort();
+    const nextNodes = document.nodes.map((node) => ({ ...node, selected: false }));
+    const nextEdges = document.edges.map((edge) => ({ ...edge, selected: false }));
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextEdges;
+    titleRef.current = document.title;
+    autosaveInputRef.current = { title: document.title, nodes: nextNodes, edges: nextEdges };
+    saveTicketRef.current += 1;
+    saveFailureRef.current = null;
+    pastRef.current = [];
+    futureRef.current = [];
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    setTitle(document.title);
+    setSelectedPath(null);
+    setTableInteraction(null);
+    setExpandedVectors(new Set());
+    setEditingConceptId(null);
+    setSaveFailure(null);
+    setSaveState('saved');
+    refreshHistoryState();
+    window.requestAnimationFrame(() => updateNodeInternals(nextNodes.map((node) => node.id)));
+  }, [refreshHistoryState, updateNodeInternals]);
+
+  const refreshProjects = useCallback(async () => {
+    const storedProjects = await listLocalProjects();
+    setProjects(storedProjects);
+    return storedProjects;
+  }, []);
+
+  const queueDocumentSave = useCallback((
+    document: EditorDocument,
+    pendingTicket?: number,
+    projectId = activeProjectIdRef.current,
+  ) => {
+    if (!projectId) return Promise.reject(new Error('No local project is active.'));
+    const targetProjectId = projectId;
     const ticket = pendingTicket ?? ++saveTicketRef.current;
     if (ticket !== saveTicketRef.current) return Promise.resolve();
     setSaveState('saving');
     const nextSave = saveQueueRef.current
       .catch(() => undefined)
-      .then(() => saveLocalDocument(document));
+      .then(() => saveLocalDocument(targetProjectId, document));
     saveQueueRef.current = nextSave;
     void nextSave
       .then(() => {
+        setProjects((current) => current
+          .map((project) => project.id === targetProjectId
+            ? { ...project, title: document.title, updatedAt: document.updatedAt }
+            : project)
+          .sort((left, right) => right.updatedAt - left.updatedAt));
         if (ticket === saveTicketRef.current) {
           saveFailureRef.current = null;
           setSaveFailure(null);
@@ -774,14 +862,15 @@ function EditorInner() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([loadLocalDocument(), listLocalCheckpoints()])
-      .then(([document, storedCheckpoints]) => {
+    initializeLocalWorkspace(structuredClone(initialDocument))
+      .then(async (workspace) => {
         if (!active) return;
-        setCheckpoints(storedCheckpoints);
-        if (!document) return;
-        setNodes(document.nodes.map((node) => ({ ...node, selected: false })));
-        setEdges(document.edges.map((edge) => ({ ...edge, selected: false })));
-        setTitle(document.title);
+        activeProjectIdRef.current = workspace.activeProjectId;
+        setActiveProjectId(workspace.activeProjectId);
+        setProjects(workspace.projects);
+        applyLoadedDocument(workspace.document);
+        const storedCheckpoints = await listLocalCheckpoints(workspace.activeProjectId);
+        if (active) setCheckpoints(storedCheckpoints);
       })
       .catch(() => {
         setSaveState('error');
@@ -791,10 +880,10 @@ function EditorInner() {
     return () => {
       active = false;
     };
-  }, [announce]);
+  }, [announce, applyLoadedDocument]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !activeProjectId) return;
     // The layout effect already invalidated older writes for changed content.
     // Allocate a ticket here only for the initial hydrated document.
     const ticket = saveTicketRef.current || ++saveTicketRef.current;
@@ -804,16 +893,16 @@ function EditorInner() {
     return () => {
       window.clearTimeout(saveTimeout);
     };
-  }, [autosaveRevision, getCurrentDocument, hydrated, queueDocumentSave]);
+  }, [activeProjectId, autosaveRevision, getCurrentDocument, hydrated, queueDocumentSave]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !activeProjectId) return;
     const saveWhenHidden = () => {
       if (document.visibilityState === 'hidden') void queueDocumentSave(getCurrentDocument());
     };
     document.addEventListener('visibilitychange', saveWhenHidden);
     return () => document.removeEventListener('visibilitychange', saveWhenHidden);
-  }, [getCurrentDocument, hydrated, queueDocumentSave]);
+  }, [activeProjectId, getCurrentDocument, hydrated, queueDocumentSave]);
 
   useEffect(() => {
     if (exportOpen && !exportDialogRef.current?.open) exportDialogRef.current?.showModal();
@@ -827,6 +916,73 @@ function EditorInner() {
     if (backupOpen && !backupDialogRef.current?.open) backupDialogRef.current?.showModal();
     if (!backupOpen && backupDialogRef.current?.open) backupDialogRef.current.close();
   }, [backupOpen]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    let active = true;
+    void getLocalPreference(ONBOARDING_PREFERENCE)
+      .then((value) => {
+        if (active && value !== 'true') setOnboardingOpen(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [hydrated]);
+
+  const dismissOnboarding = useCallback(() => {
+    setOnboardingOpen(false);
+    void setLocalPreference(ONBOARDING_PREFERENCE, 'true').catch(() => {
+      announce('Getting-started preference could not be saved on this device.', 'error');
+    });
+  }, [announce]);
+
+  const reopenOnboarding = useCallback(() => {
+    onboardingRequestedRef.current = true;
+    setOnboardingOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (onboardingOpen && !onboardingDialogRef.current?.open) {
+      onboardingDialogRef.current?.show();
+      if (onboardingRequestedRef.current) {
+        window.requestAnimationFrame(() => onboardingDialogRef.current?.querySelector<HTMLButtonElement>('.onboarding-close')?.focus());
+      }
+    }
+    if (!onboardingOpen && onboardingDialogRef.current?.open) {
+      onboardingDialogRef.current.close();
+      if (onboardingRequestedRef.current) {
+        onboardingRequestedRef.current = false;
+        window.requestAnimationFrame(() => onboardingTriggerRef.current?.focus());
+      }
+    }
+  }, [onboardingOpen]);
+
+  useEffect(() => {
+    if (projectsOpen && !projectsDialogRef.current?.open) projectsDialogRef.current?.showModal();
+    if (!projectsOpen && projectsDialogRef.current?.open) {
+      projectsDialogRef.current.close();
+      window.requestAnimationFrame(() => projectsTriggerRef.current?.focus());
+    }
+  }, [projectsOpen]);
+
+  useEffect(() => {
+    if (tablePickerOpen && !tablePickerDialogRef.current?.open) {
+      tablePickerDialogRef.current?.showModal();
+      window.requestAnimationFrame(() => {
+        tablePickerDialogRef.current
+          ?.querySelector<HTMLButtonElement>(`[data-table-size="${tablePickerRows}-${tablePickerColumns}"]`)
+          ?.focus();
+      });
+    }
+    if (!tablePickerOpen && tablePickerDialogRef.current?.open) {
+      tablePickerDialogRef.current.close();
+      window.requestAnimationFrame(() => {
+        if (tablePickerTriggerRef.current) tablePickerTriggerRef.current.focus();
+        else document.querySelector<HTMLElement>('.canvas-region')?.focus();
+      });
+    }
+  }, [tablePickerColumns, tablePickerOpen, tablePickerRows]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<EditorNode>[]) => {
@@ -1248,10 +1404,28 @@ function EditorInner() {
     addConceptAt({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   }, [addConceptAt]);
 
-  const addTableNode = useCallback(() => {
-    const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const addTableAt = useCallback(({
+    rows = 3,
+    columns = 3,
+    values = [],
+    headerRow = true,
+    clientPoint,
+  }: {
+    rows?: number;
+    columns?: number;
+    values?: string[][];
+    headerRow?: boolean;
+    clientPoint?: { x: number; y: number };
+  } = {}) => {
+    const center = screenToFlowPosition(clientPoint ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 });
     const id = crypto.randomUUID();
-    const data = createTableData();
+    const data = createTableData({
+      name: nextTableName(nodesRef.current),
+      rows,
+      columns,
+      values,
+      headerRow,
+    });
     const dimensions = tableDimensions(data);
     recordHistory();
     setNodes((current) => [
@@ -1271,8 +1445,23 @@ function EditorInner() {
     setSelectedPath(null);
     setTableInteraction({ mode: 'table', nodeId: id });
     layerSelectionAnchorRef.current = id;
-    announce('Table added. Press Enter to edit the selected cell.', 'success');
+    announce(`${data.name} added. Press Enter to edit the selected cell.`, 'success');
   }, [announce, recordHistory, screenToFlowPosition]);
+
+  const addTableNode = useCallback(() => addTableAt(), [addTableAt]);
+
+  const openTablePicker = useCallback((trigger?: HTMLElement | null) => {
+    tablePickerTriggerRef.current = trigger ?? null;
+    setTablePickerRows(3);
+    setTablePickerColumns(3);
+    setTablePickerPreview({ rows: 3, columns: 3 });
+    setTablePickerOpen(true);
+  }, []);
+
+  const createPickedTable = useCallback(() => {
+    addTableAt({ rows: tablePickerRows, columns: tablePickerColumns });
+    setTablePickerOpen(false);
+  }, [addTableAt, tablePickerColumns, tablePickerRows]);
 
   const addConceptFromTemplate = useCallback(() => {
     if (conceptTemplate === 'table') {
@@ -1308,6 +1497,62 @@ function EditorInner() {
     }]);
     announce(`${template.eyebrow} template added.`, 'success');
   }, [addTableNode, announce, conceptTemplate, recordHistory, screenToFlowPosition]);
+
+  useEffect(() => {
+    const createTableFromCanvasPaste = (event: ClipboardEvent) => {
+      if (event.defaultPrevented || document.querySelector('dialog[open]')) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input, textarea, button, select, [contenteditable="true"], [data-table-node-id]')) return;
+      const canvas = document.querySelector<HTMLElement>('.canvas-region');
+      const activeElement = document.activeElement;
+      if (!canvas || (activeElement !== document.body && activeElement !== canvas && !canvas.contains(activeElement))) return;
+      const clipboardData = event.clipboardData;
+      if (!clipboardData || Array.from(clipboardData.files).some((file) => file.type.startsWith('image/'))) return;
+      const html = clipboardData.getData('text/html');
+      const text = clipboardData.getData('text/plain');
+      const looksTabular = /<table[\s>]/i.test(html) || text.includes('\t') || /\r?\n/.test(text.replace(/\r?\n$/, ''));
+      if (!looksTabular) return;
+      try {
+        const grid = clipboardGrid(html, text);
+        const columns = Math.max(1, ...grid.map((row) => row.length));
+        if (grid.length > TABLE_MAX_ROWS || columns > TABLE_MAX_COLUMNS || grid.length * columns > TABLE_MAX_CELLS) {
+          throw new Error(`Pasted data exceeds the ${TABLE_MAX_CELLS.toLocaleString()}-cell table limit.`);
+        }
+        if (grid.some((row) => row.some((cell) => cell.length > TABLE_MAX_CELL_TEXT))) {
+          throw new Error(`A pasted cell exceeds the ${TABLE_MAX_CELL_TEXT.toLocaleString()}-character limit.`);
+        }
+        event.preventDefault();
+        addTableAt({
+          rows: grid.length,
+          columns,
+          values: grid,
+          headerRow: false,
+          clientPoint: lastCanvasPointerRef.current ?? undefined,
+        });
+      } catch (error) {
+        event.preventDefault();
+        announce(error instanceof Error ? error.message : 'The spreadsheet data could not be pasted.', 'error');
+      }
+    };
+    window.addEventListener('paste', createTableFromCanvasPaste);
+    return () => window.removeEventListener('paste', createTableFromCanvasPaste);
+  }, [addTableAt, announce]);
+
+  useEffect(() => {
+    const openTablePickerFromKeyboard = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !event.shiftKey || event.metaKey || event.ctrlKey || event.altKey || event.key.toLowerCase() !== 't') return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input, textarea, button, select, dialog, [contenteditable="true"], [data-table-node-id]')) return;
+      const canvas = document.querySelector<HTMLElement>('.canvas-region');
+      const activeElement = document.activeElement;
+      if (!canvas || (activeElement !== document.body && activeElement !== canvas && !canvas.contains(activeElement))) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openTablePicker();
+    };
+    window.addEventListener('keydown', openTablePickerFromKeyboard, true);
+    return () => window.removeEventListener('keydown', openTablePickerFromKeyboard, true);
+  }, [openTablePicker]);
 
   const selectedNodes = nodes.filter((node) => node.selected);
   const selectedNode = selectedNodes[0] ?? null;
@@ -1422,6 +1667,38 @@ function EditorInner() {
       announce(error instanceof Error ? error.message : 'The selected layers could not be organized.', 'error');
     }
   }, [announce, recordHistory]);
+
+  const createCanvasNodesFromTable = () => {
+    const source = nodesRef.current.find((node) => node.id === selectedNodeId);
+    if (!source || source.data.kind !== 'table' || source.data.locked) return;
+    const interaction = tableInteraction?.nodeId === source.id ? tableInteraction : { mode: 'table' as const, nodeId: source.id };
+    const generated = canvasNodesFromTable(source, nodesRef.current, interaction);
+    if (!generated.length) {
+      announce('Select at least one data row and column to create canvas nodes.', 'info');
+      return;
+    }
+    recordHistory();
+    setNodes((current) => [
+      ...current.map((node) => ({ ...node, selected: false })),
+      ...generated,
+    ]);
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    setTableInteraction(null);
+    setSelectedPath(null);
+    layerSelectionAnchorRef.current = generated[0].id;
+    window.requestAnimationFrame(() => {
+      const canvas = document.querySelector<HTMLElement>('.canvas-region');
+      const bounds = canvas?.getBoundingClientRect();
+      if (!bounds) return;
+      const outside = generated.some((node) => {
+        const element = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(node.id)}"]`);
+        const rect = element?.getBoundingClientRect();
+        return !rect || rect.left < bounds.left || rect.top < bounds.top || rect.right > bounds.right || rect.bottom > bounds.bottom;
+      });
+      if (outside) void fitView({ nodes: generated, duration: 300, padding: 0.25 });
+    });
+    announce(`${generated.length} canvas ${generated.length === 1 ? 'node' : 'nodes'} created from ${source.data.name}.`, 'success');
+  };
 
   const setSelectedNodesLocked = useCallback((locked: boolean) => {
     const selectedIds = new Set(nodesRef.current.filter((node) => node.selected && node.data.locked !== locked).map((node) => node.id));
@@ -1840,23 +2117,133 @@ function EditorInner() {
     });
   }, [recordHistory]);
 
-  const resetDocument = useCallback(async () => {
-    if (!window.confirm('Start a new local document? This clears the current canvas on this device.')) return;
-    try {
-      conversionControllerRef.current?.abort();
-      await clearLocalDocument();
-      pastRef.current = [];
-      futureRef.current = [];
-      setNodes(structuredClone(initialDocument.nodes));
-      setEdges(structuredClone(initialDocument.edges));
-      setTitle(initialDocument.title);
-      setSelectedPath(null);
-      refreshHistoryState();
-      announce('New local document created.', 'success');
-    } catch {
-      announce('The local project could not be cleared. Download a backup before trying again.', 'error');
+  const saveActiveProject = useCallback(async () => {
+    const projectId = activeProjectIdRef.current;
+    if (!projectId) return;
+    await queueDocumentSave(getCurrentDocument(), undefined, projectId);
+  }, [getCurrentDocument, queueDocumentSave]);
+
+  const activateProject = useCallback(async (
+    projectId: string,
+    document?: EditorDocument | null,
+  ) => {
+    const stored = document ?? await loadLocalProject(projectId);
+    if (!stored) throw new Error('That local project could not be opened.');
+    await setActiveLocalProject(projectId);
+    activeProjectIdRef.current = projectId;
+    setActiveProjectId(projectId);
+    applyLoadedDocument(stored);
+    setCheckpoints(await listLocalCheckpoints(projectId));
+    await refreshProjects();
+    setProjectsOpen(false);
+    window.setTimeout(() => fitView({ duration: 300, padding: 0.22 }), 0);
+  }, [applyLoadedDocument, fitView, refreshProjects]);
+
+  const switchProject = useCallback(async (projectId: string) => {
+    if (projectBusy || projectId === activeProjectIdRef.current) {
+      if (projectId === activeProjectIdRef.current) setProjectsOpen(false);
+      return;
     }
-  }, [announce, refreshHistoryState]);
+    setProjectBusy(true);
+    try {
+      await saveActiveProject();
+      await activateProject(projectId);
+      announce('Local project opened.', 'success');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The local project could not be opened.', 'error');
+    } finally {
+      setProjectBusy(false);
+    }
+  }, [activateProject, announce, projectBusy, saveActiveProject]);
+
+  const createProject = useCallback(async (starter: ProjectStarter) => {
+    if (projectBusy) return;
+    setProjectBusy(true);
+    try {
+      await saveActiveProject();
+      const document = createStarterDocument(starter);
+      const project = await createLocalProject(document);
+      await activateProject(project.id, document);
+      announce('New local project created.', 'success');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The local project could not be created.', 'error');
+    } finally {
+      setProjectBusy(false);
+    }
+  }, [activateProject, announce, projectBusy, saveActiveProject]);
+
+  const duplicateProject = useCallback(async (projectId: string) => {
+    if (projectBusy) return;
+    setProjectBusy(true);
+    try {
+      await saveActiveProject();
+      const source = await loadLocalProject(projectId);
+      if (!source) throw new Error('That local project could not be duplicated.');
+      const document = duplicateProjectDocument(source);
+      const project = await createLocalProject(document);
+      await activateProject(project.id, document);
+      announce('Project duplicated.', 'success');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The project could not be duplicated.', 'error');
+    } finally {
+      setProjectBusy(false);
+    }
+  }, [activateProject, announce, projectBusy, saveActiveProject]);
+
+  const backupProject = useCallback(async (project: LocalProjectSummary) => {
+    if (projectBusy) return;
+    setProjectBusy(true);
+    try {
+      if (project.id === activeProjectIdRef.current) await saveActiveProject();
+      const document = await loadLocalProject(project.id);
+      if (!document) throw new Error('That local project could not be backed up.');
+      downloadProjectBackup(serializeProjectBackup(document), safeFileBase(project.title));
+      announce('Project backup downloaded.', 'success');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The project backup could not be downloaded.', 'error');
+    } finally {
+      setProjectBusy(false);
+    }
+  }, [announce, projectBusy, saveActiveProject]);
+
+  const commitProjectRename = useCallback(async (projectId: string) => {
+    const nextTitle = projectNameDraft.trim() || 'Untitled project';
+    if (projectBusy) return;
+    setProjectBusy(true);
+    try {
+      const document = await renameLocalProject(projectId, nextTitle);
+      if (projectId === activeProjectIdRef.current) {
+        titleRef.current = document.title;
+        autosaveInputRef.current = { ...autosaveInputRef.current, title: document.title };
+        setTitle(document.title);
+      }
+      await refreshProjects();
+      setRenamingProjectId(null);
+      announce('Project renamed.', 'success');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The project could not be renamed.', 'error');
+    } finally {
+      setProjectBusy(false);
+    }
+  }, [announce, projectBusy, projectNameDraft, refreshProjects]);
+
+  const removeProject = useCallback(async (project: LocalProjectSummary) => {
+    if (projectBusy || projects.length <= 1) return;
+    if (!window.confirm(`Delete “${project.title}” and its local checkpoints? This cannot be undone.`)) return;
+    setProjectBusy(true);
+    try {
+      const wasActive = project.id === activeProjectIdRef.current;
+      const nextProject = projects.find((candidate) => candidate.id !== project.id);
+      await deleteLocalProject(project.id);
+      if (wasActive && nextProject) await activateProject(nextProject.id);
+      else await refreshProjects();
+      announce('Local project deleted.', 'success');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The project could not be deleted.', 'error');
+    } finally {
+      setProjectBusy(false);
+    }
+  }, [activateProject, announce, projectBusy, projects, refreshProjects]);
 
   const openExport = useCallback(() => {
     const selected = nodesRef.current.filter((node) => node.selected && !node.hidden);
@@ -1925,8 +2312,10 @@ function EditorInner() {
 
   const createCheckpoint = useCallback(async () => {
     try {
-      await createLocalCheckpoint(getCurrentDocument());
-      setCheckpoints(await listLocalCheckpoints());
+      const projectId = activeProjectIdRef.current;
+      if (!projectId) throw new Error('No local project is active.');
+      await createLocalCheckpoint(projectId, getCurrentDocument());
+      setCheckpoints(await listLocalCheckpoints(projectId));
       announce('Local checkpoint created.', 'success');
     } catch (error) {
       announce(error instanceof Error ? error.message : 'The checkpoint could not be created.', 'error');
@@ -1964,24 +2353,15 @@ function EditorInner() {
     try {
       if (file.size > MAX_PROJECT_FILE_SIZE) throw new Error('The project backup is larger than 40 MB.');
       const restored = parseProjectBackup(await file.text());
-      if (!window.confirm(`Replace the current canvas with “${restored.title}”?`)) return;
-      conversionControllerRef.current?.abort();
-      pastRef.current = [];
-      futureRef.current = [];
-      setNodes(restored.nodes);
-      setEdges(restored.edges);
-      setTitle(restored.title);
-      setSelectedPath(null);
-      setExpandedVectors(new Set());
-      refreshHistoryState();
-      await queueDocumentSave(restored);
+      await saveActiveProject();
+      const project = await createLocalProject(restored);
+      await activateProject(project.id, restored);
       setBackupOpen(false);
-      window.setTimeout(() => fitView({ duration: 300, padding: 0.22 }), 60);
-      announce('Project backup restored.', 'success');
+      announce('Backup imported as a new local project.', 'success');
     } catch (error) {
       announce(error instanceof Error ? error.message : 'The project backup could not be restored.', 'error');
     }
-  }, [announce, fitView, queueDocumentSave, refreshHistoryState]);
+  }, [activateProject, announce, saveActiveProject]);
 
   const performExport = useCallback(async () => {
     if (exportBusy) return;
@@ -2735,6 +3115,15 @@ function EditorInner() {
               <SlidersHorizontal size={16} />
             </button>
             <button
+              ref={onboardingTriggerRef}
+              type="button"
+              className="icon-button onboarding-trigger"
+              aria-label="Open getting started"
+              onClick={reopenOnboarding}
+            >
+              <CircleHelp size={16} />
+            </button>
+            <button
               type="button"
               className={`icon-button backup-button ${saveFailure === 'quota' ? 'has-storage-warning' : ''}`}
               aria-label={saveFailure === 'quota'
@@ -2744,8 +3133,15 @@ function EditorInner() {
             >
               <HardDrive size={16} />
             </button>
-            <button type="button" className="ghost-button new-button" onClick={() => void resetDocument()}>
-              <RotateCcw size={14} /> New
+            <button
+              ref={projectsTriggerRef}
+              type="button"
+              className="ghost-button projects-button"
+              aria-haspopup="dialog"
+              aria-expanded={projectsOpen}
+              onClick={() => setProjectsOpen(true)}
+            >
+              <FolderOpen size={14} /> <span className="button-label">Projects</span>
             </button>
             <button
               type="button"
@@ -2778,7 +3174,7 @@ function EditorInner() {
             <div><span className="eyebrow">Document</span><h1 id="layers-title">Layers</h1></div>
             <div className="panel-heading-actions">
               <button type="button" className="icon-button" aria-label="Add concept layer" onClick={addConceptNode}><Plus size={16} /></button>
-              {EDITOR_FEATURES.tableLayer ? <button type="button" className="icon-button" aria-label="Add table layer" onClick={addTableNode}><Table2 size={15} /></button> : null}
+              {EDITOR_FEATURES.tableLayer ? <button type="button" className="icon-button" aria-label="Add table layer" title="Add table (Shift+T)" onClick={(event) => openTablePicker(event.currentTarget)}><Table2 size={15} /></button> : null}
               <button type="button" className="icon-button panel-close-button" aria-label="Close layers panel" onClick={() => setMobilePanel(null)}><X size={16} /></button>
             </div>
           </div>
@@ -2939,6 +3335,9 @@ function EditorInner() {
           className={`canvas-region tool-${toolMode} ${dragActive ? 'drag-active' : ''} ${temporaryPanActive ? 'temporary-pan' : ''} ${selectedNodeCount > 1 ? 'multi-selection-active' : ''}`}
           aria-label="Canvas workspace"
           tabIndex={-1}
+          onPointerMove={(event) => {
+            lastCanvasPointerRef.current = { x: event.clientX, y: event.clientY };
+          }}
           onDragEnter={(event) => {
             event.preventDefault();
             dragDepthRef.current += 1;
@@ -3104,7 +3503,7 @@ function EditorInner() {
               <button type="button" className={`tool ${toolMode === 'hand' || temporaryPanActive ? 'active' : ''}`} aria-label="Hand tool, H" aria-pressed={toolMode === 'hand' || temporaryPanActive} title="Pan canvas (H) · Hold Space from Select" onClick={() => setToolMode('hand')}><Hand size={16} /></button>
               <span className="toolbar-divider" />
               <button type="button" className="tool" aria-label="Add concept" onClick={addConceptNode}><TypeIcon size={16} /></button>
-              {EDITOR_FEATURES.tableLayer ? <button type="button" className="tool" aria-label="Add table" onClick={addTableNode}><Table2 size={16} /></button> : null}
+              {EDITOR_FEATURES.tableLayer ? <button type="button" className="tool" aria-label="Add table" title="Add table (Shift+T)" onClick={(event) => openTablePicker(event.currentTarget)}><Table2 size={16} /></button> : null}
               <button type="button" className="tool" aria-label="Connect nodes by dragging their handles" onClick={() => announce('Drag from a node handle to another node to create a connector.')}><Waypoints size={16} /></button>
               <button type="button" className="tool" aria-label="Tidy diagram layout" onClick={tidyDiagram}><Sparkles size={16} /></button>
               <button type="button" className="tool" aria-label="Import image" onClick={() => fileInputRef.current?.click()}><Upload size={16} /></button>
@@ -3216,6 +3615,7 @@ function EditorInner() {
               onConversionOptionsChange={setConversionOptions}
               onUpdate={updateNode}
               onRemoveTableStructure={removeSelectedTableStructure}
+              onCreateCanvasNodes={createCanvasNodesFromTable}
               onVectorize={() => void vectorizeImage(selectedNode.id)}
               onCancelVectorize={cancelVectorization}
               onDuplicate={duplicateSelected}
@@ -3245,6 +3645,258 @@ function EditorInner() {
             </div>
           ))}
         </div>
+
+        <dialog
+          ref={onboardingDialogRef}
+          className="onboarding-dialog"
+          aria-labelledby="onboarding-title"
+          onCancel={(event) => {
+            event.preventDefault();
+            dismissOnboarding();
+          }}
+        >
+          <div className="onboarding-heading">
+            <div>
+              <span className="eyebrow">Getting started</span>
+              <h2 id="onboarding-title">Move ideas between canvas and table</h2>
+            </div>
+            <button type="button" className="icon-button onboarding-close" aria-label="Dismiss getting started" onClick={dismissOnboarding}><X size={15} /></button>
+          </div>
+          <ol>
+            <li><strong>Capture ideas</strong><span>Add two or three concept layers.</span></li>
+            <li><strong>Organize them</strong><span>Select the ideas and choose “Organize into table.”</span></li>
+            <li><strong>Shape the table</strong><span>Edit cells, paste spreadsheet data, and resize rows or columns.</span></li>
+            <li><strong>Return to canvas</strong><span>Select table rows and choose “Create canvas nodes.”</span></li>
+            <li><strong>Keep a copy</strong><span>Use backup or export when you want a portable file.</span></li>
+          </ol>
+          <button type="button" className="primary-button onboarding-done" onClick={dismissOnboarding}><Check size={14} /> Got it</button>
+        </dialog>
+
+        <dialog
+          ref={tablePickerDialogRef}
+          className="export-dialog table-picker-dialog"
+          aria-labelledby="table-picker-title"
+          onCancel={(event) => {
+            event.preventDefault();
+            setTablePickerOpen(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            setTablePickerOpen(false);
+          }}
+          onClose={() => {
+            setTablePickerOpen(false);
+            window.requestAnimationFrame(() => {
+              if (tablePickerTriggerRef.current) tablePickerTriggerRef.current.focus();
+              else document.querySelector<HTMLElement>('.canvas-region')?.focus();
+            });
+          }}
+        >
+          <div className="table-picker-layout">
+            <div className="dialog-icon"><Table2 size={19} /></div>
+            <div className="dialog-copy">
+              <span className="eyebrow">New table</span>
+              <h2 id="table-picker-title">Choose a table size</h2>
+              <p>Use the grid, arrow keys, or number fields. You can add more rows and columns later.</p>
+            </div>
+            <div className="table-size-summary" aria-live="polite">
+              {tablePickerPreview.rows} rows × {tablePickerPreview.columns} columns
+            </div>
+            <div className="table-size-grid" role="group" aria-label="Table size grid">
+              {Array.from({ length: 10 }, (_, rowIndex) => Array.from({ length: 10 }, (__, columnIndex) => {
+                const row = rowIndex + 1;
+                const column = columnIndex + 1;
+                const isPreviewed = row <= tablePickerPreview.rows && column <= tablePickerPreview.columns;
+                return (
+                  <button
+                    key={`${row}-${column}`}
+                    type="button"
+                    data-table-size={`${row}-${column}`}
+                    className={isPreviewed ? 'is-previewed' : ''}
+                    aria-label={`${row} rows by ${column} columns`}
+                    onPointerEnter={() => {
+                      setTablePickerPreview({ rows: row, columns: column });
+                    }}
+                    onFocus={() => {
+                      setTablePickerPreview({ rows: row, columns: column });
+                    }}
+                    onKeyDown={(event) => {
+                      const rowDelta = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+                      const columnDelta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+                      if (!rowDelta && !columnDelta) return;
+                      event.preventDefault();
+                      const nextRow = Math.max(1, Math.min(10, row + rowDelta));
+                      const nextColumn = Math.max(1, Math.min(10, column + columnDelta));
+                      tablePickerDialogRef.current
+                        ?.querySelector<HTMLButtonElement>(`[data-table-size="${nextRow}-${nextColumn}"]`)
+                        ?.focus();
+                    }}
+                    onClick={() => {
+                      addTableAt({ rows: row, columns: column });
+                      setTablePickerOpen(false);
+                    }}
+                  ><span aria-hidden="true" /></button>
+                );
+              }))}
+            </div>
+            <div className="table-size-fields">
+              <label>Rows
+                <input type="number" min={1} max={10} value={tablePickerRows} onFocus={() => setTablePickerPreview({ rows: tablePickerRows, columns: tablePickerColumns })} onChange={(event) => {
+                  const rows = Math.max(1, Math.min(10, Number(event.target.value) || 1));
+                  setTablePickerRows(rows);
+                  setTablePickerPreview({ rows, columns: tablePickerColumns });
+                }} />
+              </label>
+              <label>Columns
+                <input type="number" min={1} max={10} value={tablePickerColumns} onFocus={() => setTablePickerPreview({ rows: tablePickerRows, columns: tablePickerColumns })} onChange={(event) => {
+                  const columns = Math.max(1, Math.min(10, Number(event.target.value) || 1));
+                  setTablePickerColumns(columns);
+                  setTablePickerPreview({ rows: tablePickerRows, columns });
+                }} />
+              </label>
+            </div>
+            <div className="dialog-actions">
+              <button type="button" className="secondary-button" onClick={() => setTablePickerOpen(false)}>Cancel</button>
+              <button type="button" className="primary-button" onClick={createPickedTable}><Plus size={14} /> Create table</button>
+            </div>
+          </div>
+        </dialog>
+
+        <dialog
+          ref={projectsDialogRef}
+          className="export-dialog projects-dialog"
+          aria-labelledby="projects-title"
+          onClose={() => {
+            setProjectsOpen(false);
+            setRenamingProjectId(null);
+            window.requestAnimationFrame(() => projectsTriggerRef.current?.focus());
+          }}
+        >
+          <div className="projects-dialog-layout" aria-busy={projectBusy}>
+            <div className="dialog-icon"><FolderOpen size={19} /></div>
+            <div className="dialog-copy">
+              <span className="eyebrow">Saved on this device</span>
+              <h2 id="projects-title">Local projects</h2>
+              <p>Keep separate canvases in this browser. Projects and their checkpoints never leave this device.</p>
+            </div>
+            <section className="project-create" aria-labelledby="new-project-title">
+              <div>
+                <h3 id="new-project-title">Create a project</h3>
+                <p>Choose a useful starting point. You can add any layer afterward.</p>
+              </div>
+              <label>
+                Starter
+                <select
+                  value={projectStarter}
+                  disabled={projectBusy}
+                  onChange={(event) => setProjectStarter(event.target.value as ProjectStarter)}
+                >
+                  <option value="blank">Blank canvas</option>
+                  <option value="idea">Idea map</option>
+                  <option value="table">Table</option>
+                </select>
+              </label>
+              <button type="button" className="primary-button" disabled={projectBusy} onClick={() => void createProject(projectStarter)}>
+                {projectBusy ? <LoaderCircle size={14} className="spin" /> : <Plus size={14} />} New project
+              </button>
+            </section>
+            <section className="project-library" aria-labelledby="project-library-title">
+              <div className="project-library-heading">
+                <h3 id="project-library-title">Your projects</h3>
+                <span>{projects.length}</span>
+              </div>
+              <ul className="project-list">
+                {projects.map((project) => {
+                  const isActive = project.id === activeProjectId;
+                  const isRenaming = renamingProjectId === project.id;
+                  return (
+                    <li key={project.id} className={`project-row ${isActive ? 'is-active' : ''}`}>
+                      {isRenaming ? (
+                        <div className="project-rename">
+                          <label htmlFor={`project-name-${project.id}`}>Project name</label>
+                          <input
+                            id={`project-name-${project.id}`}
+                            value={projectNameDraft}
+                            maxLength={120}
+                            autoFocus
+                            onChange={(event) => setProjectNameDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                void commitProjectRename(project.id);
+                              }
+                              if (event.key === 'Escape') {
+                                event.stopPropagation();
+                                setRenamingProjectId(null);
+                              }
+                            }}
+                          />
+                          <div className="project-rename-actions">
+                            <button type="button" className="primary-button" disabled={projectBusy} onClick={() => void commitProjectRename(project.id)}>Save</button>
+                            <button type="button" className="secondary-button" disabled={projectBusy} onClick={() => setRenamingProjectId(null)}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="project-main"
+                            aria-current={isActive ? 'page' : undefined}
+                            disabled={projectBusy}
+                            onClick={() => void switchProject(project.id)}
+                          >
+                            <strong>{project.title}</strong>
+                            <span>{isActive ? 'Open now · ' : ''}Edited {new Date(project.updatedAt).toLocaleString()}</span>
+                          </button>
+                          <div className="project-actions">
+                            <button
+                              type="button"
+                              className="icon-button"
+                              aria-label={`Rename ${project.title}`}
+                              disabled={projectBusy}
+                              onClick={() => {
+                                setProjectNameDraft(project.title);
+                                setRenamingProjectId(project.id);
+                              }}
+                            ><TypeIcon size={14} /></button>
+                            <button
+                              type="button"
+                              className="icon-button"
+                              aria-label={`Duplicate ${project.title}`}
+                              disabled={projectBusy}
+                              onClick={() => void duplicateProject(project.id)}
+                            ><Copy size={14} /></button>
+                            <button
+                              type="button"
+                              className="icon-button"
+                              aria-label={`Download backup for ${project.title}`}
+                              disabled={projectBusy}
+                              onClick={() => void backupProject(project)}
+                            ><Download size={14} /></button>
+                            <button
+                              type="button"
+                              className="icon-button danger-button"
+                              aria-label={`Delete ${project.title}`}
+                              disabled={projectBusy || projects.length <= 1}
+                              title={projects.length <= 1 ? 'Create another project before deleting this one' : undefined}
+                              onClick={() => void removeProject(project)}
+                            ><Trash2 size={14} /></button>
+                          </div>
+                        </>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+              {projects.length <= 1 ? <p className="project-delete-note">Keep at least one local project. Create another project to enable deletion.</p> : null}
+            </section>
+            <div className="dialog-actions">
+              <button type="button" className="secondary-button" disabled={projectBusy} onClick={() => setProjectsOpen(false)}>Close</button>
+            </div>
+          </div>
+        </dialog>
 
         <dialog
           ref={exportDialogRef}
@@ -3372,7 +4024,7 @@ function EditorInner() {
             <div className="dialog-icon"><HardDrive size={19} /></div>
             <div className="dialog-copy">
               <span className="eyebrow">Local project</span>
-              <h2 id="backup-title">Backup and restore</h2>
+              <h2 id="backup-title">Backup and import</h2>
               <p>Your canvas is stored only in this browser. Download a portable backup before clearing browser data or changing devices.</p>
             </div>
             <div className="backup-actions">
@@ -3380,10 +4032,10 @@ function EditorInner() {
                 <Download size={14} /> Download backup
               </button>
               <button type="button" className="secondary-button" onClick={() => projectInputRef.current?.click()}>
-                <Upload size={14} /> Restore backup
+                <Upload size={14} /> Import backup
               </button>
             </div>
-            <p className="backup-warning">Restoring a valid backup replaces the current canvas after confirmation.</p>
+            <p className="backup-warning">Importing a valid backup creates and opens a separate local project. Your current project remains available.</p>
             <section className="storage-summary" aria-labelledby="storage-summary-title">
               <div>
                 <span className="eyebrow">Browser storage</span>
@@ -3465,6 +4117,7 @@ type NodeInspectorProps = {
   onConversionOptionsChange: (options: ConversionOptions) => void;
   onUpdate: (id: string, updater: (node: EditorNode) => EditorNode, shouldRecord?: boolean) => void;
   onRemoveTableStructure: (id: string, kind: 'row' | 'column', indexes: number[]) => void;
+  onCreateCanvasNodes: () => void;
   onVectorize: () => void;
   onCancelVectorize: () => void;
   onDuplicate: () => void;
@@ -3605,6 +4258,7 @@ function NodeInspector({
   onConversionOptionsChange,
   onUpdate,
   onRemoveTableStructure,
+  onCreateCanvasNodes,
   onVectorize,
   onCancelVectorize,
   onDuplicate,
@@ -3780,6 +4434,12 @@ function NodeInspector({
               <Table2 size={15} />
               <span>{node.data.rows.length} rows × {node.data.columns.length} columns</span>
             </div>
+            <button
+              type="button"
+              className="secondary-button table-to-canvas-button"
+              disabled={node.data.locked}
+              onClick={onCreateCanvasNodes}
+            ><Waypoints size={13} /> Create canvas nodes</button>
             <label className="toggle-field">
               <input
                 type="checkbox"

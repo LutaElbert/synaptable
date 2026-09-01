@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { canvasNode, openEditor, waitForSaved } from './helpers';
+import { addDefaultTable, canvasNode, openEditor, waitForSaved } from './helpers';
 
 async function dragBetween(page: Page, source: Locator, target: Locator) {
   const sourceBox = await source.boundingBox();
@@ -69,6 +69,77 @@ async function expectSvgCentered(button: Locator, tolerance = 0.6) {
   expect(Math.abs(offset.y)).toBeLessThanOrEqual(tolerance);
 }
 
+test('chooses table dimensions with pointer, keyboard, fallback fields, and predictable names', async ({ page }) => {
+  await openEditor(page);
+  const trigger = page.getByRole('button', { name: 'Add table layer' });
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Choose a table size' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: '3 rows by 3 columns' })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowDown');
+  await expect(dialog.getByText('4 rows × 4 columns')).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.react-flow__node-table .table-cell')).toHaveCount(16);
+  await expect(page.getByRole('button', { name: 'Table 1', exact: true })).toBeVisible();
+
+  await trigger.click();
+  await dialog.getByLabel('Columns', { exact: true }).fill('5');
+  await dialog.getByLabel('Rows', { exact: true }).fill('2');
+  await dialog.getByRole('button', { name: 'Create table' }).click();
+  await expect(page.locator('.react-flow__node-table')).toHaveCount(2);
+  await expect(page.locator('.react-flow__node-table').last().locator('.table-cell')).toHaveCount(10);
+  await expect(page.getByRole('button', { name: 'Table 2', exact: true })).toBeVisible();
+
+  await trigger.click();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(trigger).toBeFocused();
+  await expect(page.locator('.react-flow__node-table')).toHaveCount(2);
+});
+
+test('opens the table picker with Shift+T only from canvas focus', async ({ page }) => {
+  await openEditor(page);
+  await page.locator('.canvas-region').focus();
+  await page.keyboard.press('Shift+T');
+  await expect(page.getByRole('dialog', { name: 'Choose a table size' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.canvas-region')).toBeFocused();
+
+  await page.getByLabel('Document title').focus();
+  await page.keyboard.press('Shift+T');
+  await expect(page.getByRole('dialog', { name: 'Choose a table size' })).not.toBeVisible();
+});
+
+test('pastes spreadsheet data onto the canvas as one validated undoable table', async ({ page }) => {
+  await openEditor(page);
+  await page.locator('.canvas-region').focus();
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData('text/plain', 'Scene\tStatus\nOpening 🎬\tReady');
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: data });
+    window.dispatchEvent(event);
+  });
+  const table = page.locator('.react-flow__node-table');
+  await expect(table).toHaveCount(1);
+  await expect(table.locator('.table-cell')).toHaveCount(4);
+  await expect(table.getByText('Opening 🎬', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Table 1', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(table).toHaveCount(0);
+
+  await page.locator('.canvas-region').focus();
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData('text/plain', `A\t${'x'.repeat(2_001)}`);
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: data });
+    window.dispatchEvent(event);
+  });
+  await expect(page.getByText('A pasted cell exceeds the 2,000-character limit.')).toBeVisible();
+  await expect(table).toHaveCount(0);
+});
+
 test('creates, edits, pastes, restructures, searches, undoes, and persists a table layer', async ({ page }) => {
   const runtimeErrors: string[] = [];
   page.on('pageerror', (error) => runtimeErrors.push(error.message));
@@ -77,7 +148,7 @@ test('creates, edits, pastes, restructures, searches, undoes, and persists a tab
   });
   await openEditor(page);
 
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const tableSurface = tableNode.locator('.table-node');
   const table = tableNode.getByRole('table');
@@ -91,7 +162,7 @@ test('creates, edits, pastes, restructures, searches, undoes, and persists a tab
 
   const firstBodyCell = tableNode.locator('.table-cell').nth(3);
   await firstBodyCell.dblclick();
-  const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  const editor = tableNode.getByRole('textbox', { name: /Edit Table 1, row 2, column 1/ });
   await editor.fill('Scene 1');
   await editor.press('Tab');
   await expect(firstBodyCell).toContainText('Scene 1');
@@ -120,7 +191,7 @@ test('creates, edits, pastes, restructures, searches, undoes, and persists a tab
   await expect(tableNode.locator('.table-cell.is-active')).toHaveClass(/cell-tone-mint/);
 
   await page.getByPlaceholder('Search layers and notes').fill('Tuesday');
-  await expect(page.getByRole('button', { name: 'New table', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Table 1', exact: true })).toBeVisible();
   await page.getByPlaceholder('Search layers and notes').fill('');
 
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
@@ -142,7 +213,7 @@ test('creates, edits, pastes, restructures, searches, undoes, and persists a tab
 
 test('pans and zooms over a static table like existing layer surfaces', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const tableSurface = tableNode.locator('.table-node');
   const viewport = page.locator('.react-flow__viewport');
@@ -202,7 +273,7 @@ test('pans and zooms over a static table like existing layer surfaces', async ({
 
 test('keeps multiline cell-editor scrolling isolated from canvas navigation', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   await tableNode.locator('.table-cell').nth(3).dblclick();
   const editor = tableNode.getByRole('textbox', { name: /row 2, column 1/ });
@@ -235,9 +306,31 @@ test('organizes selected canvas layers into table rows without removing the orig
   await expect(tableNode.getByText('Explore tools', { exact: true })).toBeVisible();
 });
 
+test('creates ordered canvas concepts from selected table rows as one undoable action', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Research', exact: true }).click();
+  await page.getByRole('button', { name: 'Explore tools', exact: true }).click({ modifiers: ['Meta'] });
+  await page.getByRole('button', { name: 'Organize selected layers into a table' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  await tableNode.getByRole('button', { name: 'Select row 2' }).click();
+  await tableNode.getByRole('button', { name: 'Select row 3' }).click({ modifiers: ['Shift'] });
+
+  await page.locator('.inspector-panel').getByRole('button', { name: 'Create canvas nodes' }).click();
+  await expect(page.getByText('2 canvas nodes created from Organized ideas.')).toBeVisible();
+  await expect(page.locator('.react-flow__node-concept')).toHaveCount(5);
+  await expect(page.locator('.react-flow__node-concept.selected')).toHaveCount(2);
+  await expect(tableNode.getByText('Research', { exact: true })).toBeVisible();
+  await expect(tableNode.getByText('Explore tools', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.locator('.react-flow__node-concept')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(page.locator('.react-flow__node-concept')).toHaveCount(5);
+});
+
 test('keeps table, cell range, and canvas selection levels distinct', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const tableSurface = tableNode.locator('.table-node');
   const cells = tableNode.locator('.table-cell');
@@ -272,7 +365,7 @@ test('keeps table, cell range, and canvas selection levels distinct', async ({ p
 
 test('selects contiguous rows and columns with accessible grabbers', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const tableSurface = tableNode.locator('.table-node');
   const cells = tableNode.locator('.table-cell');
@@ -303,7 +396,7 @@ test('selects contiguous rows and columns with accessible grabbers', async ({ pa
 
 test('supports range keyboard navigation, edge keys, printable edit, and clear', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const cells = tableNode.locator('.table-cell');
   const firstBodyCell = cells.nth(3);
@@ -319,14 +412,14 @@ test('supports range keyboard navigation, edge keys, printable edit, and clear',
   await expect(cells.nth(0)).toBeFocused();
 
   await cells.nth(0).press('x');
-  const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 1, column 1/ });
+  const editor = tableNode.getByRole('textbox', { name: /Edit Table 1, row 1, column 1/ });
   await expect(editor).toHaveText('x');
   await editor.press('Escape');
   await expect(cells.nth(0)).toContainText('Column 1');
 
   await firstBodyCell.click();
   await firstBodyCell.press('y');
-  const bodyEditor = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  const bodyEditor = tableNode.getByRole('textbox', { name: /Edit Table 1, row 2, column 1/ });
   await expect(bodyEditor).toHaveText('y');
   await bodyEditor.press('Control+Enter');
   await expect(firstBodyCell).toContainText('y');
@@ -336,12 +429,12 @@ test('supports range keyboard navigation, edge keys, printable edit, and clear',
 
 test('formats one rich cell with toolbar marks, links, commit, cancel, and history', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const bodyCell = tableNode.locator('.table-cell').nth(3);
 
   await bodyCell.dblclick();
-  const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  const editor = tableNode.getByRole('textbox', { name: /Edit Table 1, row 2, column 1/ });
   const toolbar = page.getByRole('toolbar', { name: 'Cell text formatting' });
   await expect(toolbar).toBeVisible();
   await editor.fill('Opening scene');
@@ -379,7 +472,7 @@ test('formats one rich cell with toolbar marks, links, commit, cancel, and histo
   await expect(bodyCell.locator('strong')).toHaveText('Opening scene');
 
   await bodyCell.dblclick();
-  const reopened = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  const reopened = tableNode.getByRole('textbox', { name: /Edit Table 1, row 2, column 1/ });
   await reopened.selectText();
   await page.getByRole('toolbar', { name: 'Cell text formatting' })
     .getByRole('button', { name: 'Remove link' })
@@ -391,7 +484,7 @@ test('formats one rich cell with toolbar marks, links, commit, cancel, and histo
   await expect(bodyCell.locator('a')).toHaveAttribute('href', 'https://example.com/scene');
 
   await bodyCell.dblclick();
-  const outsideCommitEditor = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  const outsideCommitEditor = tableNode.getByRole('textbox', { name: /Edit Table 1, row 2, column 1/ });
   await outsideCommitEditor.press('Control+End');
   await outsideCommitEditor.type(' revised');
   await page.getByRole('heading', { name: 'Properties' }).click();
@@ -406,7 +499,7 @@ test('formats one rich cell with toolbar marks, links, commit, cancel, and histo
 
 test('resizes one internal boundary with one undo step and cancels with Escape', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const firstCell = tableNode.locator('.table-cell').first();
   await firstCell.click();
@@ -448,7 +541,7 @@ test('resizes one internal boundary with one undo step and cancels with Escape',
 
 test('resizes the whole table proportionally with anchored history and persistence', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const xInput = page.locator('.inspector-panel').getByRole('spinbutton', { name: 'X', exact: true });
   const yInput = page.locator('.inspector-panel').getByRole('spinbutton', { name: 'Y', exact: true });
@@ -498,7 +591,7 @@ test('resizes the whole table proportionally with anchored history and persisten
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
   const restored = page.locator('.react-flow__node-table');
   expectSizeClose(await flowNodeSize(restored), anchoredSize);
-  await page.getByRole('button', { name: 'New table', exact: true }).click();
+  await page.getByRole('button', { name: 'Table 1', exact: true }).click();
   await expect(page.locator('.inspector-panel').getByRole('spinbutton', { name: 'X', exact: true }))
     .toHaveValue(String(anchoredX));
   await expect(page.locator('.inspector-panel').getByRole('spinbutton', { name: 'Y', exact: true }))
@@ -507,7 +600,7 @@ test('resizes the whole table proportionally with anchored history and persisten
 
 test('connects every table side and updates connector geometry after resize', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const research = canvasNode(page, 'Research');
   const explore = canvasNode(page, 'Explore tools');
@@ -537,10 +630,10 @@ test('connects every table side and updates connector geometry after resize', as
 
   await expect(page.locator('.react-flow__edge')).toHaveCount(originalEdgeCount + 4);
   const connectorLabels = [
-    'Connector from New table to Research',
-    'Connector from New table to Explore tools',
-    'Connector from Explore tools to New table',
-    'Connector from Editable layers to New table',
+    'Connector from Table 1 to Research',
+    'Connector from Table 1 to Explore tools',
+    'Connector from Explore tools to Table 1',
+    'Connector from Editable layers to Table 1',
   ];
   for (const label of connectorLabels) await expect(page.getByLabel(label)).toBeVisible();
   const pathsBefore = await Promise.all(connectorLabels.map((label) => (
@@ -569,7 +662,7 @@ test('connects every table side and updates connector geometry after resize', as
 
 test('offers directional insert, duplicate, delete, edge add, and sizing commands', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const inspector = page.locator('.inspector-panel');
   await tableNode.locator('.table-cell').nth(4).click();
@@ -607,7 +700,7 @@ test('offers directional insert, duplicate, delete, edge add, and sizing command
 
 test('centers row and column add icons at normal and maximum canvas zoom', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const addRow = tableNode.getByRole('button', { name: 'Add row below' });
   const addColumn = tableNode.getByRole('button', { name: 'Add column right' });
@@ -626,7 +719,7 @@ test('centers row and column add icons at normal and maximum canvas zoom', async
 
 test('copies and cuts a selected range as TSV and escaped HTML', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const startCell = tableNode.locator('.table-cell').nth(4);
   await startCell.click();
@@ -673,13 +766,13 @@ test('copies and cuts a selected range as TSV and escaped HTML', async ({ page }
 
 test('grows multiline edits, preserves one-step history, and marks manually constrained overflow', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const bodyCell = tableNode.locator('.table-cell').nth(3);
   const originalHeight = (await bodyCell.boundingBox())!.height;
 
   await bodyCell.dblclick();
-  const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  const editor = tableNode.getByRole('textbox', { name: /Edit Table 1, row 2, column 1/ });
   await editor.fill('Scene one');
   await editor.press('Control+End');
   await editor.press('Enter');
@@ -711,17 +804,17 @@ test('grows multiline edits, preserves one-step history, and marks manually cons
   await expect(bodyCell).toHaveAttribute('data-cell-overflow', 'true');
   await expect(bodyCell).toHaveAttribute('aria-label', /content clipped/);
   await bodyCell.dblclick();
-  await expect(tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ }).locator('p'))
+  await expect(tableNode.getByRole('textbox', { name: /Edit Table 1, row 2, column 1/ }).locator('p'))
     .toHaveText(['Scene one', 'Scene two', 'Scene three']);
 });
 
 test('enforces the 2,000-character cell limit as one undoable edit', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const firstCell = tableNode.locator('.table-cell').first();
   await firstCell.dblclick();
-  const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 1, column 1/ });
+  const editor = tableNode.getByRole('textbox', { name: /Edit Table 1, row 1, column 1/ });
   await expect(editor).toHaveAttribute('maxlength', '2000');
   await editor.fill('x'.repeat(2_000));
   await editor.press('x');
@@ -737,7 +830,7 @@ test('enforces the 2,000-character cell limit as one undoable edit', async ({ pa
 
 test('adds a row from the final cell and restores it with one undo', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const cells = tableNode.locator('.table-cell');
   await cells.nth(8).click();
@@ -753,7 +846,7 @@ test('adds a row from the final cell and restores it with one undo', async ({ pa
 
 test('moves focus to the nearest surviving cell after explicit row and column deletion', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const cells = tableNode.locator('.table-cell');
   await cells.nth(4).click();
@@ -789,17 +882,17 @@ test('moves focus to the nearest surviving cell after explicit row and column de
 test('preserves Unicode and RTL cell text through search, reload, and SVG export', async ({ page }) => {
   const unicodeText = 'Café 👩🏽‍💻 中文 العربية';
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const bodyCell = tableNode.locator('.table-cell').nth(3);
   await bodyCell.dblclick();
-  const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  const editor = tableNode.getByRole('textbox', { name: /Edit Table 1, row 2, column 1/ });
   await expect(editor).toHaveAttribute('dir', 'auto');
   await editor.fill(unicodeText);
   await editor.press('Control+Enter');
   await expect(bodyCell).toHaveAttribute('dir', 'auto');
   await page.getByPlaceholder('Search layers and notes').fill('العربية');
-  await expect(page.getByRole('button', { name: 'New table', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Table 1', exact: true })).toBeVisible();
   await page.getByPlaceholder('Search layers and notes').fill('');
   await waitForSaved(page);
 
@@ -819,7 +912,7 @@ test('preserves Unicode and RTL cell text through search, reload, and SVG export
 
 test('applies every supported cell tone and text alignment to a range', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const cells = tableNode.locator('.table-cell');
   await cells.nth(4).click();
@@ -848,7 +941,7 @@ test('keeps cell hit targets and non-color selection cues at zoom extremes', asy
   test.skip(browserName !== 'chromium', 'Contrast emulation is validated once in Chromium.');
   await page.emulateMedia({ contrast: 'more' });
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   const cells = tableNode.locator('.table-cell');
   const zoomReadout = page.getByRole('button', { name: /Reset zoom to 100%/ });
@@ -877,7 +970,7 @@ test('keeps cell hit targets and non-color selection cues at zoom extremes', asy
 
 test('hides inner mutation controls while locked or canvas-multiselected', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const tableNode = page.locator('.react-flow__node-table');
   await tableNode.locator('.table-cell').nth(4).click();
   await expect(tableNode.getByRole('button', { name: 'Select row 2' })).toBeVisible();

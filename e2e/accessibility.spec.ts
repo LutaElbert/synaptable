@@ -1,6 +1,27 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { canvasNode, openEditor } from './helpers';
+import { addDefaultTable, canvasNode, openEditor } from './helpers';
+
+test('offers dismissible non-blocking onboarding and remembers the choice', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  const onboarding = page.getByRole('dialog', { name: 'Move ideas between canvas and table' });
+  await expect(onboarding).toBeVisible();
+  await page.getByLabel('Document title').focus();
+  await expect(page.getByLabel('Document title')).toBeFocused();
+  const results = await new AxeBuilder({ page }).include('.onboarding-dialog').analyze();
+  expect(results.violations.filter((violation) => violation.impact === 'critical' || violation.impact === 'serious')).toEqual([]);
+  await onboarding.getByRole('button', { name: 'Got it' }).click();
+  await expect(onboarding).not.toBeVisible();
+  await page.reload();
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  await expect(onboarding).not.toBeVisible();
+  const trigger = page.getByRole('button', { name: 'Open getting started' });
+  await trigger.click();
+  await expect(onboarding).toBeVisible();
+  await onboarding.getByRole('button', { name: 'Dismiss getting started' }).click();
+  await expect(trigger).toBeFocused();
+});
 
 test('has no serious or critical automated accessibility violations', async ({ page }) => {
   await openEditor(page);
@@ -14,6 +35,8 @@ test('has no serious or critical automated accessibility violations', async ({ p
 
 test('supports keyboard entry, editing, cancellation, and focus restoration', async ({ page, browserName }) => {
   await openEditor(page);
+  await page.reload();
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
   const skipLink = page.getByRole('link', { name: 'Skip to canvas' });
   await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
   await expect(skipLink).toBeFocused();
@@ -38,10 +61,10 @@ test('supports keyboard entry, editing, cancellation, and focus restoration', as
 
 test('exposes rich table-cell editing without serious accessibility violations', async ({ page }) => {
   await openEditor(page);
-  await page.getByRole('button', { name: 'Add table layer' }).click();
+  await addDefaultTable(page);
   const table = page.locator('.react-flow__node-table');
   await table.locator('.table-cell').nth(3).dblclick();
-  const editor = table.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  const editor = table.getByRole('textbox', { name: /Edit Table 1, row 2, column 1/ });
   const toolbar = page.getByRole('toolbar', { name: 'Cell text formatting' });
   await expect(editor).toHaveAttribute('aria-multiline', 'true');
   await expect(toolbar.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'false');

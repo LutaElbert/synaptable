@@ -8,7 +8,7 @@ import {
 import { initialDocument } from './initial-document';
 
 function checkpoint(id: string, createdAt: number, bytes: number): LocalCheckpoint {
-  return { id, createdAt, bytes, title: id, document: structuredClone(initialDocument) };
+  return { id, projectId: 'project', createdAt, bytes, title: id, document: structuredClone(initialDocument) };
 }
 
 describe('checkpoint budgets', () => {

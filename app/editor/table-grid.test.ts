@@ -20,6 +20,7 @@ import {
   insertTableRow,
   moveTableColumn,
   moveTableRow,
+  nextTableName,
   pasteTableGrid,
   removeTableColumn,
   removeTableRow,
@@ -235,6 +236,13 @@ describe('table grid operations', () => {
     expect(copy.rows.map((row) => row.id)).not.toEqual(table.rows.map((row) => row.id));
     expect(copy.rows.flatMap((row) => row.cells.map((cell) => cell.id)))
       .not.toEqual(table.rows.flatMap((row) => row.cells.map((cell) => cell.id)));
+  });
+
+  it('chooses the lowest available normalized sequential table name', () => {
+    const one = { ...initialDocument.nodes[0], id: 'one', data: createTableData({ name: 'Table 1' }) };
+    const three = { ...initialDocument.nodes[0], id: 'three', data: createTableData({ name: ' table   3 ' }) };
+    const custom = { ...initialDocument.nodes[0], id: 'custom', data: createTableData({ name: 'Schedule' }) };
+    expect(nextTableName([one, three, custom])).toBe('Table 2');
   });
 
   it('maps selected canvas layers into non-destructive plain-text rows', () => {

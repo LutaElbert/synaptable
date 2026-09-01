@@ -67,14 +67,14 @@ test('imports, persists, backs up, and exports locally with vectorization disabl
   expect(backupPath).toBeTruthy();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 
-  page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await page.getByLabel('Starter').selectOption('blank');
+  await page.getByRole('button', { name: 'New project', exact: true }).click();
   await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Project backup and restore' }).click();
-  page.once('dialog', (dialog) => dialog.accept());
   await page.getByLabel('Choose a SynapTable project backup').setInputFiles(backupPath!);
-  await expect(page.getByText('Project backup restored.')).toBeVisible();
+  await expect(page.getByText('Backup imported as a new local project.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Export canvas' }).click();

@@ -10,15 +10,16 @@
 Validated on `feat/audit-remediation-foundations` after the plan was written:
 
 - [x] Preliminary graph-consistency fix: relative child/sibling creation inherits horizontal or vertical branch direction without rewriting existing connectors.
-- [x] Phase 1 documentation and metadata alignment. First-run onboarding remains pending.
+- [x] Phase 1 documentation, metadata alignment, and non-blocking first-run ideas→table→canvas guidance with persisted dismissal and explicit reopen.
 - [x] Phase 2A table-aware history budgeting with complete-snapshot estimation and focused max-table coverage.
 - [x] Phase 2B storage inspection, explicit persistent-storage request, quota-specific save guidance, and count-plus-80-MB checkpoint pruning.
-- [ ] Phase 3 local multi-project library.
-- [ ] Phase 4 table-to-canvas conversion.
-- [ ] Phase 5 table creation and discoverability.
-- [ ] Phases 6–7 architecture and release validation.
+- [x] Phase 3 local multi-project library, version-4 migration, project-scoped autosave/checkpoints, non-destructive import, and project lifecycle actions.
+- [x] Phase 4 deterministic table row/range-to-canvas conversion with safe rich-text mapping, collision-aware placement, and one-step history.
+- [x] Phase 5 unique naming, accessible 1–10 size picker, `Shift+T`, and validated spreadsheet paste-to-create.
+- [ ] Phase 6 continues incrementally. History, persistence, project starters/duplication, storage health, and table conversion are extracted and unit-tested; the remaining editor controllers/panels are intentionally deferred to behavior-preserving follow-up branches.
+- [ ] Phase 7 automated local gates and a checked-in release record are complete. Physical-device, assistive-technology, CSV/PDF interoperability, and Cloudflare preview checks remain approval/manual gates.
 
-Current validation: 99 unit tests pass; 201 Playwright cases produce 195 passes and 6 intentional skips across Chromium, Firefox, and WebKit; compatibility, typecheck, lint, production build, and dependency audit pass.
+Current validation: 106 unit tests pass; 222 Playwright cases produce 216 passing executions and 6 intentional skips across Chromium, Firefox, and WebKit; compatibility, typecheck, lint, production build, and dependency audit pass. See [`RELEASE_VALIDATION_RECORD.md`](./RELEASE_VALIDATION_RECORD.md).
 
 ## 1. Objective
 

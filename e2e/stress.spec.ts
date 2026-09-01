@@ -126,14 +126,13 @@ test('keeps a 500-layer, 800-connector document responsive and persistent', asyn
   await openEditor(page);
 
   await page.getByRole('button', { name: 'Project backup and restore' }).click();
-  page.once('dialog', (dialog) => dialog.accept());
   const restoreStarted = Date.now();
   await page.getByLabel('Choose a SynapTable project backup').setInputFiles({
     name: 'stress-graph.synaptable',
     mimeType: 'application/json',
     buffer: Buffer.from(stressProject()),
   });
-  await expect(page.getByText('Project backup restored.')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('Backup imported as a new local project.')).toBeVisible({ timeout: 20_000 });
   expect(Date.now() - restoreStarted).toBeLessThan(20_000);
   await expect(page.locator('.layer-row')).toHaveCount(500);
   await expect(page.locator('.react-flow__node')).toHaveCount(500);
@@ -169,14 +168,13 @@ test('renders, guards, exports, and restores the 2,000-cell table boundary', asy
   await openEditor(page);
 
   await page.getByRole('button', { name: 'Project backup and restore' }).click();
-  page.once('dialog', (dialog) => dialog.accept());
   const restoreStarted = Date.now();
   await page.getByLabel('Choose a SynapTable project backup').setInputFiles({
     name: 'table-boundary.synaptable',
     mimeType: 'application/json',
     buffer: Buffer.from(tableStressProject()),
   });
-  await expect(page.getByText('Project backup restored.')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('Backup imported as a new local project.')).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('.react-flow__node-table .table-cell')).toHaveCount(2_000, { timeout: 20_000 });
   expect(Date.now() - restoreStarted).toBeLessThan(20_000);
 
