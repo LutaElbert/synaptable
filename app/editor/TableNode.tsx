@@ -417,7 +417,7 @@ export function TableNode({ id, data, selected }: NodeProps<EditorNode>) {
         data-table-node-id={id}
         data-table-interaction={interaction?.mode ?? 'none'}
       >
-        <table className="canvas-table nowheel">
+        <table className="canvas-table">
           <caption
             onClick={(event) => {
               event.stopPropagation();

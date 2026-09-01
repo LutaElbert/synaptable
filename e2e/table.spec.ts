@@ -42,6 +42,13 @@ async function flowNodeSize(node: Locator) {
   });
 }
 
+async function viewportTransform(viewport: Locator) {
+  return viewport.evaluate((element) => {
+    const matrix = new DOMMatrix(getComputedStyle(element).transform);
+    return { x: matrix.e, y: matrix.f, zoom: matrix.a };
+  });
+}
+
 function expectSizeClose(actual: { width: number; height: number }, expected: { width: number; height: number }) {
   expect(Math.abs(actual.width - expected.width)).toBeLessThan(2);
   expect(Math.abs(actual.height - expected.height)).toBeLessThan(2);
@@ -131,6 +138,87 @@ test('creates, edits, pastes, restructures, searches, undoes, and persists a tab
   await expect(restored.getByText('Tuesday', { exact: true })).toBeVisible();
   await expect(restored.locator('.table-cell')).toHaveCount(16);
   expect(runtimeErrors).toEqual([]);
+});
+
+test('pans and zooms over a static table like existing layer surfaces', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  const tableSurface = tableNode.locator('.table-node');
+  const viewport = page.locator('.react-flow__viewport');
+  const bodyCell = tableNode.locator('.table-cell').nth(4);
+  const caption = tableNode.locator('caption');
+
+  await expect(tableNode).toHaveClass(/selected/);
+  await expect(tableSurface).toHaveAttribute('data-table-interaction', 'table');
+
+  const beforeCellPan = await viewportTransform(viewport);
+  await bodyCell.hover({ position: { x: 24, y: 16 } });
+  await page.mouse.wheel(0, 180);
+  await expect.poll(async () => {
+    const current = await viewportTransform(viewport);
+    return Math.hypot(current.x - beforeCellPan.x, current.y - beforeCellPan.y);
+  }).toBeGreaterThan(1);
+  expect((await viewportTransform(viewport)).zoom).toBeCloseTo(beforeCellPan.zoom, 4);
+
+  const beforeCaptionPan = await viewportTransform(viewport);
+  await caption.hover({ position: { x: 36, y: 16 } });
+  await page.mouse.wheel(80, 0);
+  await expect.poll(async () => {
+    const current = await viewportTransform(viewport);
+    return Math.hypot(current.x - beforeCaptionPan.x, current.y - beforeCaptionPan.y);
+  }).toBeGreaterThan(1);
+
+  await bodyCell.hover({ position: { x: 24, y: 16 } });
+  const beforeWheelZoom = await viewportTransform(viewport);
+  await page.keyboard.down('Control');
+  try {
+    // WebKit applies a larger multiplier to modifier-wheel deltas. A small
+    // zoom-out gesture proves the path without saturating either zoom limit.
+    await page.mouse.wheel(0, 30);
+  } finally {
+    await page.keyboard.up('Control');
+  }
+  await expect.poll(async () => Math.abs((await viewportTransform(viewport)).zoom - beforeWheelZoom.zoom)).toBeGreaterThan(0.01);
+
+  const zoomIn = page.getByRole('button', { name: 'Zoom In' });
+  const zoomOut = page.getByRole('button', { name: 'Zoom Out' });
+  const fitView = page.getByRole('button', { name: 'Fit View' });
+  const beforeToolbarZoom = await viewportTransform(viewport);
+  await zoomIn.click();
+  await expect.poll(async () => (await viewportTransform(viewport)).zoom).toBeGreaterThan(beforeToolbarZoom.zoom);
+  const afterZoomIn = await viewportTransform(viewport);
+  await zoomOut.click();
+  await expect.poll(async () => (await viewportTransform(viewport)).zoom).toBeLessThan(afterZoomIn.zoom);
+  await fitView.click();
+
+  await expect(tableNode).toHaveClass(/selected/);
+  await expect(tableSurface).toHaveAttribute('data-table-interaction', 'table');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(tableNode).toHaveCount(0);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(page.locator('.react-flow__node-table')).toBeVisible();
+});
+
+test('keeps multiline cell-editor scrolling isolated from canvas navigation', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  await tableNode.locator('.table-cell').nth(3).dblclick();
+  const editor = tableNode.getByRole('textbox', { name: /row 2, column 1/ });
+  await editor.fill(Array.from({ length: 18 }, (_, index) => `Line ${index + 1}`).join('\n'));
+  await editor.evaluate((element) => { element.scrollTop = 0; });
+  await expect(editor.evaluate((element) => element.scrollHeight > element.clientHeight)).resolves.toBe(true);
+
+  const viewport = page.locator('.react-flow__viewport');
+  const before = await viewportTransform(viewport);
+  await editor.hover({ position: { x: 24, y: 16 } });
+  await page.mouse.wheel(0, 180);
+
+  await expect.poll(() => editor.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  expect(await viewportTransform(viewport)).toEqual(before);
+  await expect(editor).toBeFocused();
+  await expect(tableNode.locator('.table-node')).toHaveAttribute('data-table-interaction', 'editing');
 });
 
 test('organizes selected canvas layers into table rows without removing the originals', async ({ page }) => {
