@@ -998,11 +998,10 @@ function EditorInner() {
       });
     }
     if (!tablePickerOpen && tablePickerDialogRef.current?.open) {
+      const focusTarget = tablePickerTriggerRef.current
+        ?? document.querySelector<HTMLElement>('.canvas-region');
       tablePickerDialogRef.current.close();
-      window.requestAnimationFrame(() => {
-        if (tablePickerTriggerRef.current) tablePickerTriggerRef.current.focus();
-        else document.querySelector<HTMLElement>('.canvas-region')?.focus();
-      });
+      focusTarget?.focus();
     }
   }, [tablePickerColumns, tablePickerOpen, tablePickerRows]);
 
@@ -3714,10 +3713,6 @@ function EditorInner() {
           }}
           onClose={() => {
             setTablePickerOpen(false);
-            window.requestAnimationFrame(() => {
-              if (tablePickerTriggerRef.current) tablePickerTriggerRef.current.focus();
-              else document.querySelector<HTMLElement>('.canvas-region')?.focus();
-            });
           }}
         >
           <div className="table-picker-layout">

@@ -105,7 +105,9 @@ test('opens the table picker with Shift+T only from canvas focus', async ({ page
   await page.keyboard.press('Escape');
   await expect(page.locator('.canvas-region')).toBeFocused();
 
-  await page.getByLabel('Document title').focus();
+  const documentTitle = page.getByLabel('Document title');
+  await documentTitle.focus();
+  await expect(documentTitle).toBeFocused();
   await page.keyboard.press('Shift+T');
   await expect(page.getByRole('dialog', { name: 'Choose a table size' })).not.toBeVisible();
 });
