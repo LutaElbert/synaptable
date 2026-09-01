@@ -1,6 +1,6 @@
 # SynapTable table behavior and testing plan
 
-> Status: proposed product specification for the next table refinement pass.
+> Status: master product and QA specification. The implemented baseline was validated locally on 2026-09-01; the dated execution record in section 23 distinguishes passing behavior from remaining release work.
 >
 > Scope: a canvas-native visual table for comparisons, schedules, lists, planning, and lightweight organization. It is not a spreadsheet or database.
 >
@@ -926,3 +926,74 @@ Capture:
 - whether she asks for formulas, filtering, dates, or statuses.
 
 Merge only after P0/P1 technical gates pass and the user can finish her real table without assistance. Requests for formulas, filters, or typed fields should start a separate structured-data specification rather than expanding this visual-table release.
+
+## 23. Validation record — 2026-09-01
+
+This record validates the current `feat/table-layer-mvp` branch. It does not mark deferred or unimplemented behavior as passing.
+
+### Automated results
+
+| Check | Result | Scope |
+| --- | --- | --- |
+| `npm test` | **Pass — 69/69** | Eight unit-test files, including table matrix and interaction helpers |
+| Focused table Playwright run | **Pass — 33/33** | Eleven table scenarios in Chromium, Firefox, and WebKit |
+| Focused accessibility Playwright run | **Pass — 12/12** | Four accessibility scenarios in Chromium, Firefox, and WebKit |
+| Full Playwright run | **Pass — 146; 4 intentional skips** | Full editor regression suite across three engines; two deterministic stress fixtures run once in Chromium and are intentionally skipped in Firefox/WebKit |
+| 2,000-cell browser boundary | **Pass — 1.9 seconds focused; 3.2 seconds in full parallel run** | Chromium render, limit guards, search, SVG export, autosave, and reload |
+| `npm run check` | **Pass** | vinext compatibility: 100%, with no partial or unsupported findings |
+| `npm run typecheck` | **Pass** | TypeScript without emitted output |
+| `npm run lint` | **Pass** | ESLint repository scan |
+| `npm run build` | **Pass** | Production vinext build |
+
+The focused browser suite currently proves these implemented flows:
+
+- default table creation, semantic rows/headers/cells, editing, in-table paste, search, autosave, and reload;
+- table/cell/range/row/column selection levels and the Escape ladder;
+- arrow, Home/End, printable-key editing, commit/cancel, and range clearing;
+- directional insertion, edge addition, duplication, explicit deletion, move buttons, fitting, distribution, and reset sizing;
+- real pointer and keyboard internal-boundary resizing, resize cancellation, and one-step Undo;
+- proportional whole-table corner resizing, top-left anchoring, one-step history, and persistence;
+- incoming and outgoing connections on all four table sides, including connector geometry updates through resize, Undo, and Redo;
+- TSV and escaped-HTML copy/cut, range styling, and formatting reset;
+- selection-to-table conversion without removing source layers;
+- removal of inner mutation controls while locked or canvas-multiselected;
+- serious/critical axe checks, semantic editor state, keyboard focus restoration, reduced motion, enlarged text, and mobile-panel access.
+
+### Hands-on browser walkthrough
+
+A visible local-browser walkthrough was completed against `http://localhost:3000`:
+
+1. Created a default 3 × 3 table from the layer-panel control.
+2. Entered cell mode and confirmed exactly one roving `tabIndex=0` cell.
+3. Entered `Manual QA` into a body cell.
+4. Shift-selected a rectangular six-cell range and applied the mint background to all six cells.
+5. Added a row and column using the direct edge controls, producing a valid 4 × 4 matrix.
+6. Undid and redid the structural change; the matrix moved from 16 to 12 and back to 16 cells.
+7. Focused the accessible column separator and resized the first column with the keyboard.
+8. Reloaded after autosave and confirmed the 4 × 4 shape, edited text, inherited body-cell styling, and resized geometry persisted.
+9. Confirmed native semantics: one caption, one header row, four `<th scope="col">` headers, three body rows, and 16 total cells.
+10. Locked the table and confirmed row grabbers, separators, and inner tab stops disappeared; unlocking restored the controls.
+11. Inspected the browser log and found no runtime errors.
+
+The visible result remained coherent at the canvas zoom levels chosen by Fit View. Pointer dragging of internal boundaries is covered by real mouse-event Playwright tests in all three engines; the hands-on walkthrough used the keyboard-accessible separator path.
+
+### Coverage status by product area
+
+| Area | Current status | Next validation action |
+| --- | --- | --- |
+| Creation, cell editing, inner selection, structure, internal resizing, bulk styling, in-table clipboard, Undo/Redo, autosave | **Validated baseline** | Extend edge cases from section 19 as features mature |
+| Semantic table markup and automated accessibility | **Validated baseline** | Complete real assistive-technology sessions |
+| Search, SVG export, selection-to-table, locking, canvas regressions | **Automated baseline passes** | Add golden-export visual comparisons and search-to-cell reveal after implementation |
+| Whole-table outer resize and connector geometry | **Validated baseline** | Corner scaling, top-left anchoring, persistence, all four connection sides, and connector Undo/Redo pass in three engines; add side-only handles if exposed separately |
+| 2,000-cell render, growth guards, search, export, and reload | **Validated in Chromium** | Boundary fixture passes without runtime errors; keep as a Chromium-only local stress gate |
+| Corrupt-data recovery, long Unicode/RTL content, and detailed performance budgets | **Partially unit-tested; release matrix incomplete** | Complete `EDT-09`, `PER-05`, and navigation/edit/large-paste measurements from `PRF-02`–`PRF-05` |
+| Grid-size picker, `Shift+T`, empty-canvas matrix paste, search-to-cell reveal | **Not implemented** | Implement before running `CRT-02`, `CRT-03`, `CRT-05`, `CLP-14`, and `INT-02` |
+| Drag row/column reorder, insertion guides, and auto-pan | **Not implemented** | Implement before running `STR-09` and `STR-10` |
+| Touch resize and long-press controls | **Not implemented** | Implement before running `RSZ-16` and `MOB-01`–`MOB-06` |
+| Google Sheets, Excel, and Google Docs clipboard interoperability | **Manual validation pending** | Run prepared sample matrices in each source app and record dimensions, blanks, Unicode, and multiline results |
+| VoiceOver/Safari and NVDA/Firefox or Chrome | **Manual validation pending** | Record actual announcements for coordinates, headers, selection, editing, paste, limits, and lock state |
+| Intended-user acceptance | **Pending** | Have the intended user complete the Gate 5 scenario without coaching |
+
+### Current release conclusion
+
+The implemented desktop table baseline is stable enough for continued development: all current automated checks pass and the core hands-on workflow has no observed runtime or persistence defect. The full table feature should **not** yet be called release-complete because drag reorder, touch behavior, empty-canvas paste, real spreadsheet clipboard interoperability, real screen-reader validation, detailed supported-limit interaction budgets, and intended-user acceptance remain open.

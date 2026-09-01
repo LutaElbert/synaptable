@@ -1,5 +1,50 @@
-import { expect, test } from '@playwright/test';
-import { openEditor, waitForSaved } from './helpers';
+import { expect, test, type Locator, type Page } from '@playwright/test';
+import { canvasNode, openEditor, waitForSaved } from './helpers';
+
+async function dragBetween(page: Page, source: Locator, target: Locator) {
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  expect(sourceBox).toBeTruthy();
+  expect(targetBox).toBeTruthy();
+  await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    targetBox!.x + targetBox!.width / 2,
+    targetBox!.y + targetBox!.height / 2,
+    { steps: 12 },
+  );
+  await page.mouse.up();
+}
+
+async function dragResizeControl(
+  page: Page,
+  node: Locator,
+  selector: string,
+  deltaX: number,
+  deltaY: number,
+) {
+  const handle = node.locator(selector);
+  const box = await handle.boundingBox();
+  expect(box).toBeTruthy();
+  const startX = box!.x + box!.width / 2;
+  const startY = box!.y + box!.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + deltaX, startY + deltaY, { steps: 12 });
+  await page.mouse.up();
+}
+
+async function flowNodeSize(node: Locator) {
+  return node.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { width: Number.parseFloat(style.width), height: Number.parseFloat(style.height) };
+  });
+}
+
+function expectSizeClose(actual: { width: number; height: number }, expected: { width: number; height: number }) {
+  expect(Math.abs(actual.width - expected.width)).toBeLessThan(2);
+  expect(Math.abs(actual.height - expected.height)).toBeLessThan(2);
+}
 
 test('creates, edits, pastes, restructures, searches, undoes, and persists a table layer', async ({ page }) => {
   const runtimeErrors: string[] = [];
@@ -225,6 +270,127 @@ test('resizes one internal boundary with one undo step and cancels with Escape',
   await page.mouse.move(rowHandle.x + rowHandle.width / 2, rowHandle.y + rowHandle.height / 2 + 34);
   await page.mouse.up();
   await expect.poll(async () => (await firstCell.boundingBox())!.height).toBeGreaterThan(originalHeight + 24);
+});
+
+test('resizes the whole table proportionally with anchored history and persistence', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  const xInput = page.locator('.inspector-panel').getByRole('spinbutton', { name: 'X', exact: true });
+  const yInput = page.locator('.inspector-panel').getByRole('spinbutton', { name: 'Y', exact: true });
+  const originalSize = await flowNodeSize(tableNode);
+  const originalCells = await tableNode.locator('.table-cell').evaluateAll((cells) => cells.map((cell) => {
+    const box = cell.getBoundingClientRect();
+    return { width: box.width, height: box.height };
+  }));
+
+  await dragResizeControl(page, tableNode, '.react-flow__resize-control.handle.bottom.right', 96, 66);
+  const resizedSize = await flowNodeSize(tableNode);
+  expect(resizedSize.width).toBeGreaterThan(originalSize.width + 55);
+  expect(resizedSize.height).toBeGreaterThan(originalSize.height + 35);
+  const resizedCells = await tableNode.locator('.table-cell').evaluateAll((cells) => cells.map((cell) => {
+    const box = cell.getBoundingClientRect();
+    return { width: box.width, height: box.height };
+  }));
+  expect(resizedCells).toHaveLength(originalCells.length);
+  expect(resizedCells.every((cell, index) => (
+    cell.width > originalCells[index].width + 10
+    && cell.height > originalCells[index].height + 5
+  ))).toBe(true);
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  expectSizeClose(await flowNodeSize(tableNode), originalSize);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  expectSizeClose(await flowNodeSize(tableNode), resizedSize);
+
+  const beforeTopLeftX = Number(await xInput.inputValue());
+  const beforeTopLeftY = Number(await yInput.inputValue());
+  await dragResizeControl(page, tableNode, '.react-flow__resize-control.handle.top.left', -52, -36);
+  const anchoredSize = await flowNodeSize(tableNode);
+  const anchoredX = Number(await xInput.inputValue());
+  const anchoredY = Number(await yInput.inputValue());
+  expect(anchoredSize.width).toBeGreaterThan(resizedSize.width + 25);
+  expect(anchoredSize.height).toBeGreaterThan(resizedSize.height + 18);
+  expect(anchoredX).toBeLessThan(beforeTopLeftX - 20);
+  expect(anchoredY).toBeLessThan(beforeTopLeftY - 12);
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  expectSizeClose(await flowNodeSize(tableNode), resizedSize);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  expectSizeClose(await flowNodeSize(tableNode), anchoredSize);
+  await waitForSaved(page);
+
+  await page.reload();
+  await expect(page.locator('main[data-ready="true"]')).toBeVisible();
+  const restored = page.locator('.react-flow__node-table');
+  expectSizeClose(await flowNodeSize(restored), anchoredSize);
+  await page.getByRole('button', { name: 'New table', exact: true }).click();
+  await expect(page.locator('.inspector-panel').getByRole('spinbutton', { name: 'X', exact: true }))
+    .toHaveValue(String(anchoredX));
+  await expect(page.locator('.inspector-panel').getByRole('spinbutton', { name: 'Y', exact: true }))
+    .toHaveValue(String(anchoredY));
+});
+
+test('connects every table side and updates connector geometry after resize', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  const research = canvasNode(page, 'Research');
+  const explore = canvasNode(page, 'Explore tools');
+  const editable = canvasNode(page, 'Editable layers');
+  const originalEdgeCount = await page.locator('.react-flow__edge').count();
+
+  await dragBetween(
+    page,
+    tableNode.locator('.react-flow__handle.source').first(),
+    research.locator('.react-flow__handle.target').first(),
+  );
+  await dragBetween(
+    page,
+    tableNode.locator('.react-flow__handle.source[data-handleid="bottom"]'),
+    explore.locator('.react-flow__handle.target[data-handleid="top"]'),
+  );
+  await dragBetween(
+    page,
+    explore.locator('.react-flow__handle.source').first(),
+    tableNode.locator('.react-flow__handle.target').first(),
+  );
+  await dragBetween(
+    page,
+    editable.locator('.react-flow__handle.source[data-handleid="bottom"]'),
+    tableNode.locator('.react-flow__handle.target[data-handleid="top"]'),
+  );
+
+  await expect(page.locator('.react-flow__edge')).toHaveCount(originalEdgeCount + 4);
+  const connectorLabels = [
+    'Connector from New table to Research',
+    'Connector from New table to Explore tools',
+    'Connector from Explore tools to New table',
+    'Connector from Editable layers to New table',
+  ];
+  for (const label of connectorLabels) await expect(page.getByLabel(label)).toBeVisible();
+  const pathsBefore = await Promise.all(connectorLabels.map((label) => (
+    page.getByLabel(label).locator('.react-flow__edge-path').getAttribute('d')
+  )));
+
+  await tableNode.locator('caption').click();
+  await dragResizeControl(page, tableNode, '.react-flow__resize-control.handle.bottom.right', 82, 54);
+  await expect.poll(async () => Promise.all(connectorLabels.map((label) => (
+    page.getByLabel(label).locator('.react-flow__edge-path').getAttribute('d')
+  )))).not.toEqual(pathsBefore);
+  const pathsAfter = await Promise.all(connectorLabels.map((label) => (
+    page.getByLabel(label).locator('.react-flow__edge-path').getAttribute('d')
+  )));
+  expect(pathsAfter.every((path, index) => path && path !== pathsBefore[index])).toBe(true);
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(async () => Promise.all(connectorLabels.map((label) => (
+    page.getByLabel(label).locator('.react-flow__edge-path').getAttribute('d')
+  )))).toEqual(pathsBefore);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect.poll(async () => Promise.all(connectorLabels.map((label) => (
+    page.getByLabel(label).locator('.react-flow__edge-path').getAttribute('d')
+  )))).toEqual(pathsAfter);
 });
 
 test('offers directional insert, duplicate, delete, edge add, and sizing commands', async ({ page }) => {
