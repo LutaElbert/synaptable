@@ -29,12 +29,13 @@ import {
   conceptTitleFromPlainText,
   emptyRichText,
   normalizeRichTextDocument,
+  richTextFromPlainText,
   richTextToPlainText,
   sanitizeLinkHref,
 } from './rich-text';
 
 export const PROJECT_FORMAT = 'synaptable-project';
-export const PROJECT_FILE_VERSION = 5;
+export const PROJECT_FILE_VERSION = 6;
 export const MAX_PROJECT_FILE_SIZE = 40 * 1024 * 1024;
 
 const MAX_TITLE_LENGTH = 120;
@@ -225,7 +226,12 @@ function parseTableColumn(value: unknown, index: number): TableColumn {
   };
 }
 
-function parseTableCell(value: unknown, rowIndex: number, columnIndex: number): TableCell {
+function parseTableCell(
+  value: unknown,
+  rowIndex: number,
+  columnIndex: number,
+  sourceVersion: 5 | 6,
+): TableCell {
   if (!isRecord(value)) throw new Error(`Table cell ${rowIndex + 1}, ${columnIndex + 1} is invalid.`);
   const tone = value.tone;
   if (typeof tone !== 'string' || !TABLE_CELL_TONES.includes(tone as TableCellTone)) {
@@ -235,15 +241,26 @@ function parseTableCell(value: unknown, rowIndex: number, columnIndex: number): 
   if (horizontalAlign !== 'left' && horizontalAlign !== 'center' && horizontalAlign !== 'right') {
     throw new Error(`Table cell ${rowIndex + 1}, ${columnIndex + 1} has invalid alignment.`);
   }
+  const content = sourceVersion === 5
+    ? richTextFromPlainText(boundedString(value.text, 'Table cell text', TABLE_MAX_CELL_TEXT))
+    : parseRichTextDocument(value.content);
+  if ((content.content ?? []).some((node) => node.type !== 'paragraph')) {
+    throw new Error(`Table cell ${rowIndex + 1}, ${columnIndex + 1} contains an unsupported block.`);
+  }
+  boundedString(
+    richTextToPlainText(content),
+    `Table cell ${rowIndex + 1}, ${columnIndex + 1} text`,
+    TABLE_MAX_CELL_TEXT,
+  );
   return {
     id: boundedString(value.id, 'Table cell id', 160),
-    text: boundedString(value.text, 'Table cell text', TABLE_MAX_CELL_TEXT),
+    content,
     tone: tone as TableCellTone,
     horizontalAlign,
   };
 }
 
-function parseTableRow(value: unknown, index: number, columnCount: number): TableRow {
+function parseTableRow(value: unknown, index: number, columnCount: number, sourceVersion: 5 | 6): TableRow {
   if (!isRecord(value) || !Array.isArray(value.cells) || value.cells.length !== columnCount) {
     throw new Error(`Table row ${index + 1} does not match the table columns.`);
   }
@@ -254,11 +271,11 @@ function parseTableRow(value: unknown, index: number, columnCount: number): Tabl
   return {
     id: boundedString(value.id, 'Table row id', 160),
     height,
-    cells: value.cells.map((cell, columnIndex) => parseTableCell(cell, index, columnIndex)),
+    cells: value.cells.map((cell, columnIndex) => parseTableCell(cell, index, columnIndex, sourceVersion)),
   };
 }
 
-function parseNode(value: unknown, index: number, sourceVersion: 1 | 2 | 3 | 4 | 5): EditorNode {
+function parseNode(value: unknown, index: number, sourceVersion: 1 | 2 | 3 | 4 | 5 | 6): EditorNode {
   if (!isRecord(value) || !isRecord(value.position) || !isRecord(value.data)) {
     throw new Error(`Layer ${index + 1} is invalid.`);
   }
@@ -386,6 +403,7 @@ function parseNode(value: unknown, index: number, sourceVersion: 1 | 2 | 3 | 4 |
 
   if (kind === 'table') {
     if (sourceVersion < 5) throw new Error('Table layers require document version 5.');
+    const tableVersion = sourceVersion as 5 | 6;
     if (!Array.isArray(data.columns) || data.columns.length < 1 || data.columns.length > TABLE_MAX_COLUMNS) {
       throw new Error(`Layer ${index + 1} has an invalid number of table columns.`);
     }
@@ -396,7 +414,12 @@ function parseNode(value: unknown, index: number, sourceVersion: 1 | 2 | 3 | 4 |
       throw new Error(`Layer ${index + 1} exceeds the table cell limit.`);
     }
     const columns = data.columns.map(parseTableColumn);
-    const rows = data.rows.map((row, rowIndex) => parseTableRow(row, rowIndex, columns.length));
+    const rows = data.rows.map((row, rowIndex) => parseTableRow(
+      row,
+      rowIndex,
+      columns.length,
+      tableVersion,
+    ));
     const nestedIds = [
       ...columns.map((column) => column.id),
       ...rows.map((row) => row.id),
@@ -470,7 +493,7 @@ export function validateEditorDocument(
   value: unknown,
   options: { strictGraph?: boolean } = {},
 ): EditorDocument {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5)) {
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5 && value.schemaVersion !== 6)) {
     throw new Error('This project uses an unsupported document version.');
   }
   const sourceVersion = value.schemaVersion;
@@ -516,7 +539,7 @@ export function validateEditorDocument(
   });
 
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     title: boundedString(value.title, 'Project title', MAX_TITLE_LENGTH),
     nodes,
     edges,
@@ -545,7 +568,7 @@ export function parseProjectBackup(source: string): EditorDocument {
   } catch {
     throw new Error('The selected file is not valid JSON.');
   }
-  if (!isRecord(value) || value.format !== PROJECT_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== 5)) {
+  if (!isRecord(value) || value.format !== PROJECT_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== 5 && value.version !== 6)) {
     throw new Error('This is not a supported SynapTable project backup.');
   }
   return validateEditorDocument(value.document, { strictGraph: true });

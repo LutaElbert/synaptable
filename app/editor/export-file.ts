@@ -1,4 +1,4 @@
-import { tableDimensions, type TableCellAddress } from './table-grid';
+import { tableCellPlainText, tableDimensions, type TableCellAddress } from './table-grid';
 import type { EditorEdge, EditorNode, TableNodeData } from './types';
 
 export type ExportScope = 'canvas' | 'selection' | 'table-cells';
@@ -98,7 +98,7 @@ function escapeCsvCell(value: string) {
 }
 
 export function tableToCsv(data: TableNodeData) {
-  return `\uFEFF${data.rows.map((row) => row.cells.map((cell) => escapeCsvCell(cell.text)).join(',')).join('\r\n')}`;
+  return `\uFEFF${data.rows.map((row) => row.cells.map((cell) => escapeCsvCell(tableCellPlainText(cell))).join(',')).join('\r\n')}`;
 }
 
 export function clampRasterDimensions(width: number, height: number, requestedScale: number): RasterDimensions {

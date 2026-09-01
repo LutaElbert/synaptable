@@ -683,10 +683,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   overflow-wrap: anywhere;
   cursor: text;
 }
-.table-cell > span {
+.table-cell-content {
   display: block;
   max-block-size: var(--table-cell-content-height);
   overflow: hidden;
+}
+.table-cell-content p { margin: 0; }
+.table-cell-content a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: .15em;
 }
 .table-cell.has-overflow:not(:has(.table-cell-editor))::after {
   position: absolute;
@@ -737,6 +743,94 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   font: inherit;
   font-weight: inherit;
   line-height: inherit;
+}
+.table-cell-editor-container {
+  block-size: var(--table-cell-content-height);
+  max-block-size: var(--table-cell-content-height);
+  overflow: hidden;
+}
+.table-cell-editor p { margin: 0; }
+.table-cell-editor a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: .15em;
+}
+.table-formatting-shell {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+.table-formatting-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-inline-size: min(430px, calc(100vw - 32px));
+  padding: 5px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: rgb(255 255 255 / 98%);
+  box-shadow: var(--shadow-lg);
+  scrollbar-width: thin;
+}
+.table-formatting-bar button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  min-inline-size: 32px;
+  min-block-size: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #565a63;
+}
+.table-formatting-bar button:hover:not(:disabled),
+.table-formatting-bar button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.table-formatting-bar button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.table-formatting-bar button:disabled { opacity: .35; }
+.table-link-editor {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  gap: 5px;
+  inline-size: min(410px, calc(100vw - 32px));
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  box-shadow: var(--shadow-lg);
+}
+.table-link-editor label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.table-link-editor input {
+  min-inline-size: 0;
+  min-block-size: 32px;
+  padding-inline: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: .75rem;
+}
+.table-link-editor button {
+  min-block-size: 32px;
+  padding-inline: 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  font-size: .7rem;
+}
+@media (pointer: coarse) {
+  .table-formatting-bar button { min-inline-size: 40px; min-block-size: 40px; }
 }
 .table-direct-controls {
   position: absolute;

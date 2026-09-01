@@ -1,4 +1,9 @@
-import { richTextToPlainText } from './rich-text';
+import {
+  emptyRichText,
+  richTextFromPlainText,
+  richTextIsEmpty,
+  richTextToPlainText,
+} from './rich-text';
 import type {
   EditorNode,
   TableCell,
@@ -48,7 +53,7 @@ function clamp(value: number, minimum: number, maximum: number) {
 function createCell(text = ''): TableCell {
   return {
     id: createId(),
-    text: text.slice(0, TABLE_MAX_CELL_TEXT),
+    content: richTextFromPlainText(text.slice(0, TABLE_MAX_CELL_TEXT)),
     tone: 'none',
     horizontalAlign: 'left',
   };
@@ -70,7 +75,26 @@ function createRow(columnCount: number, values: string[] = []): TableRow {
 }
 
 function blankCellFrom(cell: TableCell, text = ''): TableCell {
-  return { ...cell, id: createId(), text: text.slice(0, TABLE_MAX_CELL_TEXT) };
+  return {
+    ...cell,
+    id: createId(),
+    content: richTextFromPlainText(text.slice(0, TABLE_MAX_CELL_TEXT)),
+  };
+}
+
+export function tableCellPlainText(cell: TableCell): string {
+  return richTextToPlainText(cell.content);
+}
+
+export function tableCellHasContent(cell: TableCell): boolean {
+  return !richTextIsEmpty(cell.content);
+}
+
+export function replaceTableCellPlainText(cell: TableCell, text: string): TableCell {
+  return {
+    ...cell,
+    content: text ? richTextFromPlainText(text.slice(0, TABLE_MAX_CELL_TEXT)) : emptyRichText(),
+  };
 }
 
 export function createTableData({
@@ -359,7 +383,7 @@ export function fitTableColumnToContent(data: TableNodeData, index: number): Tab
   if (!data.columns[index]) return data;
   const longestLine = data.rows.reduce((maximum, row) => Math.max(
     maximum,
-    ...(row.cells[index]?.text.split('\n').map((line) => [...line].length) ?? [0]),
+    ...(row.cells[index] ? tableCellPlainText(row.cells[index]).split('\n').map((line) => [...line].length) : [0]),
   ), 0);
   return resizeTableColumn(data, index, Math.ceil(longestLine * 6.2 + 24));
 }
@@ -369,7 +393,7 @@ export function tableCellRequiredHeight(data: TableNodeData, rowIndex: number, c
   const column = data.columns[columnIndex];
   if (!cell || !column) return TABLE_MIN_ROW_HEIGHT;
   const charactersPerLine = Math.max(1, Math.floor((column.width - 18) / 6.2));
-  const wrappedLines = cell.text.split('\n').reduce(
+  const wrappedLines = tableCellPlainText(cell).split('\n').reduce(
     (total, line) => total + Math.max(1, Math.ceil([...line].length / charactersPerLine)),
     0,
   );
@@ -519,7 +543,7 @@ export function pasteTableGrid(
       cells: row.cells.map((cell, columnIndex) => {
         const pastedColumnIndex = columnIndex - current.columnIndex;
         if (pastedColumnIndex < 0 || pastedColumnIndex >= pastedRow.length) return cell;
-        return { ...cell, text: pastedRow[pastedColumnIndex] };
+        return replaceTableCellPlainText(cell, pastedRow[pastedColumnIndex]);
       }),
     };
   });
@@ -527,7 +551,7 @@ export function pasteTableGrid(
 }
 
 export function tableSearchText(data: TableNodeData) {
-  return [data.name, ...data.rows.flatMap((row) => row.cells.map((cell) => cell.text))].join(' ');
+  return [data.name, ...data.rows.flatMap((row) => row.cells.map(tableCellPlainText))].join(' ');
 }
 
 export function tableFromNodes(nodes: EditorNode[], name = 'Organized ideas'): TableNodeData {

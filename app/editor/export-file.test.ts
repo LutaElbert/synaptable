@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from 'vitest';
-import { createTableData, tableDimensions } from './table-grid';
+import { createTableData, tableCellPlainText, tableDimensions } from './table-grid';
 import {
   calculatePdfLayout,
   clampRasterDimensions,
@@ -90,7 +90,7 @@ describe('export scope resolution', () => {
       { rowId: node.data.rows[2].id, columnId: node.data.columns[2].id },
     ];
     const content = resolveExportContent([node], [], 'table-cells', { nodeId: node.id, addresses });
-    expect(content.table?.rows.map((row) => row.cells.map((cell) => cell.text))).toEqual([
+    expect(content.table?.rows.map((row) => row.cells.map(tableCellPlainText))).toEqual([
       ['Chloé', 'Line one\nLine two'],
       ['Ana, Jr.', 'She said "go"'],
     ]);
@@ -108,6 +108,19 @@ describe('CSV export', () => {
     expect(csv).toContain('Opening,Chloé,"Line one\nLine two"');
     expect(csv).toContain('Finale,"Ana, Jr.","She said ""go"""');
     expect(csv.split('\r\n')).toHaveLength(3);
+  });
+
+  it('flattens rich table-cell marks to readable CSV text', () => {
+    const node = tableNode();
+    if (node.data.kind !== 'table') throw new Error('Expected table fixture.');
+    node.data.rows[1].cells[0].content.content = [{
+      type: 'paragraph',
+      content: [{ type: 'text', text: 'Bold scene', marks: [{ type: 'bold' }] }],
+    }];
+    const csv = tableToCsv(node.data);
+    expect(csv).toContain('Bold scene');
+    expect(csv).not.toContain('marks');
+    expect(csv).not.toContain('<strong>');
   });
 });
 

@@ -198,4 +198,38 @@ describe('buildSvgDocument', () => {
     expect(svg).toContain('text-anchor="end"');
     expect(svg).toContain('font-weight="700"');
   });
+
+  it('preserves rich table-cell marks and safe links in SVG', () => {
+    const data = createTableData({ rows: 1, columns: 1, headerRow: false });
+    data.rows[0].cells[0].content = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{
+          type: 'text',
+          text: 'Formatted scene',
+          marks: [
+            { type: 'bold' },
+            { type: 'italic' },
+            { type: 'underline' },
+            { type: 'strike' },
+            { type: 'link', attrs: { href: 'https://example.com/scene' } },
+          ],
+        }],
+      }],
+    };
+    const node: EditorNode = {
+      id: 'rich-table',
+      type: 'table',
+      position: { x: 0, y: 0 },
+      style: tableDimensions(data),
+      data,
+    };
+    const svg = buildSvgDocument([node], []);
+    expect(svg).toContain('font-weight="700"');
+    expect(svg).toContain('font-style="italic"');
+    expect(svg).toContain('text-decoration="underline line-through"');
+    expect(svg).toContain('href="https://example.com/scene"');
+    expect(svg).toContain('Formatted scene');
+  });
 });

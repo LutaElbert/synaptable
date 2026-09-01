@@ -36,6 +36,27 @@ test('supports keyboard entry, editing, cancellation, and focus restoration', as
   await expect(researchNode).toBeFocused();
 });
 
+test('exposes rich table-cell editing without serious accessibility violations', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const table = page.locator('.react-flow__node-table');
+  await table.locator('.table-cell').nth(3).dblclick();
+  const editor = table.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  const toolbar = page.getByRole('toolbar', { name: 'Cell text formatting' });
+  await expect(editor).toHaveAttribute('aria-multiline', 'true');
+  await expect(toolbar.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(toolbar.getByRole('button', { name: 'Finish editing' })).toBeVisible();
+
+  const results = await new AxeBuilder({ page })
+    .include('.react-flow__node-table')
+    .include('.table-formatting-shell')
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze();
+  const blocking = results.violations.filter((violation) =>
+    violation.impact === 'critical' || violation.impact === 'serious');
+  expect(blocking, blocking.map((violation) => `${violation.id}: ${violation.help}`).join('\n')).toEqual([]);
+});
+
 test('exposes layer, connector, toggle, and selection state semantically', async ({ page }) => {
   await openEditor(page);
   await expect(page.getByRole('list', { name: 'Canvas layers' })).toHaveAttribute('aria-describedby', 'layer-list-instructions');

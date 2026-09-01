@@ -123,28 +123,28 @@ const TABLE_CELL_FILLS: Record<TableCellTone, string> = {
   rose: '#ffecef',
 };
 
-function wrapTableCellText(text: string, width: number, height: number) {
+function layoutTableCellRichText(document: RichTextDocument, width: number, height: number) {
   const maxCharacters = Math.max(4, Math.floor((width - 18) / 6.4));
   const maxLines = Math.max(1, Math.floor((height - 12) / 14));
-  const lines: string[] = [];
-  for (const sourceLine of text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
-    const words = sourceLine.split(/(\s+)/).filter(Boolean);
-    let current = '';
-    for (const word of words) {
-      if (current && current.length + word.length > maxCharacters && word.trim()) {
-        lines.push(current.trimEnd());
-        current = '';
-      }
-      current += word;
-    }
-    lines.push(current.trimEnd());
-  }
+  const lines = blockLines(normalizeRichTextDocument(document)).flatMap((line) => wrapLine(line, maxCharacters));
   const visible = lines.slice(0, maxLines);
   if (lines.length > maxLines && visible.length) {
     const last = visible.length - 1;
-    visible[last] = `${visible[last].slice(0, Math.max(1, maxCharacters - 1)).trimEnd()}…`;
+    const runs = visible[last].runs.map((run) => ({ ...run }));
+    let remaining = Math.max(1, maxCharacters - 1);
+    const clipped: TextRun[] = [];
+    for (const run of runs) {
+      if (remaining <= 0) break;
+      const text = run.text.slice(0, remaining);
+      if (text) clipped.push({ ...run, text });
+      remaining -= text.length;
+    }
+    const lastRun = clipped.at(-1);
+    if (lastRun) lastRun.text = `${lastRun.text.trimEnd()}…`;
+    else clipped.push({ text: '…', marks: [] });
+    visible[last] = { ...visible[last], runs: clipped };
   }
-  return visible.length ? visible : [''];
+  return visible.length ? visible : [{ runs: [], prefix: '', indent: 0 }];
 }
 
 function renderTableNode(data: TableNodeData, id: string, x: number, y: number) {
@@ -165,14 +165,14 @@ function renderTableNode(data: TableNodeData, id: string, x: number, y: number) 
         : cell.horizontalAlign === 'right'
           ? columnX + column.width - 9
           : columnX + 9;
-      const lines = wrapTableCellText(cell.text, column.width, row.height);
+      const lines = layoutTableCellRichText(cell.content, column.width, row.height);
       const lineHeight = 14;
       const firstLineY = rowY + (row.height - lines.length * lineHeight) / 2 + 11;
       const text = lines.map((line, lineIndex) => (
-        `<tspan x="${textX}" y="${firstLineY + lineIndex * lineHeight}">${xmlEscape(line)}</tspan>`
+        `<text x="${textX}" y="${firstLineY + lineIndex * lineHeight}" text-anchor="${anchor}" fill="#26272b" font-family="system-ui, sans-serif" font-size="11"${header ? ' font-weight="700"' : ''}>${line.runs.map(renderRun).join('')}</text>`
       )).join('');
       rows.push(`<rect x="${columnX}" y="${rowY}" width="${column.width}" height="${row.height}" fill="${fill}" stroke="#d6d9e0" />
-    <text text-anchor="${anchor}" fill="#26272b" font-family="system-ui, sans-serif" font-size="11"${header ? ' font-weight="700"' : ''}>${text}</text>`);
+    ${text}`);
       columnX += column.width;
     });
     rowY += row.height;

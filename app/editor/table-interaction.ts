@@ -1,4 +1,5 @@
-import { firstTableCell, tableCellAt, type TableCellAddress } from './table-grid';
+import { firstTableCell, tableCellAt, tableCellPlainText, type TableCellAddress } from './table-grid';
+import type { RichTextDocument } from './types';
 import type { TableNodeData } from './types';
 
 export type TableInteraction =
@@ -6,7 +7,7 @@ export type TableInteraction =
   | { mode: 'cell'; nodeId: string; anchor: TableCellAddress; focus: TableCellAddress }
   | { mode: 'row'; nodeId: string; rowIds: string[] }
   | { mode: 'column'; nodeId: string; columnIds: string[] }
-  | { mode: 'editing'; nodeId: string; cell: TableCellAddress };
+  | { mode: 'editing'; nodeId: string; cell: TableCellAddress; initialContent?: RichTextDocument };
 
 export function tableInteractionFocus(
   data: TableNodeData,
@@ -103,7 +104,7 @@ export function tableInteractionGrid(
   const firstColumn = Math.min(...cells.map((cell) => cell.columnIndex));
   const lastColumn = Math.max(...cells.map((cell) => cell.columnIndex));
   return data.rows.slice(firstRow, lastRow + 1).map((row) => (
-    row.cells.slice(firstColumn, lastColumn + 1).map((cell) => cell.text)
+    row.cells.slice(firstColumn, lastColumn + 1).map(tableCellPlainText)
   ));
 }
 

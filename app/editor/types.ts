@@ -47,7 +47,7 @@ export type TableCellTone = 'none' | 'gray' | 'indigo' | 'mint' | 'amber' | 'ros
 
 export type TableCell = {
   id: string;
-  text: string;
+  content: RichTextDocument;
   tone: TableCellTone;
   horizontalAlign: 'left' | 'center' | 'right';
 };
@@ -108,7 +108,7 @@ export type EditorEdgeData = Record<string, unknown> & {
 export type EditorEdge = Edge<EditorEdgeData>;
 
 export type EditorDocument = {
-  schemaVersion: 5;
+  schemaVersion: 6;
   title: string;
   nodes: EditorNode[];
   edges: EditorEdge[];

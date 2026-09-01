@@ -10,6 +10,8 @@ import {
 import { Plus } from 'lucide-react';
 import {
   createContext,
+  lazy,
+  Suspense,
   useEffect,
   useContext,
   useRef,
@@ -21,13 +23,13 @@ import {
 } from 'react';
 import {
   TABLE_CAPTION_HEIGHT,
-  TABLE_MAX_CELL_TEXT,
   TABLE_MAX_COLUMN_WIDTH,
   TABLE_MAX_ROW_HEIGHT,
   TABLE_MIN_COLUMN_WIDTH,
   TABLE_MIN_ROW_HEIGHT,
   clipboardGrid,
   tableCellRequiredHeight,
+  tableCellPlainText,
   type ClipboardGrid,
   type TableCellAddress,
 } from './table-grid';
@@ -36,7 +38,8 @@ import {
   tableInteractionFocus,
   type TableInteraction,
 } from './table-interaction';
-import type { EditorNode } from './types';
+import { RichTextView } from './RichTextView';
+import type { EditorNode, RichTextDocument } from './types';
 
 export type TableNavigationDirection =
   | 'up'
@@ -66,7 +69,7 @@ export type TableNodeActionContextValue = {
   selectRow: (id: string, rowId: string, extend?: boolean) => void;
   selectColumn: (id: string, columnId: string, extend?: boolean) => void;
   beginCellEdit: (id: string, address: TableCellAddress, replacement?: string) => void;
-  updateCellText: (id: string, address: TableCellAddress, text: string) => void;
+  updateCellContent: (id: string, address: TableCellAddress, content: RichTextDocument) => void;
   commitCellEdit: () => void;
   cancelCellEdit: () => void;
   clearCells: (id: string) => void;
@@ -81,6 +84,8 @@ export type TableNodeActionContextValue = {
 };
 
 export const TableNodeActionContext = createContext<TableNodeActionContextValue | null>(null);
+
+const InlineTableCellEditor = lazy(() => import('./InlineTableCellEditor'));
 
 function useTableNodeActions() {
   const value = useContext(TableNodeActionContext);
@@ -261,32 +266,12 @@ export function TableNode({ id, data, selected }: NodeProps<EditorNode>) {
     }
   };
 
-  const handleEditorKeyboard = (event: KeyboardEvent<HTMLTextAreaElement>, address: TableCellAddress) => {
-    // Editing keys belong to the native textarea. Do not let the surrounding
-    // cell interpret Enter, arrows, Home/End, or Delete as grid commands.
-    event.stopPropagation();
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      actions.cancelCellEdit();
-      return;
-    }
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      actions.commitCellEdit();
-      actions.navigateCell(id, address, event.shiftKey ? 'previous' : 'next');
-      return;
-    }
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      actions.commitCellEdit();
-    }
-  };
-
   const handlePaste = (
     event: ClipboardEvent<HTMLElement>,
     address: TableCellAddress,
     editing: boolean,
   ) => {
+    if (event.defaultPrevented) return;
     const html = event.clipboardData.getData('text/html');
     const text = event.clipboardData.getData('text/plain');
     const grid = clipboardGrid(html, text);
@@ -298,6 +283,7 @@ export function TableNode({ id, data, selected }: NodeProps<EditorNode>) {
   };
 
   const handleCopy = (event: ClipboardEvent<HTMLElement>, cut: boolean) => {
+    if (event.target instanceof Element && event.target.closest('.table-cell-editor')) return;
     if (data.locked) return;
     event.preventDefault();
     event.stopPropagation();
@@ -315,21 +301,23 @@ export function TableNode({ id, data, selected }: NodeProps<EditorNode>) {
       && interaction.cell.columnId === address.columnId;
     if (isEditing && !data.locked) {
       return (
-        <textarea
-          className="table-cell-editor nodrag nowheel"
-          aria-label={`Edit ${data.name}, row ${rowIndex + 1}, column ${columnIndex + 1}`}
-          dir="auto"
-          value={cell.text}
-          maxLength={TABLE_MAX_CELL_TEXT}
-          autoFocus
-          onChange={(event) => actions.updateCellText(id, address, event.target.value)}
-          onKeyDown={(event) => handleEditorKeyboard(event, address)}
-          onPaste={(event) => handlePaste(event, address, true)}
-          onBlur={actions.commitCellEdit}
-        />
+        <Suspense fallback={<span className="editor-loading">Loading cell editor…</span>}>
+          <InlineTableCellEditor
+            ariaLabel={`Edit ${data.name}, row ${rowIndex + 1}, column ${columnIndex + 1}`}
+            content={interaction?.mode === 'editing' && interaction.initialContent
+              ? interaction.initialContent
+              : cell.content}
+            onChange={(content) => actions.updateCellContent(id, address, content)}
+            onCommit={actions.commitCellEdit}
+            onCancel={actions.cancelCellEdit}
+            onNavigate={(direction) => actions.navigateCell(id, address, direction)}
+            onPasteGrid={(grid) => actions.pasteGrid(id, address, grid)}
+            selectAllOnFocus={Boolean(interaction?.mode === 'editing' && interaction.initialContent)}
+          />
+        </Suspense>
       );
     }
-    return <span>{cell.text || '\u00a0'}</span>;
+    return <RichTextView document={cell.content} className="table-cell-content" />;
   };
 
   const cellProps = (
@@ -359,20 +347,24 @@ export function TableNode({ id, data, selected }: NodeProps<EditorNode>) {
       'data-range-focus': isFocus ? 'true' : undefined,
       'data-cell-overflow': isOverflowing ? 'true' : undefined,
       dir: 'auto' as const,
-      'aria-label': `${data.name}, row ${rowIndex + 1}, column ${columnIndex + 1}${cell.text ? `: ${cell.text}` : ''}${isSelected ? ', selected' : ''}${isOverflowing ? ', content clipped' : ''}`,
+      'aria-label': `${data.name}, row ${rowIndex + 1}, column ${columnIndex + 1}${tableCellPlainText(cell) ? `: ${tableCellPlainText(cell)}` : ''}${isSelected ? ', selected' : ''}${isOverflowing ? ', content clipped' : ''}`,
       onClick: (event: MouseEvent<HTMLElement>) => {
-        if (event.target instanceof Element && event.target.closest('textarea')) return;
+        if (event.target instanceof Element && event.target.closest('.table-cell-editor')) return;
         event.stopPropagation();
         if (!hasSingleCanvasSelection) actions.selectTable(id);
         else actions.selectCell(id, address, event.shiftKey);
       },
       onDoubleClick: (event: MouseEvent<HTMLElement>) => {
-        if (event.target instanceof Element && event.target.closest('textarea')) return;
+        if (event.target instanceof Element && event.target.closest('.table-cell-editor')) return;
         event.stopPropagation();
         if (!data.locked) actions.beginCellEdit(id, address);
       },
       onKeyDown: (event: KeyboardEvent<HTMLElement>) => handleCellKeyboard(event, address),
-      onPaste: (event: ClipboardEvent<HTMLElement>) => handlePaste(event, address, false),
+      onPaste: (event: ClipboardEvent<HTMLElement>) => handlePaste(
+        event,
+        address,
+        event.target instanceof Element && Boolean(event.target.closest('.table-cell-editor')),
+      ),
       onCopy: (event: ClipboardEvent<HTMLElement>) => handleCopy(event, false),
       onCut: (event: ClipboardEvent<HTMLElement>) => handleCopy(event, true),
     };

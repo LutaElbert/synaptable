@@ -130,6 +130,7 @@ import {
   emptyRichText,
   normalizeRichTextDocument,
   replaceRichTextPlainText,
+  richTextFromPlainText,
   richTextIsEmpty,
   richTextToPlainText,
 } from './rich-text';
@@ -177,11 +178,13 @@ import {
   scaleTable,
   sequentialTableCell,
   tableCellAt,
+  tableCellHasContent,
   tableDimensions,
   tableFromNodes,
   tableSearchText,
   updateTableCell,
   updateTableCells,
+  replaceTableCellPlainText,
   TABLE_MAX_CELLS,
   TABLE_MAX_COLUMNS,
   TABLE_MAX_COLUMN_WIDTH,
@@ -745,7 +748,7 @@ function EditorInner() {
   }, [refreshHistoryState]);
 
   const getCurrentDocument = useCallback((): EditorDocument => ({
-    schemaVersion: 5,
+    schemaVersion: 6,
     title: titleRef.current,
     nodes: nodesRef.current.map((node) => ({ ...node, selected: false })),
     edges: edgesRef.current.map((edge) => ({ ...edge, selected: false })),
@@ -2084,20 +2087,32 @@ function EditorInner() {
       tableEditOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
     }
     if (replacement !== undefined) {
-      setNodes((current) => current.map((item) => item.id === id && item.data.kind === 'table'
-        ? { ...item, data: updateTableCell(item.data, address, (cell) => ({ ...cell, text: replacement.slice(0, 2_000) })) }
-        : item));
+      const nextNodes = nodesRef.current.map((item) => item.id === id && item.data.kind === 'table'
+        ? { ...item, data: updateTableCell(item.data, address, (cell) => replaceTableCellPlainText(cell, replacement)) }
+        : item);
+      nodesRef.current = nextNodes;
+      setNodes(nextNodes);
     }
-    setTableInteraction({ mode: 'editing', nodeId: id, cell: address });
+    setTableInteraction({
+      mode: 'editing',
+      nodeId: id,
+      cell: address,
+      initialContent: replacement === undefined ? undefined : richTextFromPlainText(replacement.slice(0, 2_000)),
+    });
     const selected = nodesRef.current.filter((item) => item.selected);
     if (selected.length !== 1 || selected[0].id !== id) selectNode(id);
   }, [selectNode]);
 
-  const updateTableCellText = useCallback((id: string, address: TableCellAddress, text: string) => {
+  const updateTableCellContent = useCallback((id: string, address: TableCellAddress, content: RichTextDocument) => {
     setNodes((current) => current.map((node) => node.id === id && node.data.kind === 'table'
       ? {
           ...node,
-          data: updateTableCell(node.data, address, (cell) => ({ ...cell, text: text.slice(0, 2_000) })),
+          data: updateTableCell(node.data, address, (cell) => ({
+            ...cell,
+            content: richTextToPlainText(content).length <= 2_000
+              ? content
+              : richTextFromPlainText(richTextToPlainText(content).slice(0, 2_000)),
+          })),
         }
       : node));
   }, []);
@@ -2185,10 +2200,13 @@ function EditorInner() {
     if (!node || node.data.kind !== 'table' || node.data.locked || tableInteraction?.nodeId !== id) return;
     const data = node.data;
     const addresses = tableInteractionCells(data, tableInteraction);
-    if (!addresses.length || !addresses.some((address) => tableCellAt(data, address)?.cell.text)) return;
+    if (!addresses.length || !addresses.some((address) => {
+      const cell = tableCellAt(data, address)?.cell;
+      return cell ? tableCellHasContent(cell) : false;
+    })) return;
     recordHistory();
     setNodes((current) => current.map((item) => item.id === id && item.data.kind === 'table'
-      ? { ...item, data: updateTableCells(item.data, addresses, (cell) => ({ ...cell, text: '' })) }
+      ? { ...item, data: updateTableCells(item.data, addresses, (cell) => replaceTableCellPlainText(cell, '')) }
       : item));
     announce(`Cleared ${addresses.length} ${addresses.length === 1 ? 'cell' : 'cells'}.`);
   }, [announce, recordHistory, tableInteraction]);
@@ -2202,10 +2220,13 @@ function EditorInner() {
     if (!grid.length || !addresses.length) return;
     clipboardData.setData('text/plain', clipboardGridToText(grid));
     clipboardData.setData('text/html', clipboardGridToHtml(grid));
-    if (cut && addresses.some((address) => tableCellAt(data, address)?.cell.text)) {
+    if (cut && addresses.some((address) => {
+      const cell = tableCellAt(data, address)?.cell;
+      return cell ? tableCellHasContent(cell) : false;
+    })) {
       recordHistory();
       setNodes((current) => current.map((item) => item.id === id && item.data.kind === 'table'
-        ? { ...item, data: updateTableCells(item.data, addresses, (cell) => ({ ...cell, text: '' })) }
+        ? { ...item, data: updateTableCells(item.data, addresses, (cell) => replaceTableCellPlainText(cell, '')) }
         : item));
     }
     const columns = Math.max(1, ...grid.map((row) => row.length));
@@ -2408,7 +2429,7 @@ function EditorInner() {
       selectRow: selectTableRow,
       selectColumn: selectTableColumn,
       beginCellEdit: beginTableCellEdit,
-      updateCellText: updateTableCellText,
+      updateCellContent: updateTableCellContent,
       commitCellEdit: commitTableCellEdit,
       cancelCellEdit: cancelTableCellEdit,
       clearCells: clearSelectedTableCells,
@@ -2497,7 +2518,7 @@ function EditorInner() {
       selectTableRow,
       selectWholeTable,
       tableInteraction,
-      updateTableCellText,
+      updateTableCellContent,
     ],
   );
 
@@ -3858,7 +3879,7 @@ function NodeInspector({
                 <button
                   type="button"
                   disabled={node.data.locked}
-                  onClick={() => updateTableData((data) => updateTableCells(data, selectedTableAddresses, (cell) => ({ ...cell, text: '' })))}
+                  onClick={() => updateTableData((data) => updateTableCells(data, selectedTableAddresses, (cell) => replaceTableCellPlainText(cell, '')))}
                 >Clear contents</button>
                 <button
                   type="button"

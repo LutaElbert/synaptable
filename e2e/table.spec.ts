@@ -320,18 +320,84 @@ test('supports range keyboard navigation, edge keys, printable edit, and clear',
 
   await cells.nth(0).press('x');
   const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 1, column 1/ });
-  await expect(editor).toHaveValue('x');
+  await expect(editor).toHaveText('x');
   await editor.press('Escape');
   await expect(cells.nth(0)).toContainText('Column 1');
 
   await firstBodyCell.click();
   await firstBodyCell.press('y');
   const bodyEditor = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
-  await expect(bodyEditor).toHaveValue('y');
+  await expect(bodyEditor).toHaveText('y');
   await bodyEditor.press('Control+Enter');
   await expect(firstBodyCell).toContainText('y');
   await firstBodyCell.press('Delete');
   await expect(firstBodyCell).not.toContainText('y');
+});
+
+test('formats one rich cell with toolbar marks, links, commit, cancel, and history', async ({ page }) => {
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Add table layer' }).click();
+  const tableNode = page.locator('.react-flow__node-table');
+  const bodyCell = tableNode.locator('.table-cell').nth(3);
+
+  await bodyCell.dblclick();
+  const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  const toolbar = page.getByRole('toolbar', { name: 'Cell text formatting' });
+  await expect(toolbar).toBeVisible();
+  await editor.fill('Opening scene');
+  await editor.selectText();
+  await toolbar.getByRole('button', { name: 'Bold' }).click();
+  await toolbar.getByRole('button', { name: 'Italic' }).click();
+  await toolbar.getByRole('button', { name: 'Underline', exact: true }).click();
+  await toolbar.getByRole('button', { name: 'Strikethrough' }).click();
+  await expect(toolbar.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(editor.locator('strong')).toHaveText('Opening scene');
+  await expect(editor.locator('em')).toHaveText('Opening scene');
+  await expect(editor.locator('u')).toHaveText('Opening scene');
+  await expect(editor.locator('s')).toHaveText('Opening scene');
+
+  await toolbar.getByRole('button', { name: 'Add or edit link' }).click();
+  const linkInput = page.getByRole('textbox', { name: 'Link URL' });
+  await linkInput.fill('javascript:alert(1)');
+  await expect(page.getByRole('button', { name: 'Apply' })).toBeDisabled();
+  await linkInput.fill('https://example.com/scene');
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(editor.locator('a')).toHaveAttribute('href', 'https://example.com/scene');
+
+  await toolbar.getByRole('button', { name: 'Finish editing' }).click();
+  await expect(toolbar).toBeHidden();
+  await expect(bodyCell.locator('strong')).toHaveText('Opening scene');
+  await expect(bodyCell.locator('a')).toHaveAttribute('href', 'https://example.com/scene');
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(bodyCell).not.toContainText('Opening scene');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(bodyCell.locator('strong')).toHaveText('Opening scene');
+
+  await bodyCell.dblclick();
+  const reopened = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  await reopened.selectText();
+  await page.getByRole('toolbar', { name: 'Cell text formatting' })
+    .getByRole('button', { name: 'Remove link' })
+    .click();
+  await expect(reopened.locator('a')).toHaveCount(0);
+  await page.getByRole('toolbar', { name: 'Cell text formatting' })
+    .getByRole('button', { name: 'Cancel editing' })
+    .click();
+  await expect(bodyCell.locator('a')).toHaveAttribute('href', 'https://example.com/scene');
+
+  await bodyCell.dblclick();
+  const outsideCommitEditor = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
+  await outsideCommitEditor.press('Control+End');
+  await outsideCommitEditor.type(' revised');
+  await page.getByRole('heading', { name: 'Properties' }).click();
+  await expect(page.getByRole('toolbar', { name: 'Cell text formatting' })).toBeHidden();
+  await expect(bodyCell).toContainText('Opening scene revised');
+  await expect(page.getByText('Saved on device')).toBeVisible();
+  await page.reload();
+  const restoredCell = page.locator('.react-flow__node-table .table-cell').nth(3);
+  await expect(restoredCell.locator('strong')).toContainText('Opening scene revised');
+  await expect(restoredCell.locator('a')).toHaveAttribute('href', 'https://example.com/scene');
 });
 
 test('resizes one internal boundary with one undo step and cancels with Escape', async ({ page }) => {
@@ -610,15 +676,19 @@ test('grows multiline edits, preserves one-step history, and marks manually cons
 
   await bodyCell.dblclick();
   const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ });
-  await editor.fill('Scene one\nScene two');
+  await editor.fill('Scene one');
+  await editor.press('Control+End');
   await editor.press('Enter');
-  await expect(editor).toHaveValue('Scene one\nScene two\n');
-  await editor.fill('Scene one\nScene two\nScene three');
-  await expect(editor).toHaveValue('Scene one\nScene two\nScene three');
-  const caret = await editor.evaluate((element) => (element as HTMLTextAreaElement).selectionStart);
+  await editor.type('Scene two');
+  await expect(editor.locator('p')).toHaveText(['Scene one', 'Scene two']);
+  await editor.press('Control+End');
+  await editor.press('Enter');
+  await editor.type('Scene three');
+  await expect(editor.locator('p')).toHaveText(['Scene one', 'Scene two', 'Scene three']);
+  const caret = await editor.evaluate(() => window.getSelection()?.anchorOffset ?? -1);
   await editor.press('ArrowLeft');
   await expect(editor).toBeFocused();
-  expect(await editor.evaluate((element) => (element as HTMLTextAreaElement).selectionStart)).toBe(caret - 1);
+  expect(await editor.evaluate(() => window.getSelection()?.anchorOffset ?? -1)).toBe(caret - 1);
   await editor.press('Control+Enter');
 
   const grownHeight = (await bodyCell.boundingBox())!.height;
@@ -637,8 +707,8 @@ test('grows multiline edits, preserves one-step history, and marks manually cons
   await expect(bodyCell).toHaveAttribute('data-cell-overflow', 'true');
   await expect(bodyCell).toHaveAttribute('aria-label', /content clipped/);
   await bodyCell.dblclick();
-  await expect(tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ }))
-    .toHaveValue('Scene one\nScene two\nScene three');
+  await expect(tableNode.getByRole('textbox', { name: /Edit New table, row 2, column 1/ }).locator('p'))
+    .toHaveText(['Scene one', 'Scene two', 'Scene three']);
 });
 
 test('enforces the 2,000-character cell limit as one undoable edit', async ({ page }) => {
@@ -649,12 +719,9 @@ test('enforces the 2,000-character cell limit as one undoable edit', async ({ pa
   await firstCell.dblclick();
   const editor = tableNode.getByRole('textbox', { name: /Edit New table, row 1, column 1/ });
   await expect(editor).toHaveAttribute('maxlength', '2000');
-  await editor.evaluate((element) => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-    setter?.call(element, 'x'.repeat(2_001));
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  await expect.poll(async () => (await editor.inputValue()).length).toBe(2_000);
+  await editor.fill('x'.repeat(2_000));
+  await editor.press('x');
+  await expect.poll(async () => (await editor.textContent())?.length).toBe(2_000);
   await editor.press('Control+Enter');
   await expect.poll(async () => (await firstCell.textContent())?.length).toBe(2_000);
 
