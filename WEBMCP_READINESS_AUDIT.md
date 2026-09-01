@@ -49,6 +49,28 @@ Future WebMCP tool adapter ─────┘                         ├─> on
 | Tests and evaluations | Red | Existing UI tests do not cover tool contracts, adversarial inputs, cancellation, or deterministic results. |
 | Progressive enhancement | Green by design | Existing UI does not depend on WebMCP and must remain that way. |
 
+## Existing release proof remains required
+
+The manual validations already recorded in [`RELEASE_VALIDATION_RECORD.md`](./RELEASE_VALIDATION_RECORD.md) remain open release gates. They are **not known bugs**, and this WebMCP audit does not replace or close them.
+
+| Validation | Before command-facade work | Before enabling WebMCP in preview | Before production |
+| --- | --- | --- | --- |
+| Safari + VoiceOver and keyboard-only core workflow | Capture a baseline if the required environment is available. | Re-run affected core workflows to prove progressive enhancement caused no regression. | Required evidence. |
+| Chrome/Edge at 200% zoom | Capture a baseline. | Re-run editor and any WebMCP status/approval UI. | Required evidence. |
+| Firefox + NVDA when available | Optional baseline when the environment is available. | Confirm the unsupported/non-agent browser workflow remains unchanged. | Required when the agreed Windows environment is available; otherwise record the limitation and substitute coverage explicitly. |
+| Physical iPhone/iPad and Android touch testing | Not a blocker for command extraction. | Smoke the unchanged editor; WebMCP must not alter touch behavior. | Required evidence on both platform families. |
+| CSV interoperability with Google Sheets and Excel | Not a blocker because export is excluded from the initial tool catalog. | No WebMCP-specific rerun unless a tool later reads or exports tables. | Required evidence. |
+| PNG/SVG/PDF opening and A4/Letter printing | Not a blocker because download/export tools are excluded initially. | No WebMCP-specific rerun unless export becomes tool-accessible. | Required evidence. |
+| Cloudflare preview headers, persistence, downloads, privacy, logs, and rollback | Preserve the current preview checklist. | Required on the actual preview origin, including WebMCP Permissions Policy, feature flag, same-origin exposure, and rollback. | Required evidence and approval. |
+| Production deployment | Never implied by passing local or preview tests. | Not applicable. | Separate explicit owner approval is mandatory. |
+
+This creates two distinct gates:
+
+1. **Ready to start WebMCP preparation:** command-facade refactoring may begin while device, assistive-technology, export interoperability, and deployment approvals remain pending.
+2. **Ready to enable/release WebMCP:** relevant accessibility and browser regressions, the real Cloudflare preview, security/privacy behavior, observability, and rollback must have recorded evidence. Production still requires a separate approval.
+
+The authoritative status, tester, date, environment, result, and evidence links belong in `RELEASE_VALIDATION_RECORD.md`, not duplicated here.
+
 ## P0 requirements before registering tools
 
 ### WMCP-01: Introduce a typed editor-command facade
