@@ -9,9 +9,14 @@ const CONVERSION_COLUMN_GAP = 80;
 const MAX_CONCEPT_TEXT = 20_000;
 const MAX_CONCEPT_NODES = 1_900;
 
-type TableSelection = {
+export type TableSelection = {
   rowIndexes: number[];
   columnIndexes: number[];
+};
+
+export type TableIdSelection = {
+  rowIds?: string[];
+  columnIds?: string[];
 };
 
 function indexesForAddresses(data: TableNodeData, addresses: TableCellAddress[]): TableSelection {
@@ -126,8 +131,44 @@ export function canvasNodesFromTable(
   interaction: TableInteraction | null,
 ): EditorNode[] {
   if (tableNode.data.kind !== 'table') return [];
+  const selection = tableSelectionForCanvas(tableNode.data, interaction);
+  return canvasNodesFromTableIndexes(tableNode, existingNodes, selection);
+}
+
+export function canvasNodesFromTableSelection(
+  tableNode: EditorNode,
+  existingNodes: EditorNode[],
+  selection: TableIdSelection,
+  createId: () => string = () => crypto.randomUUID(),
+): EditorNode[] {
+  if (tableNode.data.kind !== 'table') return [];
   const data = tableNode.data;
-  const selection = tableSelectionForCanvas(data, interaction);
+  const selectedRows = selection.rowIds
+    ? new Set(selection.rowIds)
+    : null;
+  const selectedColumns = selection.columnIds
+    ? new Set(selection.columnIds)
+    : null;
+  return canvasNodesFromTableIndexes(tableNode, existingNodes, {
+    rowIndexes: data.rows
+      .map((row, index) => ({ row, index }))
+      .filter(({ row, index }) => selectedRows ? selectedRows.has(row.id) : !data.headerRow || index !== 0)
+      .map(({ index }) => index),
+    columnIndexes: data.columns
+      .map((column, index) => ({ column, index }))
+      .filter(({ column }) => !selectedColumns || selectedColumns.has(column.id))
+      .map(({ index }) => index),
+  }, createId);
+}
+
+function canvasNodesFromTableIndexes(
+  tableNode: EditorNode,
+  existingNodes: EditorNode[],
+  selection: TableSelection,
+  createId: () => string = () => crypto.randomUUID(),
+): EditorNode[] {
+  if (tableNode.data.kind !== 'table') return [];
+  const data = tableNode.data;
   if (!selection.rowIndexes.length || !selection.columnIndexes.length) return [];
   const nonHeaderColumns = selection.columnIndexes.filter((index) => !data.headerColumn || index !== 0);
   const titleColumnIndex = nonHeaderColumns[0] ?? selection.columnIndexes[0];
@@ -149,7 +190,7 @@ export function canvasNodesFromTable(
       position.y = collision.position.y + editorNodeDimensions(collision).height + CONVERSION_GAP;
       collision = [...existingNodes, ...generated].find((node) => node.id !== tableNode.id && overlaps(position, dimensions, node));
     }
-    const id = crypto.randomUUID();
+    const id = createId();
     generated.push({
       id,
       type: 'concept',
