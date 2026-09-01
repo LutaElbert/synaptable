@@ -53,6 +53,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Square,
+  Table2,
   Trash2,
   Type as TypeIcon,
   Undo2,
@@ -82,7 +83,19 @@ import {
   parseProjectBackup,
   serializeProjectBackup,
 } from './document-file';
-import { buildSvgDocument, downloadSvg } from './export-svg';
+import {
+  downloadBlob,
+  pngToPdfBlob,
+  resolveExportContent,
+  svgToPngBlob,
+  tableToCsv,
+  type ExportBackground,
+  type ExportFormat,
+  type ExportScope,
+  type PdfOrientation,
+  type PdfPageSize,
+} from './export-file';
+import { buildSvgExport } from './export-svg';
 import { EDITOR_FEATURES } from './features';
 import { fileToDataUrl, validateImageFile } from './image-file';
 import {
@@ -117,16 +130,79 @@ import {
   emptyRichText,
   normalizeRichTextDocument,
   replaceRichTextPlainText,
+  richTextFromPlainText,
   richTextIsEmpty,
   richTextToPlainText,
 } from './rich-text';
 import { RichTextView } from './RichTextView';
+import {
+  TableNode,
+  TableNodeActionContext,
+  type TableNavigationDirection,
+} from './TableNode';
+import {
+  nearestTableCellAfterStructureRemoval,
+  normalizeTableInteraction,
+  tableColumnRange,
+  tableInteractionCells,
+  tableInteractionFocus,
+  tableInteractionGrid,
+  tableInteractionTopLeft,
+  tableRowRange,
+  type TableInteraction,
+} from './table-interaction';
+import {
+  adjacentTableCell,
+  cloneTableData,
+  clipboardGridToHtml,
+  clipboardGridToText,
+  createTableData,
+  distributeTableColumns,
+  distributeTableRows,
+  duplicateTableColumn,
+  duplicateTableRow,
+  firstTableCell,
+  fitTableColumnToContent,
+  fitTableRowToContent,
+  growTableRowToContent,
+  insertTableColumn,
+  insertTableRow,
+  moveTableColumn,
+  moveTableRow,
+  pasteTableGrid,
+  removeTableColumn,
+  removeTableRow,
+  resizeTableColumn,
+  resizeTableRow,
+  resetTableSizing,
+  scaleTable,
+  sequentialTableCell,
+  tableCellAt,
+  tableCellHasContent,
+  tableDimensions,
+  tableFromNodes,
+  tableSearchText,
+  updateTableCell,
+  updateTableCells,
+  replaceTableCellPlainText,
+  TABLE_MAX_CELLS,
+  TABLE_MAX_COLUMNS,
+  TABLE_MAX_COLUMN_WIDTH,
+  TABLE_MAX_ROWS,
+  TABLE_MAX_ROW_HEIGHT,
+  TABLE_MIN_COLUMN_WIDTH,
+  TABLE_MIN_ROW_HEIGHT,
+  type ClipboardGrid,
+  type TableCellAddress,
+} from './table-grid';
 import type {
   ConversionOptions,
   EditorDocument,
   EditorEdge,
   EditorNode,
   RichTextDocument,
+  TableCellTone,
+  TableNodeData,
   VectorPathLayer,
 } from './types';
 import { vectorizeDataUrl } from './vectorize';
@@ -135,6 +211,7 @@ type EditorSnapshot = Pick<EditorDocument, 'nodes' | 'edges'>;
 type ToolMode = 'select' | 'hand';
 type SelectionOperation = 'replace' | 'add' | 'subtract';
 type MobilePanel = 'layers' | 'inspector' | null;
+type QuickTemplate = keyof typeof CONCEPT_TEMPLATES | 'table';
 type Toast = { id: number; message: string; tone: 'info' | 'success' | 'error' };
 const MAX_FILES_PER_IMPORT = 12;
 const InlineConceptEditor = lazy(() => import('./InlineConceptEditor'));
@@ -427,6 +504,7 @@ const nodeTypes = {
   concept: ConceptNode,
   raster: RasterNode,
   vector: VectorNode,
+  table: TableNode,
 };
 
 function cloneSnapshot(nodes: EditorNode[], edges: EditorEdge[]): EditorSnapshot {
@@ -537,18 +615,30 @@ function EditorInner() {
   });
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportScope, setExportScope] = useState<ExportScope>('canvas');
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('png');
+  const [exportPadding, setExportPadding] = useState(48);
+  const [exportBackground, setExportBackground] = useState<ExportBackground>('transparent');
+  const [exportScale, setExportScale] = useState(2);
+  const [pdfPageSize, setPdfPageSize] = useState<PdfPageSize>('fit');
+  const [pdfOrientation, setPdfOrientation] = useState<PdfOrientation>('auto');
+  const [pdfMargin, setPdfMargin] = useState(24);
+  const [pdfQuality, setPdfQuality] = useState(2);
+  const [exportBusy, setExportBusy] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [editingConceptId, setEditingConceptId] = useState<string | null>(null);
   const [editingConceptField, setEditingConceptField] = useState<'title' | 'body'>('title');
+  const [tableInteraction, setTableInteraction] = useState<TableInteraction | null>(null);
   const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [conceptTemplate, setConceptTemplate] = useState<keyof typeof CONCEPT_TEMPLATES>('idea');
+  const [conceptTemplate, setConceptTemplate] = useState<QuickTemplate>('idea');
   const [checkpoints, setCheckpoints] = useState<LocalCheckpoint[]>([]);
   const [autosaveRevision, setAutosaveRevision] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
   const exportDialogRef = useRef<HTMLDialogElement>(null);
+  const exportTriggerRef = useRef<HTMLButtonElement>(null);
   const backupDialogRef = useRef<HTMLDialogElement>(null);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -559,6 +649,7 @@ function EditorInner() {
   const resizeOriginRef = useRef<EditorSnapshot | null>(null);
   const fieldOriginRef = useRef<EditorSnapshot | null>(null);
   const conceptEditOriginRef = useRef<EditorSnapshot | null>(null);
+  const tableEditOriginRef = useRef<EditorSnapshot | null>(null);
   const layerSelectionAnchorRef = useRef<string | null>(null);
   const selectionOriginRef = useRef<Set<string>>(new Set());
   const selectionOperationRef = useRef<SelectionOperation>('replace');
@@ -657,7 +748,7 @@ function EditorInner() {
   }, [refreshHistoryState]);
 
   const getCurrentDocument = useCallback((): EditorDocument => ({
-    schemaVersion: 4,
+    schemaVersion: 6,
     title: titleRef.current,
     nodes: nodesRef.current.map((node) => ({ ...node, selected: false })),
     edges: edgesRef.current.map((edge) => ({ ...edge, selected: false })),
@@ -727,7 +818,10 @@ function EditorInner() {
 
   useEffect(() => {
     if (exportOpen && !exportDialogRef.current?.open) exportDialogRef.current?.showModal();
-    if (!exportOpen && exportDialogRef.current?.open) exportDialogRef.current.close();
+    if (!exportOpen && exportDialogRef.current?.open) {
+      exportDialogRef.current.close();
+      window.requestAnimationFrame(() => exportTriggerRef.current?.focus());
+    }
   }, [exportOpen]);
 
   useEffect(() => {
@@ -1155,7 +1249,37 @@ function EditorInner() {
     addConceptAt({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   }, [addConceptAt]);
 
+  const addTableNode = useCallback(() => {
+    const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    const id = crypto.randomUUID();
+    const data = createTableData();
+    const dimensions = tableDimensions(data);
+    recordHistory();
+    setNodes((current) => [
+      ...current.map((node) => ({ ...node, selected: false })),
+      {
+        id,
+        type: 'table',
+        position: { x: center.x - dimensions.width / 2, y: center.y - dimensions.height / 2 },
+        style: dimensions,
+        draggable: true,
+        deletable: true,
+        selected: true,
+        data,
+      },
+    ]);
+    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    setSelectedPath(null);
+    setTableInteraction({ mode: 'table', nodeId: id });
+    layerSelectionAnchorRef.current = id;
+    announce('Table added. Press Enter to edit the selected cell.', 'success');
+  }, [announce, recordHistory, screenToFlowPosition]);
+
   const addConceptFromTemplate = useCallback(() => {
+    if (conceptTemplate === 'table') {
+      addTableNode();
+      return;
+    }
     const template = CONCEPT_TEMPLATES[conceptTemplate];
     const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
     const id = crypto.randomUUID();
@@ -1184,7 +1308,7 @@ function EditorInner() {
       },
     }]);
     announce(`${template.eyebrow} template added.`, 'success');
-  }, [announce, conceptTemplate, recordHistory, screenToFlowPosition]);
+  }, [addTableNode, announce, conceptTemplate, recordHistory, screenToFlowPosition]);
 
   const selectedNodes = nodes.filter((node) => node.selected);
   const selectedNode = selectedNodes[0] ?? null;
@@ -1234,11 +1358,13 @@ function EditorInner() {
       selected: true,
       draggable: true,
       deletable: true,
-      data: {
-        ...structuredClone(node.data),
-        name: `${node.data.name} copy`,
-        locked: false,
-      },
+      data: node.data.kind === 'table'
+        ? cloneTableData(node.data)
+        : {
+            ...structuredClone(node.data),
+            name: `${node.data.name} copy`,
+            locked: false,
+          },
     }));
     const copiedEdges = edgesRef.current
       .filter((edge) => idMap.has(edge.source) && idMap.has(edge.target))
@@ -1260,6 +1386,42 @@ function EditorInner() {
     ]);
     layerSelectionAnchorRef.current = copies[0]?.id ?? null;
     announce(`${copies.length} ${copies.length === 1 ? 'layer' : 'layers'} duplicated.`, 'success');
+  }, [announce, recordHistory]);
+
+  const convertSelectedNodesToTable = useCallback(() => {
+    const selected = nodesRef.current.filter((node) => node.selected && !node.data.locked);
+    if (!selected.length) return;
+    try {
+      const id = crypto.randomUUID();
+      const readingOrder = [...selected].sort((leftNode, rightNode) => (
+        leftNode.position.y - rightNode.position.y || leftNode.position.x - rightNode.position.x
+      ));
+      const data = tableFromNodes(readingOrder);
+      const dimensions = tableDimensions(data);
+      const left = Math.min(...selected.map((node) => node.position.x));
+      const top = Math.min(...selected.map((node) => node.position.y));
+      const tableNode: EditorNode = {
+        id,
+        type: 'table',
+        position: { x: left + 36, y: top + 36 },
+        style: dimensions,
+        draggable: true,
+        deletable: true,
+        selected: true,
+        data,
+      };
+      recordHistory();
+      setNodes((current) => [
+        ...current.map((node) => ({ ...node, selected: false })),
+        tableNode,
+      ]);
+      setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+      setTableInteraction({ mode: 'table', nodeId: id });
+      layerSelectionAnchorRef.current = id;
+      announce(`Organized ${selected.length} ${selected.length === 1 ? 'layer' : 'layers'} into table rows. Originals were kept.`, 'success');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The selected layers could not be organized.', 'error');
+    }
   }, [announce, recordHistory]);
 
   const setSelectedNodesLocked = useCallback((locked: boolean) => {
@@ -1643,11 +1805,13 @@ function EditorInner() {
       selected: true,
       draggable: true,
       deletable: true,
-      data: {
-        ...structuredClone(selected.data),
-        name: `${selected.data.name} copy`,
-        locked: false,
-      },
+      data: selected.data.kind === 'table'
+        ? cloneTableData(selected.data)
+        : {
+            ...structuredClone(selected.data),
+            name: `${selected.data.name} copy`,
+            locked: false,
+          },
     };
     recordHistory();
     setNodes((current) => [
@@ -1698,7 +1862,27 @@ function EditorInner() {
     }
   }, [announce, refreshHistoryState]);
 
-  const openExport = useCallback(() => setExportOpen(true), []);
+  const openExport = useCallback(() => {
+    const selected = nodesRef.current.filter((node) => node.selected && !node.hidden);
+    const activeTable = tableInteraction
+      ? nodesRef.current.find((node) => node.id === tableInteraction.nodeId && node.data.kind === 'table')
+      : null;
+    const activeCells = activeTable?.data.kind === 'table'
+      ? tableInteractionCells(activeTable.data, tableInteraction)
+      : [];
+    if (activeTable && activeCells.length) {
+      setExportScope('table-cells');
+      setExportFormat('csv');
+    } else if (selected.length) {
+      setExportScope('selection');
+      setExportFormat('png');
+    } else {
+      setExportScope('canvas');
+      setExportFormat('png');
+    }
+    setExportBackground('white');
+    setExportOpen(true);
+  }, [tableInteraction]);
   const openBackup = useCallback(() => setBackupOpen(true), []);
   const performBackup = useCallback(() => {
     try {
@@ -1769,19 +1953,58 @@ function EditorInner() {
     }
   }, [announce, fitView, queueDocumentSave, refreshHistoryState]);
 
-  const performExport = useCallback(() => {
+  const performExport = useCallback(async () => {
+    if (exportBusy) return;
+    setExportBusy(true);
     try {
       const collapsed = collapsedDescendantIds(nodesRef.current, edgesRef.current);
       const exportNodes = nodesRef.current.map((node) => collapsed.has(node.id) ? { ...node, hidden: true } : node);
       const exportEdges = edgesRef.current.filter((edge) => !collapsed.has(edge.source) && !collapsed.has(edge.target));
-      const svg = buildSvgDocument(exportNodes, exportEdges);
-      downloadSvg(svg, safeFileBase(title));
+      const activeTable = tableInteraction
+        ? exportNodes.find((node) => node.id === tableInteraction.nodeId && node.data.kind === 'table')
+        : null;
+      const tableSelection = activeTable?.data.kind === 'table'
+        ? { nodeId: activeTable.id, addresses: tableInteractionCells(activeTable.data, tableInteraction) }
+        : null;
+      const content = resolveExportContent(exportNodes, exportEdges, exportScope, tableSelection);
+      const fileBase = safeFileBase(titleRef.current);
+
+      if (exportFormat === 'csv') {
+        if (!content.table) throw new Error('CSV export requires one table or a selected cell range.');
+        downloadBlob(new Blob([tableToCsv(content.table)], { type: 'text/csv;charset=utf-8' }), fileBase, 'csv');
+      } else {
+        const background = exportFormat === 'pdf' ? 'white' : exportBackground;
+        const visual = buildSvgExport(content.nodes, content.edges, { padding: exportPadding, background });
+        if (exportFormat === 'svg') {
+          downloadBlob(new Blob([visual.svg], { type: 'image/svg+xml;charset=utf-8' }), fileBase, 'svg');
+        } else {
+          const png = await svgToPngBlob(
+            visual.svg,
+            visual.width,
+            visual.height,
+            exportFormat === 'pdf' ? pdfQuality : exportScale,
+          );
+          if (exportFormat === 'png') {
+            downloadBlob(png.blob, fileBase, 'png');
+            if (png.dimensions.reduced) announce('PNG size was reduced to fit browser safety limits.');
+          } else {
+            const pdf = await pngToPdfBlob(png.blob, visual.width, visual.height, {
+              pageSize: pdfPageSize,
+              orientation: pdfOrientation,
+              margin: pdfMargin,
+            });
+            downloadBlob(pdf, fileBase, 'pdf');
+          }
+        }
+      }
       setExportOpen(false);
-      announce('Editable SVG exported.', 'success');
+      announce(`${exportFormat.toUpperCase()} exported.`, 'success');
     } catch (error) {
       announce(error instanceof Error ? error.message : 'Export failed.', 'error');
+    } finally {
+      setExportBusy(false);
     }
-  }, [announce, title]);
+  }, [announce, exportBackground, exportBusy, exportFormat, exportPadding, exportScale, exportScope, pdfMargin, pdfOrientation, pdfPageSize, pdfQuality, tableInteraction]);
 
   const hasChildren = useCallback((id: string) => edgesRef.current.some((edge) => edge.source === id), []);
 
@@ -1790,6 +2013,343 @@ function EditorInner() {
       ? { ...node, data: { ...node.data, collapsed: !node.data.collapsed } }
       : node);
   }, [updateNode]);
+
+  const focusTableCell = useCallback((nodeId: string, address: TableCellAddress | null) => {
+    if (!address) return;
+    window.requestAnimationFrame(() => {
+      const tableSelector = `.react-flow__node[data-id="${CSS.escape(nodeId)}"]`;
+      if (document.querySelector(`${tableSelector} .table-cell-editor`)) return;
+      const selector = `[data-table-node-id="${CSS.escape(nodeId)}"][data-table-row-id="${CSS.escape(address.rowId)}"][data-table-column-id="${CSS.escape(address.columnId)}"]`;
+      document.querySelector<HTMLElement>(selector)?.focus();
+    });
+  }, []);
+
+  const focusTableNode = useCallback((nodeId: string) => {
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(nodeId)}"]`)?.focus();
+    });
+  }, []);
+
+  const selectWholeTable = useCallback((id: string) => {
+    tableEditOriginRef.current = null;
+    setTableInteraction({ mode: 'table', nodeId: id });
+    const selected = nodesRef.current.filter((node) => node.selected);
+    if (selected.length !== 1 || selected[0].id !== id) selectNode(id);
+    focusTableNode(id);
+  }, [focusTableNode, selectNode]);
+
+  const selectTableCell = useCallback((id: string, address: TableCellAddress, extend = false) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || !tableCellAt(node.data, address)) return;
+    setTableInteraction((current) => {
+      const anchor = extend && current?.nodeId === id && current.mode === 'cell'
+        ? current.anchor
+        : address;
+      return { mode: 'cell', nodeId: id, anchor, focus: address };
+    });
+    const selected = nodesRef.current.filter((item) => item.selected);
+    if (selected.length !== 1 || selected[0].id !== id) selectNode(id);
+    focusTableCell(id, address);
+  }, [focusTableCell, selectNode]);
+
+  const selectTableRow = useCallback((id: string, rowId: string, extend = false) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || !node.data.rows.some((row) => row.id === rowId)) return;
+    const data = node.data;
+    setTableInteraction((current) => {
+      const anchor = extend && current?.nodeId === id && current.mode === 'row'
+        ? current.rowIds[0]
+        : rowId;
+      return { mode: 'row', nodeId: id, rowIds: tableRowRange(data, anchor, rowId) };
+    });
+  }, []);
+
+  const selectTableColumn = useCallback((id: string, columnId: string, extend = false) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || !node.data.columns.some((column) => column.id === columnId)) return;
+    const data = node.data;
+    setTableInteraction((current) => {
+      const anchor = extend && current?.nodeId === id && current.mode === 'column'
+        ? current.columnIds[0]
+        : columnId;
+      return { mode: 'column', nodeId: id, columnIds: tableColumnRange(data, anchor, columnId) };
+    });
+  }, []);
+
+  const beginTableCellEdit = useCallback((
+    id: string,
+    address: TableCellAddress,
+    replacement?: string,
+  ) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || !tableCellAt(node.data, address)) return;
+    if (!tableEditOriginRef.current) {
+      tableEditOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
+    }
+    if (replacement !== undefined) {
+      const nextNodes = nodesRef.current.map((item) => item.id === id && item.data.kind === 'table'
+        ? { ...item, data: updateTableCell(item.data, address, (cell) => replaceTableCellPlainText(cell, replacement)) }
+        : item);
+      nodesRef.current = nextNodes;
+      setNodes(nextNodes);
+    }
+    setTableInteraction({
+      mode: 'editing',
+      nodeId: id,
+      cell: address,
+      initialContent: replacement === undefined ? undefined : richTextFromPlainText(replacement.slice(0, 2_000)),
+    });
+    const selected = nodesRef.current.filter((item) => item.selected);
+    if (selected.length !== 1 || selected[0].id !== id) selectNode(id);
+  }, [selectNode]);
+
+  const updateTableCellContent = useCallback((id: string, address: TableCellAddress, content: RichTextDocument) => {
+    setNodes((current) => current.map((node) => node.id === id && node.data.kind === 'table'
+      ? {
+          ...node,
+          data: updateTableCell(node.data, address, (cell) => ({
+            ...cell,
+            content: richTextToPlainText(content).length <= 2_000
+              ? content
+              : richTextFromPlainText(richTextToPlainText(content).slice(0, 2_000)),
+          })),
+        }
+      : node));
+  }, []);
+
+  const commitTableCellEdit = useCallback(() => {
+    const origin = tableEditOriginRef.current;
+    const active = tableInteraction?.mode === 'editing' ? tableInteraction : null;
+    let currentNodes = nodesRef.current;
+    if (active) {
+      const grownNodes = currentNodes.map((node) => {
+        if (node.id !== active.nodeId || node.data.kind !== 'table') return node;
+        const cell = tableCellAt(node.data, active.cell);
+        if (!cell) return node;
+        const data = growTableRowToContent(node.data, cell.rowIndex);
+        return data === node.data
+          ? node
+          : { ...node, data, style: { ...node.style, ...tableDimensions(data) } };
+      });
+      if (grownNodes.some((node, index) => node !== currentNodes[index])) {
+        currentNodes = grownNodes;
+        nodesRef.current = currentNodes;
+        setNodes(currentNodes);
+      }
+    }
+    if (origin && active) {
+      const before = origin.nodes.find((node) => node.id === active.nodeId);
+      const after = currentNodes.find((node) => node.id === active.nodeId);
+      if (before && after && JSON.stringify(before.data) !== JSON.stringify(after.data)) recordHistory(origin);
+    }
+    tableEditOriginRef.current = null;
+    if (!active) return;
+    const next: TableInteraction = { mode: 'cell', nodeId: active.nodeId, anchor: active.cell, focus: active.cell };
+    setTableInteraction(next);
+    focusTableCell(active.nodeId, active.cell);
+  }, [focusTableCell, recordHistory, tableInteraction]);
+
+  const removeSelectedTableStructure = useCallback((
+    id: string,
+    kind: 'row' | 'column',
+    indexes: number[],
+  ) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || !indexes.length) return;
+    const before = node.data;
+    const descending = [...new Set(indexes)].sort((left, right) => right - left);
+    if (kind === 'row' && before.rows.length - descending.length < 1) return;
+    if (kind === 'column' && before.columns.length - descending.length < 1) return;
+    const after = descending.reduce(
+      (data, index) => kind === 'row' ? removeTableRow(data, index) : removeTableColumn(data, index),
+      before,
+    );
+    const previousFocus = tableInteraction?.nodeId === id
+      ? tableInteractionFocus(before, tableInteraction)
+      : firstTableCell(before);
+    const nextFocus = nearestTableCellAfterStructureRemoval(before, after, previousFocus);
+    recordHistory();
+    const nextNodes = nodesRef.current.map((item) => item.id === id
+      ? { ...item, data: after, style: { ...item.style, ...tableDimensions(after) } }
+      : item);
+    nodesRef.current = nextNodes;
+    setNodes(nextNodes);
+    setTableInteraction({ mode: 'cell', nodeId: id, anchor: nextFocus, focus: nextFocus });
+    focusTableCell(id, nextFocus);
+    announce(`Deleted ${descending.length} table ${kind}${descending.length === 1 ? '' : 's'}.`);
+  }, [announce, focusTableCell, recordHistory, tableInteraction]);
+
+  const cancelTableCellEdit = useCallback(() => {
+    const origin = tableEditOriginRef.current;
+    const active = tableInteraction?.mode === 'editing' ? tableInteraction : null;
+    if (origin) {
+      nodesRef.current = origin.nodes;
+      edgesRef.current = origin.edges;
+      setNodes(origin.nodes);
+      setEdges(origin.edges);
+    }
+    tableEditOriginRef.current = null;
+    if (!active) return;
+    const next: TableInteraction = { mode: 'cell', nodeId: active.nodeId, anchor: active.cell, focus: active.cell };
+    setTableInteraction(next);
+    focusTableCell(active.nodeId, active.cell);
+  }, [focusTableCell, tableInteraction]);
+
+  const clearSelectedTableCells = useCallback((id: string) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || tableInteraction?.nodeId !== id) return;
+    const data = node.data;
+    const addresses = tableInteractionCells(data, tableInteraction);
+    if (!addresses.length || !addresses.some((address) => {
+      const cell = tableCellAt(data, address)?.cell;
+      return cell ? tableCellHasContent(cell) : false;
+    })) return;
+    recordHistory();
+    setNodes((current) => current.map((item) => item.id === id && item.data.kind === 'table'
+      ? { ...item, data: updateTableCells(item.data, addresses, (cell) => replaceTableCellPlainText(cell, '')) }
+      : item));
+    announce(`Cleared ${addresses.length} ${addresses.length === 1 ? 'cell' : 'cells'}.`);
+  }, [announce, recordHistory, tableInteraction]);
+
+  const copySelectedTableCells = useCallback((id: string, clipboardData: DataTransfer, cut: boolean) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || tableInteraction?.nodeId !== id) return;
+    const data = node.data;
+    const grid = tableInteractionGrid(data, tableInteraction);
+    const addresses = tableInteractionCells(data, tableInteraction);
+    if (!grid.length || !addresses.length) return;
+    clipboardData.setData('text/plain', clipboardGridToText(grid));
+    clipboardData.setData('text/html', clipboardGridToHtml(grid));
+    if (cut && addresses.some((address) => {
+      const cell = tableCellAt(data, address)?.cell;
+      return cell ? tableCellHasContent(cell) : false;
+    })) {
+      recordHistory();
+      setNodes((current) => current.map((item) => item.id === id && item.data.kind === 'table'
+        ? { ...item, data: updateTableCells(item.data, addresses, (cell) => replaceTableCellPlainText(cell, '')) }
+        : item));
+    }
+    const columns = Math.max(1, ...grid.map((row) => row.length));
+    announce(`${cut ? 'Cut' : 'Copied'} ${grid.length} × ${columns} cells.`, 'success');
+  }, [announce, recordHistory, tableInteraction]);
+
+  const navigateTableCell = useCallback((
+    id: string,
+    address: TableCellAddress,
+    direction: TableNavigationDirection,
+    extend = false,
+  ) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table') return;
+    let data = node.data;
+    const current = tableCellAt(data, address);
+    if (!current) return;
+    let target: TableCellAddress | null;
+    if (direction === 'next' || direction === 'previous') {
+      target = sequentialTableCell(data, address, direction === 'next' ? 1 : -1);
+    } else if (direction === 'row-start' || direction === 'row-end') {
+      target = {
+        rowId: current.row.id,
+        columnId: data.columns[direction === 'row-start' ? 0 : data.columns.length - 1].id,
+      };
+    } else if (direction === 'table-start' || direction === 'table-end') {
+      target = direction === 'table-start'
+        ? firstTableCell(data)
+        : { rowId: data.rows.at(-1)!.id, columnId: data.columns.at(-1)!.id };
+    } else {
+      target = adjacentTableCell(
+        data,
+        address,
+        direction === 'up' ? -1 : direction === 'down' ? 1 : 0,
+        direction === 'left' ? -1 : direction === 'right' ? 1 : 0,
+      );
+    }
+    if (!target && direction === 'next') {
+      try {
+        recordHistory();
+        data = insertTableRow(data, data.rows.length);
+        const dimensions = tableDimensions(data);
+        const nextRow = data.rows.at(-1)!;
+        target = { rowId: nextRow.id, columnId: data.columns[0].id };
+        setNodes((currentNodes) => currentNodes.map((item) => item.id === id
+          ? { ...item, data, style: { ...item.style, ...dimensions } }
+          : item));
+        announce('Added a new table row.');
+      } catch (error) {
+        announce(error instanceof Error ? error.message : 'The row could not be added.', 'error');
+        return;
+      }
+    }
+    if (!target) target = address;
+    const anchor = extend && tableInteraction?.nodeId === id && tableInteraction.mode === 'cell'
+      ? tableInteraction.anchor
+      : target;
+    const next: TableInteraction = { mode: 'cell', nodeId: id, anchor, focus: target };
+    setTableInteraction(next);
+    focusTableCell(id, target);
+  }, [announce, focusTableCell, recordHistory, tableInteraction]);
+
+  const pasteIntoTable = useCallback((id: string, address: TableCellAddress, grid: ClipboardGrid) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked) return;
+    try {
+      const start = tableInteraction?.nodeId === id
+        ? tableInteractionTopLeft(node.data, tableInteraction) ?? address
+        : address;
+      const startCell = tableCellAt(node.data, start);
+      if (!startCell) return;
+      const data = pasteTableGrid(node.data, start, grid);
+      const dimensions = tableDimensions(data);
+      recordHistory(tableEditOriginRef.current ?? undefined);
+      tableEditOriginRef.current = null;
+      setNodes((current) => current.map((item) => item.id === id
+        ? { ...item, data, style: { ...item.style, ...dimensions } }
+        : item));
+      const pastedColumns = Math.max(1, ...grid.map((row) => row.length));
+      const focus = {
+        rowId: data.rows[Math.min(data.rows.length - 1, startCell.rowIndex + grid.length - 1)].id,
+        columnId: data.columns[Math.min(data.columns.length - 1, startCell.columnIndex + pastedColumns - 1)].id,
+      };
+      setTableInteraction({ mode: 'cell', nodeId: id, anchor: start, focus });
+      announce(`Pasted ${grid.length} × ${pastedColumns} cells.`, 'success');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The cells could not be pasted.', 'error');
+    }
+  }, [announce, recordHistory, tableInteraction]);
+
+  const insertTableRowDirect = useCallback((id: string, index: number) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked) return;
+    try {
+      const data = insertTableRow(node.data, index);
+      const inserted = data.rows[Math.max(0, Math.min(index, data.rows.length - 1))];
+      recordHistory();
+      setNodes((current) => current.map((item) => item.id === id
+        ? { ...item, data, style: { ...item.style, ...tableDimensions(data) } }
+        : item));
+      setTableInteraction({ mode: 'row', nodeId: id, rowIds: [inserted.id] });
+      announce('Added a table row.');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The row could not be added.', 'error');
+    }
+  }, [announce, recordHistory]);
+
+  const insertTableColumnDirect = useCallback((id: string, index: number) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked) return;
+    try {
+      const data = insertTableColumn(node.data, index);
+      const inserted = data.columns[Math.max(0, Math.min(index, data.columns.length - 1))];
+      recordHistory();
+      setNodes((current) => current.map((item) => item.id === id
+        ? { ...item, data, style: { ...item.style, ...tableDimensions(data) } }
+        : item));
+      setTableInteraction({ mode: 'column', nodeId: id, columnIds: [inserted.id] });
+      announce('Added a table column.');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The column could not be added.', 'error');
+    }
+  }, [announce, recordHistory]);
 
   const nodeActionValue = useMemo<NodeActionContextValue>(
     () => ({
@@ -1860,6 +2420,168 @@ function EditorInner() {
     ],
   );
 
+  const tableNodeActionValue = useMemo(
+    () => ({
+      interaction: tableInteraction,
+      selectedNodeCount,
+      selectTable: selectWholeTable,
+      selectCell: selectTableCell,
+      selectRow: selectTableRow,
+      selectColumn: selectTableColumn,
+      beginCellEdit: beginTableCellEdit,
+      updateCellContent: updateTableCellContent,
+      commitCellEdit: commitTableCellEdit,
+      cancelCellEdit: cancelTableCellEdit,
+      clearCells: clearSelectedTableCells,
+      copyCells: copySelectedTableCells,
+      navigateCell: navigateTableCell,
+      pasteGrid: pasteIntoTable,
+      insertRow: insertTableRowDirect,
+      insertColumn: insertTableColumnDirect,
+      recordResizeStart: () => {
+        if (!resizeOriginRef.current) {
+          resizeOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
+        }
+      },
+      recordResize: (id: string, dimensions: ResizeParams) => {
+        if (!resizeOriginRef.current) return;
+        const resizedNodes = nodesRef.current.map((node) => {
+          if (node.id !== id || node.data.kind !== 'table') return node;
+          const data = scaleTable(node.data, dimensions.width, dimensions.height);
+          const size = tableDimensions(data);
+          return {
+            ...node,
+            position: { x: dimensions.x, y: dimensions.y },
+            data,
+            style: { ...node.style, ...size },
+          };
+        });
+        nodesRef.current = resizedNodes;
+        setNodes(resizedNodes);
+      },
+      resizeColumn: (id: string, columnIndex: number, width: number) => {
+        if (!resizeOriginRef.current) return;
+        const resizedNodes = nodesRef.current.map((node) => {
+          if (node.id !== id || node.data.kind !== 'table') return node;
+          const data = resizeTableColumn(node.data, columnIndex, width);
+          return { ...node, data, style: { ...node.style, ...tableDimensions(data) } };
+        });
+        nodesRef.current = resizedNodes;
+        setNodes(resizedNodes);
+      },
+      resizeRow: (id: string, rowIndex: number, height: number) => {
+        if (!resizeOriginRef.current) return;
+        const resizedNodes = nodesRef.current.map((node) => {
+          if (node.id !== id || node.data.kind !== 'table') return node;
+          const data = resizeTableRow(node.data, rowIndex, height);
+          return { ...node, data, style: { ...node.style, ...tableDimensions(data) } };
+        });
+        nodesRef.current = resizedNodes;
+        setNodes(resizedNodes);
+      },
+      cancelResize: () => {
+        const origin = resizeOriginRef.current;
+        if (!origin) return;
+        nodesRef.current = origin.nodes;
+        edgesRef.current = origin.edges;
+        setNodes(origin.nodes);
+        setEdges(origin.edges);
+        resizeOriginRef.current = null;
+      },
+      recordResizeEnd: (id: string) => {
+        const origin = resizeOriginRef.current;
+        const originNode = origin?.nodes.find((node) => node.id === id);
+        const currentNode = nodesRef.current.find((node) => node.id === id);
+        const changed = Boolean(originNode && currentNode && (
+          JSON.stringify(originNode.data) !== JSON.stringify(currentNode.data)
+          || originNode.position.x !== currentNode.position.x
+          || originNode.position.y !== currentNode.position.y
+        ));
+        if (origin && changed) recordHistory(origin);
+        resizeOriginRef.current = null;
+      },
+    }),
+    [
+      beginTableCellEdit,
+      cancelTableCellEdit,
+      clearSelectedTableCells,
+      commitTableCellEdit,
+      copySelectedTableCells,
+      insertTableColumnDirect,
+      insertTableRowDirect,
+      navigateTableCell,
+      pasteIntoTable,
+      recordHistory,
+      selectedNodeCount,
+      selectTableColumn,
+      selectTableCell,
+      selectTableRow,
+      selectWholeTable,
+      tableInteraction,
+      updateTableCellContent,
+    ],
+  );
+
+  useEffect(() => {
+    const beginTableFromKeyboard = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.key !== 'Enter') return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input, textarea, button, [contenteditable="true"], [data-table-node-id]')) return;
+      if (!target?.closest('.react-flow__node')) return;
+      const selected = nodesRef.current.find((node) => node.selected && node.data.kind === 'table');
+      if (!selected || selected.data.kind !== 'table' || selected.data.locked) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const address = tableInteraction?.nodeId === selected.id
+        ? tableInteractionFocus(selected.data, tableInteraction) ?? firstTableCell(selected.data)
+        : firstTableCell(selected.data);
+      setTableInteraction({ mode: 'cell', nodeId: selected.id, anchor: address, focus: address });
+      focusTableCell(selected.id, address);
+    };
+    window.addEventListener('keydown', beginTableFromKeyboard, true);
+    return () => window.removeEventListener('keydown', beginTableFromKeyboard, true);
+  }, [focusTableCell, tableInteraction]);
+
+  useEffect(() => {
+    const stepOutOfTable = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key !== 'Escape' || !tableInteraction || tableInteraction.mode === 'editing') return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (tableInteraction.mode !== 'table') {
+        setTableInteraction({ mode: 'table', nodeId: tableInteraction.nodeId });
+        focusTableNode(tableInteraction.nodeId);
+        return;
+      }
+      setTableInteraction(null);
+      setNodes((current) => current.map((node) => node.selected ? { ...node, selected: false } : node));
+      setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+      (document.activeElement as HTMLElement | null)?.blur();
+    };
+    window.addEventListener('keydown', stepOutOfTable, true);
+    return () => window.removeEventListener('keydown', stepOutOfTable, true);
+  }, [focusTableNode, tableInteraction]);
+
+  useEffect(() => {
+    if (!tableInteraction) return;
+    const selected = nodes.filter((item) => item.selected);
+    const node = nodes.find((item) => item.id === tableInteraction.nodeId);
+    if (!node || node.data.kind !== 'table' || selected.length !== 1 || selected[0].id !== node.id) {
+      tableEditOriginRef.current = null;
+      const frame = window.requestAnimationFrame(() => setTableInteraction(null));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    const data = node.data;
+    const next = normalizeTableInteraction(data, tableInteraction);
+    if (next === tableInteraction) return;
+    const frame = window.requestAnimationFrame(() => {
+      setTableInteraction(next);
+      focusTableCell(node.id, tableInteractionFocus(data, next));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusTableCell, nodes, tableInteraction]);
+
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
   const layerNodes = [...nodes].reverse().filter((node) => {
     if (!normalizedSearch) return true;
@@ -1868,6 +2590,7 @@ function EditorInner() {
       node.data.kind === 'concept' ? node.data.label : '',
       node.data.kind === 'concept' ? node.data.eyebrow : '',
       node.data.kind === 'concept' ? richTextToPlainText(node.data.body) : '',
+      node.data.kind === 'table' ? tableSearchText(node.data) : '',
     ].join(' ').toLocaleLowerCase();
     return searchable.includes(normalizedSearch);
   });
@@ -1936,6 +2659,7 @@ function EditorInner() {
   return (
     <SelectedNodeCountContext.Provider value={selectedNodeCount}>
       <NodeActionContext.Provider value={nodeActionValue}>
+        <TableNodeActionContext.Provider value={tableNodeActionValue}>
         <main
         className="editor-shell"
         aria-label="SynapTable diagram editor"
@@ -2002,8 +2726,8 @@ function EditorInner() {
             >
               <Redo2 size={16} />
             </button>
-            <button type="button" className="primary-button" aria-label="Export SVG" onClick={openExport}>
-              <Download size={14} /> <span className="button-label">Export SVG</span>
+            <button ref={exportTriggerRef} type="button" className="primary-button" aria-label="Export canvas" onClick={openExport}>
+              <Download size={14} /> <span className="button-label">Export</span>
             </button>
           </div>
         </header>
@@ -2013,12 +2737,13 @@ function EditorInner() {
             <div><span className="eyebrow">Document</span><h1 id="layers-title">Layers</h1></div>
             <div className="panel-heading-actions">
               <button type="button" className="icon-button" aria-label="Add concept layer" onClick={addConceptNode}><Plus size={16} /></button>
+              {EDITOR_FEATURES.tableLayer ? <button type="button" className="icon-button" aria-label="Add table layer" onClick={addTableNode}><Table2 size={15} /></button> : null}
               <button type="button" className="icon-button panel-close-button" aria-label="Close layers panel" onClick={() => setMobilePanel(null)}><X size={16} /></button>
             </div>
           </div>
           <div className="layer-search">
             <Search size={13} aria-hidden="true" />
-            <label htmlFor="layer-search-input" className="visually-hidden">Search layers and concept text</label>
+            <label htmlFor="layer-search-input" className="visually-hidden">Search layers, notes, and table cells</label>
             <input
               id="layer-search-input"
               type="search"
@@ -2033,11 +2758,12 @@ function EditorInner() {
           </div>
           <div className="template-picker">
             <label htmlFor="concept-template">Quick template</label>
-            <select id="concept-template" value={conceptTemplate} onChange={(event) => setConceptTemplate(event.target.value as keyof typeof CONCEPT_TEMPLATES)}>
+            <select id="concept-template" value={conceptTemplate} onChange={(event) => setConceptTemplate(event.target.value as QuickTemplate)}>
               <option value="idea">Idea</option>
               <option value="task">Task checklist</option>
               <option value="decision">Decision</option>
               <option value="question">Open question</option>
+              {EDITOR_FEATURES.tableLayer ? <option value="table">Table 3 × 3</option> : null}
             </select>
             <button type="button" onClick={addConceptFromTemplate}><Plus size={12} /> Add</button>
           </div>
@@ -2066,7 +2792,7 @@ function EditorInner() {
                     {renamingLayerId === node.id ? (
                       <div className="layer-main layer-renaming">
                         <span className="layer-icon" aria-hidden="true">
-                          {node.data.kind === 'raster' ? <ImageIcon size={12} /> : node.data.kind === 'vector' ? <Shapes size={12} /> : <Square size={11} />}
+                          {node.data.kind === 'raster' ? <ImageIcon size={12} /> : node.data.kind === 'vector' ? <Shapes size={12} /> : node.data.kind === 'table' ? <Table2 size={12} /> : <Square size={11} />}
                         </span>
                         <input
                           aria-label="Layer name"
@@ -2117,7 +2843,7 @@ function EditorInner() {
                         }}
                       >
                         <span className="layer-icon" aria-hidden="true">
-                          {node.data.kind === 'raster' ? <ImageIcon size={12} /> : node.data.kind === 'vector' ? <Shapes size={12} /> : <Square size={11} />}
+                          {node.data.kind === 'raster' ? <ImageIcon size={12} /> : node.data.kind === 'vector' ? <Shapes size={12} /> : node.data.kind === 'table' ? <Table2 size={12} /> : <Square size={11} />}
                         </span>
                         <span className="layer-name">{node.data.name}</span>
                       </button>
@@ -2219,7 +2945,10 @@ function EditorInner() {
             }}
             onSelectionStart={handleSelectionStart}
             onSelectionEnd={handleSelectionEnd}
-            onPaneClick={() => setSelectedPath(null)}
+            onPaneClick={() => {
+              setSelectedPath(null);
+              setTableInteraction(null);
+            }}
             onMove={(_, viewport) => setViewportZoom(viewport.zoom)}
             fitView
             fitViewOptions={{ padding: 0.22 }}
@@ -2245,7 +2974,7 @@ function EditorInner() {
             nodesFocusable
             edgesFocusable
             selectNodesOnDrag={toolMode === 'select' && !temporaryPanActive}
-            deleteKeyCode={['Backspace', 'Delete']}
+            deleteKeyCode={tableInteraction && tableInteraction.mode !== 'table' ? null : ['Backspace', 'Delete']}
             ariaLabelConfig={{
               'controls.ariaLabel': 'Canvas controls',
               'minimap.ariaLabel': 'Diagram overview',
@@ -2271,6 +3000,13 @@ function EditorInner() {
                   disabled={selectedUnlockedCount === 0}
                   onClick={duplicateSelectedNodes}
                 ><Copy size={14} /></button>
+                {EDITOR_FEATURES.tableLayer ? <button
+                  type="button"
+                  aria-label="Organize selected layers into a table"
+                  title="Organize into table"
+                  disabled={selectedUnlockedCount === 0}
+                  onClick={convertSelectedNodesToTable}
+                ><Table2 size={14} /></button> : null}
                 <button
                   type="button"
                   aria-label="Align selected layers left"
@@ -2320,13 +3056,14 @@ function EditorInner() {
               position="bottom-left"
               pannable
               zoomable
-              nodeColor={(node) => node.type === 'raster' ? '#d8dbe2' : node.type === 'vector' ? '#635bff' : '#8a8e98'}
+              nodeColor={(node) => node.type === 'raster' ? '#d8dbe2' : node.type === 'vector' ? '#635bff' : node.type === 'table' ? '#6c67db' : '#8a8e98'}
             />
             <Panel position="top-center" className="canvas-toolbar" aria-label="Canvas tools">
               <button type="button" className={`tool ${toolMode === 'select' && !temporaryPanActive ? 'active' : ''}`} aria-label="Select tool, V" aria-pressed={toolMode === 'select' && !temporaryPanActive} title="Select layers (V) · Drag empty canvas to select" onClick={() => setToolMode('select')}><MousePointer2 size={16} /></button>
               <button type="button" className={`tool ${toolMode === 'hand' || temporaryPanActive ? 'active' : ''}`} aria-label="Hand tool, H" aria-pressed={toolMode === 'hand' || temporaryPanActive} title="Pan canvas (H) · Hold Space from Select" onClick={() => setToolMode('hand')}><Hand size={16} /></button>
               <span className="toolbar-divider" />
               <button type="button" className="tool" aria-label="Add concept" onClick={addConceptNode}><TypeIcon size={16} /></button>
+              {EDITOR_FEATURES.tableLayer ? <button type="button" className="tool" aria-label="Add table" onClick={addTableNode}><Table2 size={16} /></button> : null}
               <button type="button" className="tool" aria-label="Connect nodes by dragging their handles" onClick={() => announce('Drag from a node handle to another node to create a connector.')}><Waypoints size={16} /></button>
               <button type="button" className="tool" aria-label="Tidy diagram layout" onClick={tidyDiagram}><Sparkles size={16} /></button>
               <button type="button" className="tool" aria-label="Import image" onClick={() => fileInputRef.current?.click()}><Upload size={16} /></button>
@@ -2424,6 +3161,7 @@ function EditorInner() {
                 : node)}
               onOpacity={(opacity) => updateSelectedNodes((node) => ({ ...node, data: { ...node.data, opacity } }))}
               onAlign={alignSelectedNodes}
+              onConvert={EDITOR_FEATURES.tableLayer ? convertSelectedNodesToTable : undefined}
               onDuplicate={duplicateSelectedNodes}
               onLock={() => setSelectedNodesLocked(true)}
               onUnlock={() => setSelectedNodesLocked(false)}
@@ -2432,9 +3170,11 @@ function EditorInner() {
           ) : selectedNode ? (
             <NodeInspector
               node={selectedNode}
+              tableInteraction={tableInteraction}
               conversionOptions={conversionOptions}
               onConversionOptionsChange={setConversionOptions}
               onUpdate={updateNode}
+              onRemoveTableStructure={removeSelectedTableStructure}
               onVectorize={() => void vectorizeImage(selectedNode.id)}
               onCancelVectorize={cancelVectorization}
               onDuplicate={duplicateSelected}
@@ -2469,23 +3209,114 @@ function EditorInner() {
           ref={exportDialogRef}
           className="export-dialog"
           aria-labelledby="export-title"
-          onClose={() => setExportOpen(false)}
+          onCancel={(event) => {
+            if (exportBusy) event.preventDefault();
+          }}
+          onClose={() => {
+            if (!exportBusy) {
+              setExportOpen(false);
+              window.requestAnimationFrame(() => exportTriggerRef.current?.focus());
+            }
+          }}
         >
-          <form method="dialog">
+          <form method="dialog" aria-busy={exportBusy}>
             <div className="dialog-icon"><Download size={19} /></div>
             <div className="dialog-copy">
               <span className="eyebrow">Export</span>
-              <h2 id="export-title">Editable SVG</h2>
-              <p>Export visible images, vector paths, concepts, and connectors as one scalable document.</p>
+              <h2 id="export-title">Export canvas</h2>
+              <p>Download a visual of your canvas or portable table data. Everything is processed on this device.</p>
+            </div>
+            <div className="export-controls">
+              <fieldset>
+                <legend>Area</legend>
+                <div className="export-segmented">
+                  <label><input type="radio" name="export-scope" value="canvas" checked={exportScope === 'canvas'} onChange={() => { setExportScope('canvas'); if (exportFormat === 'csv') setExportFormat('png'); }} /> Canvas</label>
+                  <label><input type="radio" name="export-scope" value="selection" checked={exportScope === 'selection'} disabled={hydrated && selectedNodeCount === 0} onChange={() => { setExportScope('selection'); if (exportFormat === 'csv' && !(selectedNodes.length === 1 && selectedNodes[0].data.kind === 'table')) setExportFormat('png'); }} /> Selection</label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="export-scope"
+                      value="table-cells"
+                      checked={exportScope === 'table-cells'}
+                      disabled={hydrated && (!tableInteraction || tableInteraction.mode === 'table')}
+                      onChange={() => setExportScope('table-cells')}
+                    /> Cells
+                  </label>
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>Format</legend>
+                <div className="export-segmented export-formats">
+                  {(['png', 'svg', 'pdf', 'csv'] as const).map((format) => {
+                    const csvAvailable = exportScope === 'table-cells'
+                      || (exportScope === 'selection' && selectedNodes.length === 1 && selectedNodes[0].data.kind === 'table');
+                    return (
+                      <label key={format}>
+                        <input
+                          type="radio"
+                          name="export-format"
+                          value={format}
+                          checked={exportFormat === format}
+                          disabled={hydrated && format === 'csv' && !csvAvailable}
+                          onChange={() => setExportFormat(format)}
+                        /> {format.toUpperCase()}
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              {exportFormat !== 'csv' ? (
+                <div className="export-settings-grid">
+                  <label>Padding
+                    <select aria-label="Export padding" value={exportPadding} onChange={(event) => setExportPadding(Number(event.target.value))}>
+                      <option value={0}>None</option><option value={24}>Small</option><option value={48}>Medium</option><option value={96}>Large</option>
+                    </select>
+                  </label>
+                  {exportFormat !== 'pdf' ? <label>Background
+                    <select aria-label="Export background" value={exportBackground} onChange={(event) => setExportBackground(event.target.value as ExportBackground)}>
+                      <option value="transparent">Transparent</option><option value="white">White</option>
+                    </select>
+                  </label> : null}
+                  {exportFormat === 'png' ? <label>Resolution
+                    <select aria-label="PNG resolution" value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))}>
+                      <option value={1}>1×</option><option value={2}>2×</option><option value={3}>3×</option><option value={4}>4×</option>
+                    </select>
+                  </label> : null}
+                  {exportFormat === 'pdf' ? <>
+                    <label>Page
+                      <select aria-label="PDF page size" value={pdfPageSize} onChange={(event) => setPdfPageSize(event.target.value as PdfPageSize)}>
+                        <option value="fit">Fit content</option><option value="a4">A4</option><option value="letter">Letter</option>
+                      </select>
+                    </label>
+                    <label>Orientation
+                      <select aria-label="PDF orientation" value={pdfOrientation} onChange={(event) => setPdfOrientation(event.target.value as PdfOrientation)}>
+                        <option value="auto">Auto</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option>
+                      </select>
+                    </label>
+                    <label>Margin
+                      <select aria-label="PDF margin" value={pdfMargin} onChange={(event) => setPdfMargin(Number(event.target.value))}>
+                        <option value={0}>None</option><option value={24}>Small</option><option value={48}>Large</option>
+                      </select>
+                    </label>
+                    <label>Quality
+                      <select aria-label="PDF quality" value={pdfQuality} onChange={(event) => setPdfQuality(Number(event.target.value))}>
+                        <option value={1}>Standard</option><option value={2}>High</option><option value={3}>Print</option>
+                      </select>
+                    </label>
+                  </> : null}
+                </div>
+              ) : <p className="export-note">CSV includes cell text in row order with spreadsheet-compatible UTF-8 encoding.</p>}
             </div>
             <dl className="export-summary">
-              <div><dt>Visible objects</dt><dd>{nodes.filter((node) => !node.hidden).length}</dd></div>
-              <div><dt>Vector paths</dt><dd>{nodes.reduce((count, node) => count + (node.data.kind === 'vector' ? node.data.paths.filter((path) => path.visible).length : 0), 0)}</dd></div>
+              <div><dt>Scope</dt><dd>{exportScope === 'canvas' ? 'Full canvas' : exportScope === 'selection' ? 'Selected layers' : 'Selected cells'}</dd></div>
+              <div><dt>Layers</dt><dd>{hydrated ? (exportScope === 'selection' ? selectedNodeCount : exportScope === 'canvas' ? nodes.filter((node) => !node.hidden).length : 1) : '—'}</dd></div>
               <div><dt>Processing</dt><dd>On device</dd></div>
             </dl>
             <div className="dialog-actions">
-              <button type="button" className="secondary-button" onClick={() => setExportOpen(false)}>Cancel</button>
-              <button type="button" className="primary-button" onClick={performExport}><Download size={14} /> Download SVG</button>
+              <button type="button" className="secondary-button" disabled={exportBusy} onClick={() => setExportOpen(false)}>Cancel</button>
+              <button type="button" className="primary-button" disabled={exportBusy} onClick={() => void performExport()}>
+                {exportBusy ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {exportBusy ? 'Preparing…' : `Download ${exportFormat.toUpperCase()}`}
+              </button>
             </div>
           </form>
         </dialog>
@@ -2549,6 +3380,7 @@ function EditorInner() {
           </form>
         </dialog>
         </main>
+        </TableNodeActionContext.Provider>
       </NodeActionContext.Provider>
     </SelectedNodeCountContext.Provider>
   );
@@ -2556,9 +3388,11 @@ function EditorInner() {
 
 type NodeInspectorProps = {
   node: EditorNode;
+  tableInteraction: TableInteraction | null;
   conversionOptions: ConversionOptions;
   onConversionOptionsChange: (options: ConversionOptions) => void;
   onUpdate: (id: string, updater: (node: EditorNode) => EditorNode, shouldRecord?: boolean) => void;
+  onRemoveTableStructure: (id: string, kind: 'row' | 'column', indexes: number[]) => void;
   onVectorize: () => void;
   onCancelVectorize: () => void;
   onDuplicate: () => void;
@@ -2634,6 +3468,7 @@ function MultiSelectionInspector({
   onTone,
   onOpacity,
   onAlign,
+  onConvert,
   onDuplicate,
   onLock,
   onUnlock,
@@ -2643,6 +3478,7 @@ function MultiSelectionInspector({
   onTone: (tone: 'ink' | 'indigo' | 'mint') => void;
   onOpacity: (opacity: number) => void;
   onAlign: (mode: 'left' | 'top' | 'horizontal' | 'vertical') => void;
+  onConvert?: () => void;
   onDuplicate: () => void;
   onLock: () => void;
   onUnlock: () => void;
@@ -2678,6 +3514,7 @@ function MultiSelectionInspector({
         </div>
       </div>
       <div className="multi-selection-actions">
+        {onConvert ? <button type="button" onClick={onConvert}><Table2 size={13} /> Make table</button> : null}
         <button type="button" onClick={onDuplicate}><Copy size={13} /> Duplicate</button>
         <button type="button" onClick={onLock}><Lock size={13} /> Lock</button>
         <button type="button" onClick={onUnlock}><Unlock size={13} /> Unlock</button>
@@ -2691,9 +3528,11 @@ function MultiSelectionInspector({
 
 function NodeInspector({
   node,
+  tableInteraction,
   conversionOptions,
   onConversionOptionsChange,
   onUpdate,
+  onRemoveTableStructure,
   onVectorize,
   onCancelVectorize,
   onDuplicate,
@@ -2704,6 +3543,7 @@ function NodeInspector({
   onEditConcept,
   converting,
 }: NodeInspectorProps) {
+  const tableData = node.data.kind === 'table' ? node.data : null;
   const updateData = (data: Partial<EditorNode['data']>, shouldRecord = true) =>
     onUpdate(
       node.id,
@@ -2713,6 +3553,54 @@ function NodeInspector({
       }),
       shouldRecord,
     );
+  const selectedTableAddress = node.data.kind === 'table' && tableInteraction?.nodeId === node.id
+    ? tableInteractionFocus(node.data, tableInteraction)
+    : null;
+  const selectedTableCell = node.data.kind === 'table'
+    ? tableCellAt(node.data, selectedTableAddress)
+    : null;
+  const selectedTableAddresses = node.data.kind === 'table' && tableInteraction?.nodeId === node.id
+    ? tableInteractionCells(node.data, tableInteraction)
+    : [];
+  const tableSelectionLabel = tableInteraction?.nodeId !== node.id
+    ? null
+    : tableInteraction.mode === 'row'
+      ? `${tableInteraction.rowIds.length} ${tableInteraction.rowIds.length === 1 ? 'row' : 'rows'}`
+      : tableInteraction.mode === 'column'
+        ? `${tableInteraction.columnIds.length} ${tableInteraction.columnIds.length === 1 ? 'column' : 'columns'}`
+        : tableInteraction.mode === 'cell' && selectedTableAddresses.length > 1
+          ? `${selectedTableAddresses.length} cells`
+          : selectedTableCell
+            ? `row ${selectedTableCell.rowIndex + 1}, column ${selectedTableCell.columnIndex + 1}`
+            : null;
+  const selectedTableRowIndexes = !tableData
+    ? []
+    : tableInteraction?.nodeId === node.id && tableInteraction.mode === 'row'
+      ? tableInteraction.rowIds
+          .map((id) => tableData.rows.findIndex((row) => row.id === id))
+          .filter((index) => index >= 0)
+          .sort((left, right) => left - right)
+      : selectedTableCell
+        ? [selectedTableCell.rowIndex]
+        : [];
+  const selectedTableColumnIndexes = !tableData
+    ? []
+    : tableInteraction?.nodeId === node.id && tableInteraction.mode === 'column'
+      ? tableInteraction.columnIds
+          .map((id) => tableData.columns.findIndex((column) => column.id === id))
+          .filter((index) => index >= 0)
+          .sort((left, right) => left - right)
+      : selectedTableCell
+        ? [selectedTableCell.columnIndex]
+        : [];
+  const updateTableData = (
+    updater: (data: TableNodeData) => TableNodeData,
+    shouldRecord = true,
+  ) => onUpdate(node.id, (current) => {
+    if (current.data.kind !== 'table') return current;
+    const data = updater(current.data);
+    return { ...current, data, style: { ...current.style, ...tableDimensions(data) } };
+  }, shouldRecord);
 
   return (
     <>
@@ -2812,6 +3700,203 @@ function NodeInspector({
           </>
         ) : null}
       </div>
+      {node.data.kind === 'table' ? (
+        <>
+          <div className="inspector-section table-options-section">
+            <span className="section-label">Table structure</span>
+            <div className="table-summary">
+              <Table2 size={15} />
+              <span>{node.data.rows.length} rows × {node.data.columns.length} columns</span>
+            </div>
+            <label className="toggle-field">
+              <input
+                type="checkbox"
+                checked={node.data.headerRow}
+                disabled={node.data.locked}
+                onChange={() => updateTableData((data) => ({ ...data, headerRow: !data.headerRow }))}
+              />
+              <span>Header row</span>
+            </label>
+            <label className="toggle-field">
+              <input
+                type="checkbox"
+                checked={node.data.headerColumn}
+                disabled={node.data.locked}
+                onChange={() => updateTableData((data) => ({ ...data, headerColumn: !data.headerColumn }))}
+              />
+              <span>Header column</span>
+            </label>
+            <div className="table-structure-grid" role="group" aria-label="Table row controls">
+              <button
+                type="button"
+                disabled={node.data.locked || node.data.rows.length >= TABLE_MAX_ROWS || (node.data.rows.length + 1) * node.data.columns.length > TABLE_MAX_CELLS}
+                onClick={() => updateTableData((data) => insertTableRow(data, selectedTableRowIndexes[0] ?? data.rows.length))}
+              ><Plus size={12} /> Above</button>
+              <button
+                type="button"
+                disabled={node.data.locked || node.data.rows.length >= TABLE_MAX_ROWS || (node.data.rows.length + 1) * node.data.columns.length > TABLE_MAX_CELLS}
+                onClick={() => updateTableData((data) => insertTableRow(data, selectedTableRowIndexes.at(-1) !== undefined ? selectedTableRowIndexes.at(-1)! + 1 : data.rows.length))}
+              ><Plus size={12} /> Below</button>
+              <button
+                type="button"
+                disabled={node.data.locked || !selectedTableRowIndexes.length || node.data.rows.length + selectedTableRowIndexes.length > TABLE_MAX_ROWS || (node.data.rows.length + selectedTableRowIndexes.length) * node.data.columns.length > TABLE_MAX_CELLS}
+                onClick={() => updateTableData((data) => selectedTableRowIndexes.reduce(
+                  (next, rowIndex, offset) => duplicateTableRow(next, rowIndex + offset),
+                  data,
+                ))}
+              ><Copy size={12} /> Duplicate</button>
+              <button
+                type="button"
+                disabled={node.data.locked || !selectedTableRowIndexes.length || node.data.rows.length - selectedTableRowIndexes.length < 1}
+                onClick={() => onRemoveTableStructure(node.id, 'row', selectedTableRowIndexes)}
+              ><Trash2 size={12} /> Delete</button>
+              <button
+                type="button"
+                aria-label="Move selected row up"
+                disabled={node.data.locked || selectedTableRowIndexes.length !== 1 || selectedTableRowIndexes[0] === 0}
+                onClick={() => updateTableData((data) => moveTableRow(data, selectedTableRowIndexes[0], -1))}
+              ><ArrowUp size={12} /> Up</button>
+              <button
+                type="button"
+                aria-label="Move selected row down"
+                disabled={node.data.locked || selectedTableRowIndexes.length !== 1 || selectedTableRowIndexes[0] === node.data.rows.length - 1}
+                onClick={() => updateTableData((data) => moveTableRow(data, selectedTableRowIndexes[0], 1))}
+              ><ArrowDown size={12} /> Down</button>
+            </div>
+            <div className="table-structure-grid" role="group" aria-label="Table column controls">
+              <button
+                type="button"
+                disabled={node.data.locked || node.data.columns.length >= TABLE_MAX_COLUMNS || node.data.rows.length * (node.data.columns.length + 1) > TABLE_MAX_CELLS}
+                onClick={() => updateTableData((data) => insertTableColumn(data, selectedTableColumnIndexes[0] ?? data.columns.length))}
+              ><Plus size={12} /> Left</button>
+              <button
+                type="button"
+                disabled={node.data.locked || node.data.columns.length >= TABLE_MAX_COLUMNS || node.data.rows.length * (node.data.columns.length + 1) > TABLE_MAX_CELLS}
+                onClick={() => updateTableData((data) => insertTableColumn(data, selectedTableColumnIndexes.at(-1) !== undefined ? selectedTableColumnIndexes.at(-1)! + 1 : data.columns.length))}
+              ><Plus size={12} /> Right</button>
+              <button
+                type="button"
+                disabled={node.data.locked || !selectedTableColumnIndexes.length || node.data.columns.length + selectedTableColumnIndexes.length > TABLE_MAX_COLUMNS || node.data.rows.length * (node.data.columns.length + selectedTableColumnIndexes.length) > TABLE_MAX_CELLS}
+                onClick={() => updateTableData((data) => selectedTableColumnIndexes.reduce(
+                  (next, columnIndex, offset) => duplicateTableColumn(next, columnIndex + offset),
+                  data,
+                ))}
+              ><Copy size={12} /> Duplicate</button>
+              <button
+                type="button"
+                disabled={node.data.locked || !selectedTableColumnIndexes.length || node.data.columns.length - selectedTableColumnIndexes.length < 1}
+                onClick={() => onRemoveTableStructure(node.id, 'column', selectedTableColumnIndexes)}
+              ><Trash2 size={12} /> Delete</button>
+              <button
+                type="button"
+                aria-label="Move selected column left"
+                disabled={node.data.locked || selectedTableColumnIndexes.length !== 1 || selectedTableColumnIndexes[0] === 0}
+                onClick={() => updateTableData((data) => moveTableColumn(data, selectedTableColumnIndexes[0], -1))}
+              >← Left</button>
+              <button
+                type="button"
+                aria-label="Move selected column right"
+                disabled={node.data.locked || selectedTableColumnIndexes.length !== 1 || selectedTableColumnIndexes[0] === node.data.columns.length - 1}
+                onClick={() => updateTableData((data) => moveTableColumn(data, selectedTableColumnIndexes[0], 1))}
+              >Right →</button>
+            </div>
+            <div className="table-sizing-actions" role="group" aria-label="Table sizing controls">
+              <button type="button" disabled={node.data.locked} onClick={() => updateTableData(distributeTableColumns)}>Equal columns</button>
+              <button type="button" disabled={node.data.locked} onClick={() => updateTableData(distributeTableRows)}>Equal rows</button>
+              <button type="button" disabled={node.data.locked} onClick={() => updateTableData(resetTableSizing)}>Reset sizing</button>
+            </div>
+          </div>
+          {selectedTableCell ? (
+            <div className="inspector-section table-cell-section">
+              <span className="section-label">Selected {tableSelectionLabel}</span>
+              <label className="stacked-field section-label-spaced">
+                <span>Background</span>
+                <select
+                  value={selectedTableCell.cell.tone}
+                  disabled={node.data.locked}
+                  onChange={(event) => updateTableData((data) => updateTableCells(data, selectedTableAddresses, (cell) => ({ ...cell, tone: event.target.value as TableCellTone })))}
+                >
+                  <option value="none">None</option>
+                  <option value="gray">Gray</option>
+                  <option value="indigo">Indigo</option>
+                  <option value="mint">Mint</option>
+                  <option value="amber">Amber</option>
+                  <option value="rose">Rose</option>
+                </select>
+              </label>
+              <fieldset className="content-alignment-field" disabled={node.data.locked}>
+                <legend>Text alignment</legend>
+                <div className="content-alignment-row table-alignment-row">
+                  {(['left', 'center', 'right'] as const).map((alignment) => (
+                    <button
+                      key={alignment}
+                      type="button"
+                      aria-pressed={selectedTableCell.cell.horizontalAlign === alignment}
+                      onClick={() => updateTableData((data) => updateTableCells(data, selectedTableAddresses, (cell) => ({ ...cell, horizontalAlign: alignment })))}
+                    >{alignment}</button>
+                  ))}
+                </div>
+              </fieldset>
+              <div className="field-grid">
+                <label>Width
+                  <input
+                    type="number"
+                    min={TABLE_MIN_COLUMN_WIDTH}
+                    max={TABLE_MAX_COLUMN_WIDTH}
+                    value={Math.round(selectedTableCell.column.width)}
+                    disabled={node.data.locked}
+                    onFocus={onEditStart}
+                    onChange={(event) => updateTableData((data) => resizeTableColumn(data, selectedTableCell.columnIndex, Number(event.target.value)), false)}
+                    onBlur={onEditEnd}
+                  />
+                </label>
+                <label>Height
+                  <input
+                    type="number"
+                    min={TABLE_MIN_ROW_HEIGHT}
+                    max={TABLE_MAX_ROW_HEIGHT}
+                    value={Math.round(selectedTableCell.row.height)}
+                    disabled={node.data.locked}
+                    onFocus={onEditStart}
+                    onChange={(event) => updateTableData((data) => resizeTableRow(data, selectedTableCell.rowIndex, Number(event.target.value)), false)}
+                    onBlur={onEditEnd}
+                  />
+                </label>
+              </div>
+              <div className="table-sizing-actions" role="group" aria-label="Selected row and column sizing">
+                <button
+                  type="button"
+                  disabled={node.data.locked}
+                  onClick={() => updateTableData((data) => fitTableColumnToContent(data, selectedTableCell.columnIndex))}
+                >Fit column</button>
+                <button
+                  type="button"
+                  disabled={node.data.locked}
+                  onClick={() => updateTableData((data) => fitTableRowToContent(data, selectedTableCell.rowIndex))}
+                >Fit row</button>
+              </div>
+              <div className="table-sizing-actions" role="group" aria-label="Selected cell clearing controls">
+                <button
+                  type="button"
+                  disabled={node.data.locked}
+                  onClick={() => updateTableData((data) => updateTableCells(data, selectedTableAddresses, (cell) => replaceTableCellPlainText(cell, '')))}
+                >Clear contents</button>
+                <button
+                  type="button"
+                  disabled={node.data.locked}
+                  onClick={() => updateTableData((data) => updateTableCells(data, selectedTableAddresses, (cell) => ({
+                    ...cell,
+                    tone: 'none',
+                    horizontalAlign: 'left',
+                  })))}
+                >Clear formatting</button>
+              </div>
+            </div>
+          ) : (
+            <div className="inspector-section table-cell-empty">Select a cell to style or resize its row and column.</div>
+          )}
+        </>
+      ) : null}
       <div className="inspector-section">
         <span className="section-label">Position</span>
         <div className="field-grid">

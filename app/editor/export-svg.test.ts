@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildSvgDocument } from './export-svg';
+import { buildSvgDocument, buildSvgExport } from './export-svg';
 import { initialDocument } from './initial-document';
+import { createTableData, tableDimensions } from './table-grid';
 import type { EditorNode } from './types';
 
 describe('buildSvgDocument', () => {
@@ -103,6 +104,17 @@ describe('buildSvgDocument', () => {
     expect(() => buildSvgDocument([], [])).toThrow('nothing visible');
   });
 
+  it('applies configurable padding and an optional white background', () => {
+    const node = structuredClone(initialDocument.nodes[0]);
+    node.style = { width: 220, height: 100 };
+    const transparent = buildSvgExport([node], [], { padding: 0 });
+    const white = buildSvgExport([node], [], { padding: 20, background: 'white' });
+    expect(white.width).toBe(transparent.width + 40);
+    expect(white.height).toBe(transparent.height + 40);
+    expect(white.svg).toContain(`<rect width="${white.width}" height="${white.height}" fill="#ffffff" />`);
+    expect(transparent.svg).not.toContain('fill="#ffffff" />');
+  });
+
   it('exports connector labels and styles', () => {
     const nodes = structuredClone(initialDocument.nodes);
     const edges = structuredClone(initialDocument.edges);
@@ -158,5 +170,66 @@ describe('buildSvgDocument', () => {
 
     const svg = buildSvgDocument([concept], []);
     expect(svg.match(/☐/g)).toHaveLength(1);
+  });
+
+  it('exports table captions, cells, headers, styling, and escaped text', () => {
+    const data = createTableData({
+      name: 'Shoot & schedule',
+      rows: 2,
+      columns: 2,
+      values: [['Scene', 'Status'], ['Opening <shot>', 'Ready']],
+      headerRow: true,
+    });
+    data.rows[1].cells[1].tone = 'mint';
+    data.rows[1].cells[1].horizontalAlign = 'right';
+    const node: EditorNode = {
+      id: 'table-a',
+      type: 'table',
+      position: { x: 20, y: 30 },
+      style: tableDimensions(data),
+      data,
+    };
+
+    const svg = buildSvgDocument([node], []);
+
+    expect(svg).toContain('Shoot &amp; schedule');
+    expect(svg).toContain('Opening &lt;shot&gt;');
+    expect(svg).toContain('fill="#e8f7ef"');
+    expect(svg).toContain('text-anchor="end"');
+    expect(svg).toContain('font-weight="700"');
+  });
+
+  it('preserves rich table-cell marks and safe links in SVG', () => {
+    const data = createTableData({ rows: 1, columns: 1, headerRow: false });
+    data.rows[0].cells[0].content = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{
+          type: 'text',
+          text: 'Formatted scene',
+          marks: [
+            { type: 'bold' },
+            { type: 'italic' },
+            { type: 'underline' },
+            { type: 'strike' },
+            { type: 'link', attrs: { href: 'https://example.com/scene' } },
+          ],
+        }],
+      }],
+    };
+    const node: EditorNode = {
+      id: 'rich-table',
+      type: 'table',
+      position: { x: 0, y: 0 },
+      style: tableDimensions(data),
+      data,
+    };
+    const svg = buildSvgDocument([node], []);
+    expect(svg).toContain('font-weight="700"');
+    expect(svg).toContain('font-style="italic"');
+    expect(svg).toContain('text-decoration="underline line-through"');
+    expect(svg).toContain('href="https://example.com/scene"');
+    expect(svg).toContain('Formatted scene');
   });
 });

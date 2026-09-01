@@ -5,6 +5,8 @@ import {
   serializeProjectBackup,
   validateEditorDocument,
 } from './document-file';
+import { createTableData, tableCellPlainText, tableDimensions } from './table-grid';
+import type { EditorNode } from './types';
 
 describe('SynapTable project backups', () => {
   it('round-trips a valid document through the portable envelope', () => {
@@ -15,7 +17,7 @@ describe('SynapTable project backups', () => {
     expect(restored.nodes).toHaveLength(initialDocument.nodes.length);
     expect(restored.edges).toHaveLength(initialDocument.edges.length);
     expect(restored.nodes.every((node) => node.selected === false)).toBe(true);
-    expect(restored.schemaVersion).toBe(4);
+    expect(restored.schemaVersion).toBe(6);
   });
 
   it('migrates version 1 projects to the current document version', () => {
@@ -28,7 +30,7 @@ describe('SynapTable project backups', () => {
       delete node.data.title;
     }
     const migrated = validateEditorDocument(legacy);
-    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.schemaVersion).toBe(6);
     const concept = migrated.nodes.find((node) => node.data.kind === 'concept');
     expect(concept?.data.kind === 'concept' && concept.data.body.type).toBe('doc');
     expect(concept?.data.kind === 'concept' && concept.data.title.type).toBe('doc');
@@ -42,7 +44,7 @@ describe('SynapTable project backups', () => {
     const migrated = validateEditorDocument(legacy);
     const concept = migrated.nodes.find((node) => node.data.kind === 'concept');
     if (!concept || concept.data.kind !== 'concept') throw new Error('Missing concept fixture.');
-    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.schemaVersion).toBe(6);
     expect(concept.data.title.content?.[0].content?.[0].marks).toEqual([{ type: 'bold' }]);
   });
 
@@ -56,13 +58,15 @@ describe('SynapTable project backups', () => {
     }
     const migrated = validateEditorDocument(legacy);
     const concept = migrated.nodes.find((node) => node.data.kind === 'concept');
-    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.schemaVersion).toBe(6);
     expect(concept?.data.kind === 'concept' && concept.data.horizontalAlign).toBe('left');
     expect(concept?.data.kind === 'concept' && concept.data.verticalAlign).toBe('top');
   });
 
-  it('round-trips content alignment in version 4 projects', () => {
+  it('migrates and round-trips content alignment from version 4 projects', () => {
     const document = structuredClone(initialDocument);
+    const legacy = document as unknown as { schemaVersion: number };
+    legacy.schemaVersion = 4;
     const concept = document.nodes.find((node) => node.data.kind === 'concept');
     if (!concept || concept.data.kind !== 'concept') throw new Error('Missing concept fixture.');
     concept.data.horizontalAlign = 'right';
@@ -71,6 +75,115 @@ describe('SynapTable project backups', () => {
     const restoredConcept = restored.nodes.find((node) => node.id === concept.id);
     expect(restoredConcept?.data.kind === 'concept' && restoredConcept.data.horizontalAlign).toBe('right');
     expect(restoredConcept?.data.kind === 'concept' && restoredConcept.data.verticalAlign).toBe('bottom');
+  });
+
+  it('round-trips rich table cells through backup validation', () => {
+    const document = structuredClone(initialDocument);
+    const data = createTableData({
+      name: 'Shoot schedule',
+      rows: 3,
+      columns: 2,
+      values: [['Scene', 'Time'], ['Opening', '08:00'], ['Finale', '17:30']],
+      headerRow: true,
+      headerColumn: true,
+    });
+    data.rows[1].cells[0].content = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{
+          type: 'text',
+          text: 'Opening',
+          marks: [
+            { type: 'bold' },
+            { type: 'link', attrs: { href: 'https://example.com/opening' } },
+          ],
+        }],
+      }],
+    };
+    const dimensions = tableDimensions(data);
+    const table: EditorNode = {
+      id: 'schedule-table',
+      type: 'table',
+      position: { x: 700, y: 200 },
+      style: dimensions,
+      data,
+    };
+    document.nodes.push(table);
+
+    const restored = parseProjectBackup(serializeProjectBackup(document));
+    const restoredTable = restored.nodes.find((node) => node.id === table.id);
+    expect(restored.schemaVersion).toBe(6);
+    expect(restoredTable?.data.kind).toBe('table');
+    expect(restoredTable?.data.kind === 'table' && tableCellPlainText(restoredTable.data.rows[2].cells[0])).toBe('Finale');
+    expect(restoredTable?.data.kind === 'table' && restoredTable.data.rows[1].cells[0].content.content?.[0].content?.[0].marks)
+      .toEqual([
+        { type: 'bold' },
+        { type: 'link', attrs: { href: 'https://example.com/opening' } },
+      ]);
+    expect(restoredTable?.data.kind === 'table' && restoredTable.data.headerColumn).toBe(true);
+  });
+
+  it('migrates version 5 plain-text table cells into rich content', () => {
+    const document = structuredClone(initialDocument);
+    const tableData = createTableData({
+      rows: 1,
+      columns: 1,
+      values: [['Legacy scene']],
+      headerRow: false,
+    });
+    document.nodes.push({
+      id: 'legacy-table',
+      type: 'table',
+      position: { x: 0, y: 0 },
+      style: tableDimensions(tableData),
+      data: tableData,
+    });
+    const legacy = document as unknown as {
+      schemaVersion: number;
+      nodes: Array<{ data: Record<string, unknown> }>;
+    };
+    legacy.schemaVersion = 5;
+    const table = legacy.nodes.find((node) => node.data.kind === 'table');
+    const rows = table?.data.rows as Array<{ cells: Array<Record<string, unknown>> }>;
+    for (const row of rows) {
+      for (const cell of row.cells) {
+        cell.text = tableCellPlainText(cell as unknown as ReturnType<typeof createTableData>['rows'][number]['cells'][number]);
+        delete cell.content;
+      }
+    }
+
+    const migrated = validateEditorDocument(legacy);
+    const migratedTable = migrated.nodes.find((node) => node.id === 'legacy-table');
+    expect(migrated.schemaVersion).toBe(6);
+    expect(migratedTable?.data.kind === 'table' && tableCellPlainText(migratedTable.data.rows[0].cells[0]))
+      .toBe('Legacy scene');
+  });
+
+  it('rejects ragged, duplicate-id, and oversized table data', () => {
+    const document = structuredClone(initialDocument);
+    const data = createTableData({ rows: 2, columns: 2 });
+    document.nodes.push({
+      id: 'invalid-table',
+      type: 'table',
+      position: { x: 0, y: 0 },
+      data,
+    });
+    const table = document.nodes.at(-1);
+    if (!table || table.data.kind !== 'table') throw new Error('Missing table fixture.');
+
+    table.data.rows[0].cells.pop();
+    expect(() => validateEditorDocument(document)).toThrow('does not match');
+
+    table.data.rows[0].cells.push(structuredClone(table.data.rows[1].cells[0]));
+    expect(() => validateEditorDocument(document)).toThrow('duplicate table ids');
+
+    table.data.rows[0].cells[1].id = crypto.randomUUID();
+    table.data.rows[0].cells[1].content = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x'.repeat(2_001) }] }],
+    };
+    expect(() => validateEditorDocument(document)).toThrow('too long');
   });
 
   it('removes trailing empty checklist rows while loading saved documents', () => {

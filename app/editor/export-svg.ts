@@ -1,10 +1,13 @@
 import { normalizeRichTextDocument, sanitizeLinkHref } from './rich-text';
+import { TABLE_CAPTION_HEIGHT, tableDimensions } from './table-grid';
 import type {
   EditorEdge,
   EditorNode,
   RichTextDocument,
   RichTextMark,
   RichTextNode,
+  TableCellTone,
+  TableNodeData,
   VectorNodeData,
 } from './types';
 
@@ -101,6 +104,7 @@ function conceptContentHeight(node: EditorNode, width: number) {
 }
 
 function nodeSize(node: EditorNode) {
+  if (node.data.kind === 'table') return tableDimensions(node.data);
   const style = node.style ?? {};
   const width = Number(style.width) || Number(node.measured?.width) || (node.data.kind === 'concept' ? 220 : 320);
   const preferredHeight = Number(style.height) || Number(node.measured?.height) || (node.data.kind === 'concept' ? 78 : 240);
@@ -108,6 +112,74 @@ function nodeSize(node: EditorNode) {
     width,
     height: node.data.kind === 'concept' ? Math.max(preferredHeight, conceptContentHeight(node, width)) : preferredHeight,
   };
+}
+
+const TABLE_CELL_FILLS: Record<TableCellTone, string> = {
+  none: '#ffffff',
+  gray: '#f0f1f4',
+  indigo: '#efedff',
+  mint: '#e8f7ef',
+  amber: '#fff4d8',
+  rose: '#ffecef',
+};
+
+function layoutTableCellRichText(document: RichTextDocument, width: number, height: number) {
+  const maxCharacters = Math.max(4, Math.floor((width - 18) / 6.4));
+  const maxLines = Math.max(1, Math.floor((height - 12) / 14));
+  const lines = blockLines(normalizeRichTextDocument(document)).flatMap((line) => wrapLine(line, maxCharacters));
+  const visible = lines.slice(0, maxLines);
+  if (lines.length > maxLines && visible.length) {
+    const last = visible.length - 1;
+    const runs = visible[last].runs.map((run) => ({ ...run }));
+    let remaining = Math.max(1, maxCharacters - 1);
+    const clipped: TextRun[] = [];
+    for (const run of runs) {
+      if (remaining <= 0) break;
+      const text = run.text.slice(0, remaining);
+      if (text) clipped.push({ ...run, text });
+      remaining -= text.length;
+    }
+    const lastRun = clipped.at(-1);
+    if (lastRun) lastRun.text = `${lastRun.text.trimEnd()}…`;
+    else clipped.push({ text: '…', marks: [] });
+    visible[last] = { ...visible[last], runs: clipped };
+  }
+  return visible.length ? visible : [{ runs: [], prefix: '', indent: 0 }];
+}
+
+function renderTableNode(data: TableNodeData, id: string, x: number, y: number) {
+  const { width, height } = tableDimensions(data);
+  const caption = `<rect x="${x}" y="${y}" width="${width}" height="${TABLE_CAPTION_HEIGHT}" rx="12" fill="#18191d" />
+    <text x="${x + 14}" y="${y + 24}" fill="#ffffff" font-family="system-ui, sans-serif" font-size="12" font-weight="700">${xmlEscape(data.name)}</text>`;
+  let rowY = y + TABLE_CAPTION_HEIGHT;
+  const rows: string[] = [];
+  data.rows.forEach((row, rowIndex) => {
+    let columnX = x;
+    row.cells.forEach((cell, columnIndex) => {
+      const column = data.columns[columnIndex];
+      const header = (data.headerRow && rowIndex === 0) || (data.headerColumn && columnIndex === 0);
+      const fill = header && cell.tone === 'none' ? '#f0f1f4' : TABLE_CELL_FILLS[cell.tone];
+      const anchor = cell.horizontalAlign === 'center' ? 'middle' : cell.horizontalAlign === 'right' ? 'end' : 'start';
+      const textX = cell.horizontalAlign === 'center'
+        ? columnX + column.width / 2
+        : cell.horizontalAlign === 'right'
+          ? columnX + column.width - 9
+          : columnX + 9;
+      const lines = layoutTableCellRichText(cell.content, column.width, row.height);
+      const lineHeight = 14;
+      const firstLineY = rowY + (row.height - lines.length * lineHeight) / 2 + 11;
+      const text = lines.map((line, lineIndex) => (
+        `<text x="${textX}" y="${firstLineY + lineIndex * lineHeight}" text-anchor="${anchor}" fill="#26272b" font-family="system-ui, sans-serif" font-size="11"${header ? ' font-weight="700"' : ''}>${line.runs.map(renderRun).join('')}</text>`
+      )).join('');
+      rows.push(`<rect x="${columnX}" y="${rowY}" width="${column.width}" height="${row.height}" fill="${fill}" stroke="#d6d9e0" />
+    ${text}`);
+      columnX += column.width;
+    });
+    rowY += row.height;
+  });
+  return `<g id="${xmlEscape(id)}" opacity="${data.opacity}">${caption}
+    ${rows.join('\n    ')}
+    <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="12" fill="none" stroke="#b7bbc4" /></g>`;
 }
 
 function markAttributes(marks: RichTextMark[]) {
@@ -177,6 +249,10 @@ function renderNode(node: EditorNode, offsetX: number, offsetY: number) {
     return `<g id="${xmlEscape(node.id)}" opacity="${opacity}"><image href="${xmlEscape(node.data.src)}" x="${x}" y="${y}" width="${width}" height="${height}" preserveAspectRatio="none" /></g>`;
   }
 
+  if (node.data.kind === 'table') {
+    return renderTableNode(node.data, node.id, x, y);
+  }
+
   if (node.data.kind === 'vector') {
     const data = node.data as VectorNodeData;
     const [minX, minY, viewWidth, viewHeight] = data.viewBox;
@@ -236,26 +312,48 @@ function renderEdges(edges: EditorEdge[], nodes: EditorNode[], offsetX: number, 
     .join('');
 }
 
-export function buildSvgDocument(nodes: EditorNode[], edges: EditorEdge[]): string {
+export type SvgExportOptions = {
+  padding?: number;
+  background?: 'transparent' | 'white';
+};
+
+export type SvgExportResult = {
+  svg: string;
+  width: number;
+  height: number;
+};
+
+export function buildSvgExport(
+  nodes: EditorNode[],
+  edges: EditorEdge[],
+  { padding = 48, background = 'transparent' }: SvgExportOptions = {},
+): SvgExportResult {
   const visibleNodes = nodes.filter((node) => !node.hidden);
   if (visibleNodes.length === 0) throw new Error('There is nothing visible to export.');
 
-  const padding = 48;
-  const minX = Math.min(...visibleNodes.map((node) => node.position.x)) - padding;
-  const minY = Math.min(...visibleNodes.map((node) => node.position.y)) - padding;
-  const maxX = Math.max(...visibleNodes.map((node) => node.position.x + nodeSize(node).width)) + padding;
-  const maxY = Math.max(...visibleNodes.map((node) => node.position.y + nodeSize(node).height)) + padding;
+  const safePadding = Math.max(0, Math.min(240, Math.round(padding)));
+  const minX = Math.min(...visibleNodes.map((node) => node.position.x)) - safePadding;
+  const minY = Math.min(...visibleNodes.map((node) => node.position.y)) - safePadding;
+  const maxX = Math.max(...visibleNodes.map((node) => node.position.x + nodeSize(node).width)) + safePadding;
+  const maxY = Math.max(...visibleNodes.map((node) => node.position.y + nodeSize(node).height)) + safePadding;
   const width = Math.max(1, maxX - minX);
   const height = Math.max(1, maxY - minY);
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="title desc">
   <title id="title">SynapTable editable diagram</title>
   <desc id="desc">An editable SVG exported from SynapTable.</desc>
   <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a9adb7" /></marker></defs>
+  ${background === 'white' ? `<rect width="${width}" height="${height}" fill="#ffffff" />` : ''}
   ${renderEdges(edges, visibleNodes, minX, minY)}
   ${visibleNodes.map((node) => renderNode(node, minX, minY)).join('\n  ')}
 </svg>`;
+
+  return { svg, width, height };
+}
+
+export function buildSvgDocument(nodes: EditorNode[], edges: EditorEdge[]): string {
+  return buildSvgExport(nodes, edges).svg;
 }
 
 export function downloadSvg(svg: string, fileName: string) {

@@ -3,7 +3,7 @@ import { conceptTitleFromPlainText } from './rich-text';
 import type { EditorDocument } from './types';
 
 export const initialDocument: EditorDocument = {
-  schemaVersion: 4,
+  schemaVersion: 6,
   title: 'Untitled concept map',
   updatedAt: Date.now(),
   nodes: [

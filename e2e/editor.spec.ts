@@ -45,7 +45,8 @@ test('imports, persists, backs up, and exports locally with vectorization disabl
   await expect(page.getByText('Project backup restored.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'test-map.png', exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Export SVG' }).click();
+  await page.getByRole('button', { name: 'Export canvas' }).click();
+  await page.getByText('SVG', { exact: true }).click();
   const svgDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download SVG' }).click();
   expect((await svgDownload).suggestedFilename()).toMatch(/\.svg$/);

@@ -1,4 +1,5 @@
 import type { EditorEdge, EditorNode } from './types';
+import { tableDimensions } from './table-grid';
 
 export const CONCEPT_MIN_WIDTH = 150;
 export const CONCEPT_MIN_HEIGHT = 68;
@@ -17,6 +18,7 @@ function positiveNumber(value: unknown) {
 }
 
 export function editorNodeDimensions(node: EditorNode): NodeDimensions {
+  if (node.data.kind === 'table') return tableDimensions(node.data);
   const fallback = node.data.kind === 'concept'
     ? { width: CONCEPT_DEFAULT_WIDTH, height: CONCEPT_MIN_HEIGHT }
     : { width: 320, height: 240 };
