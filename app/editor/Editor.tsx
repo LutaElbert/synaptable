@@ -83,7 +83,19 @@ import {
   parseProjectBackup,
   serializeProjectBackup,
 } from './document-file';
-import { buildSvgDocument, downloadSvg } from './export-svg';
+import {
+  downloadBlob,
+  pngToPdfBlob,
+  resolveExportContent,
+  svgToPngBlob,
+  tableToCsv,
+  type ExportBackground,
+  type ExportFormat,
+  type ExportScope,
+  type PdfOrientation,
+  type PdfPageSize,
+} from './export-file';
+import { buildSvgExport } from './export-svg';
 import { EDITOR_FEATURES } from './features';
 import { fileToDataUrl, validateImageFile } from './image-file';
 import {
@@ -600,6 +612,16 @@ function EditorInner() {
   });
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportScope, setExportScope] = useState<ExportScope>('canvas');
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('png');
+  const [exportPadding, setExportPadding] = useState(48);
+  const [exportBackground, setExportBackground] = useState<ExportBackground>('transparent');
+  const [exportScale, setExportScale] = useState(2);
+  const [pdfPageSize, setPdfPageSize] = useState<PdfPageSize>('fit');
+  const [pdfOrientation, setPdfOrientation] = useState<PdfOrientation>('auto');
+  const [pdfMargin, setPdfMargin] = useState(24);
+  const [pdfQuality, setPdfQuality] = useState(2);
+  const [exportBusy, setExportBusy] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [editingConceptId, setEditingConceptId] = useState<string | null>(null);
@@ -613,6 +635,7 @@ function EditorInner() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
   const exportDialogRef = useRef<HTMLDialogElement>(null);
+  const exportTriggerRef = useRef<HTMLButtonElement>(null);
   const backupDialogRef = useRef<HTMLDialogElement>(null);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -792,7 +815,10 @@ function EditorInner() {
 
   useEffect(() => {
     if (exportOpen && !exportDialogRef.current?.open) exportDialogRef.current?.showModal();
-    if (!exportOpen && exportDialogRef.current?.open) exportDialogRef.current.close();
+    if (!exportOpen && exportDialogRef.current?.open) {
+      exportDialogRef.current.close();
+      window.requestAnimationFrame(() => exportTriggerRef.current?.focus());
+    }
   }, [exportOpen]);
 
   useEffect(() => {
@@ -1833,7 +1859,27 @@ function EditorInner() {
     }
   }, [announce, refreshHistoryState]);
 
-  const openExport = useCallback(() => setExportOpen(true), []);
+  const openExport = useCallback(() => {
+    const selected = nodesRef.current.filter((node) => node.selected && !node.hidden);
+    const activeTable = tableInteraction
+      ? nodesRef.current.find((node) => node.id === tableInteraction.nodeId && node.data.kind === 'table')
+      : null;
+    const activeCells = activeTable?.data.kind === 'table'
+      ? tableInteractionCells(activeTable.data, tableInteraction)
+      : [];
+    if (activeTable && activeCells.length) {
+      setExportScope('table-cells');
+      setExportFormat('csv');
+    } else if (selected.length) {
+      setExportScope('selection');
+      setExportFormat('png');
+    } else {
+      setExportScope('canvas');
+      setExportFormat('png');
+    }
+    setExportBackground('white');
+    setExportOpen(true);
+  }, [tableInteraction]);
   const openBackup = useCallback(() => setBackupOpen(true), []);
   const performBackup = useCallback(() => {
     try {
@@ -1904,19 +1950,58 @@ function EditorInner() {
     }
   }, [announce, fitView, queueDocumentSave, refreshHistoryState]);
 
-  const performExport = useCallback(() => {
+  const performExport = useCallback(async () => {
+    if (exportBusy) return;
+    setExportBusy(true);
     try {
       const collapsed = collapsedDescendantIds(nodesRef.current, edgesRef.current);
       const exportNodes = nodesRef.current.map((node) => collapsed.has(node.id) ? { ...node, hidden: true } : node);
       const exportEdges = edgesRef.current.filter((edge) => !collapsed.has(edge.source) && !collapsed.has(edge.target));
-      const svg = buildSvgDocument(exportNodes, exportEdges);
-      downloadSvg(svg, safeFileBase(title));
+      const activeTable = tableInteraction
+        ? exportNodes.find((node) => node.id === tableInteraction.nodeId && node.data.kind === 'table')
+        : null;
+      const tableSelection = activeTable?.data.kind === 'table'
+        ? { nodeId: activeTable.id, addresses: tableInteractionCells(activeTable.data, tableInteraction) }
+        : null;
+      const content = resolveExportContent(exportNodes, exportEdges, exportScope, tableSelection);
+      const fileBase = safeFileBase(titleRef.current);
+
+      if (exportFormat === 'csv') {
+        if (!content.table) throw new Error('CSV export requires one table or a selected cell range.');
+        downloadBlob(new Blob([tableToCsv(content.table)], { type: 'text/csv;charset=utf-8' }), fileBase, 'csv');
+      } else {
+        const background = exportFormat === 'pdf' ? 'white' : exportBackground;
+        const visual = buildSvgExport(content.nodes, content.edges, { padding: exportPadding, background });
+        if (exportFormat === 'svg') {
+          downloadBlob(new Blob([visual.svg], { type: 'image/svg+xml;charset=utf-8' }), fileBase, 'svg');
+        } else {
+          const png = await svgToPngBlob(
+            visual.svg,
+            visual.width,
+            visual.height,
+            exportFormat === 'pdf' ? pdfQuality : exportScale,
+          );
+          if (exportFormat === 'png') {
+            downloadBlob(png.blob, fileBase, 'png');
+            if (png.dimensions.reduced) announce('PNG size was reduced to fit browser safety limits.');
+          } else {
+            const pdf = await pngToPdfBlob(png.blob, visual.width, visual.height, {
+              pageSize: pdfPageSize,
+              orientation: pdfOrientation,
+              margin: pdfMargin,
+            });
+            downloadBlob(pdf, fileBase, 'pdf');
+          }
+        }
+      }
       setExportOpen(false);
-      announce('Editable SVG exported.', 'success');
+      announce(`${exportFormat.toUpperCase()} exported.`, 'success');
     } catch (error) {
       announce(error instanceof Error ? error.message : 'Export failed.', 'error');
+    } finally {
+      setExportBusy(false);
     }
-  }, [announce, title]);
+  }, [announce, exportBackground, exportBusy, exportFormat, exportPadding, exportScale, exportScope, pdfMargin, pdfOrientation, pdfPageSize, pdfQuality, tableInteraction]);
 
   const hasChildren = useCallback((id: string) => edgesRef.current.some((edge) => edge.source === id), []);
 
@@ -2620,8 +2705,8 @@ function EditorInner() {
             >
               <Redo2 size={16} />
             </button>
-            <button type="button" className="primary-button" aria-label="Export SVG" onClick={openExport}>
-              <Download size={14} /> <span className="button-label">Export SVG</span>
+            <button ref={exportTriggerRef} type="button" className="primary-button" aria-label="Export canvas" onClick={openExport}>
+              <Download size={14} /> <span className="button-label">Export</span>
             </button>
           </div>
         </header>
@@ -3103,23 +3188,114 @@ function EditorInner() {
           ref={exportDialogRef}
           className="export-dialog"
           aria-labelledby="export-title"
-          onClose={() => setExportOpen(false)}
+          onCancel={(event) => {
+            if (exportBusy) event.preventDefault();
+          }}
+          onClose={() => {
+            if (!exportBusy) {
+              setExportOpen(false);
+              window.requestAnimationFrame(() => exportTriggerRef.current?.focus());
+            }
+          }}
         >
-          <form method="dialog">
+          <form method="dialog" aria-busy={exportBusy}>
             <div className="dialog-icon"><Download size={19} /></div>
             <div className="dialog-copy">
               <span className="eyebrow">Export</span>
-              <h2 id="export-title">Editable SVG</h2>
-              <p>Export visible images, vector paths, concepts, tables, and connectors as one scalable document.</p>
+              <h2 id="export-title">Export canvas</h2>
+              <p>Download a visual of your canvas or portable table data. Everything is processed on this device.</p>
+            </div>
+            <div className="export-controls">
+              <fieldset>
+                <legend>Area</legend>
+                <div className="export-segmented">
+                  <label><input type="radio" name="export-scope" value="canvas" checked={exportScope === 'canvas'} onChange={() => { setExportScope('canvas'); if (exportFormat === 'csv') setExportFormat('png'); }} /> Canvas</label>
+                  <label><input type="radio" name="export-scope" value="selection" checked={exportScope === 'selection'} disabled={hydrated && selectedNodeCount === 0} onChange={() => { setExportScope('selection'); if (exportFormat === 'csv' && !(selectedNodes.length === 1 && selectedNodes[0].data.kind === 'table')) setExportFormat('png'); }} /> Selection</label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="export-scope"
+                      value="table-cells"
+                      checked={exportScope === 'table-cells'}
+                      disabled={hydrated && (!tableInteraction || tableInteraction.mode === 'table')}
+                      onChange={() => setExportScope('table-cells')}
+                    /> Cells
+                  </label>
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>Format</legend>
+                <div className="export-segmented export-formats">
+                  {(['png', 'svg', 'pdf', 'csv'] as const).map((format) => {
+                    const csvAvailable = exportScope === 'table-cells'
+                      || (exportScope === 'selection' && selectedNodes.length === 1 && selectedNodes[0].data.kind === 'table');
+                    return (
+                      <label key={format}>
+                        <input
+                          type="radio"
+                          name="export-format"
+                          value={format}
+                          checked={exportFormat === format}
+                          disabled={hydrated && format === 'csv' && !csvAvailable}
+                          onChange={() => setExportFormat(format)}
+                        /> {format.toUpperCase()}
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              {exportFormat !== 'csv' ? (
+                <div className="export-settings-grid">
+                  <label>Padding
+                    <select aria-label="Export padding" value={exportPadding} onChange={(event) => setExportPadding(Number(event.target.value))}>
+                      <option value={0}>None</option><option value={24}>Small</option><option value={48}>Medium</option><option value={96}>Large</option>
+                    </select>
+                  </label>
+                  {exportFormat !== 'pdf' ? <label>Background
+                    <select aria-label="Export background" value={exportBackground} onChange={(event) => setExportBackground(event.target.value as ExportBackground)}>
+                      <option value="transparent">Transparent</option><option value="white">White</option>
+                    </select>
+                  </label> : null}
+                  {exportFormat === 'png' ? <label>Resolution
+                    <select aria-label="PNG resolution" value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))}>
+                      <option value={1}>1×</option><option value={2}>2×</option><option value={3}>3×</option><option value={4}>4×</option>
+                    </select>
+                  </label> : null}
+                  {exportFormat === 'pdf' ? <>
+                    <label>Page
+                      <select aria-label="PDF page size" value={pdfPageSize} onChange={(event) => setPdfPageSize(event.target.value as PdfPageSize)}>
+                        <option value="fit">Fit content</option><option value="a4">A4</option><option value="letter">Letter</option>
+                      </select>
+                    </label>
+                    <label>Orientation
+                      <select aria-label="PDF orientation" value={pdfOrientation} onChange={(event) => setPdfOrientation(event.target.value as PdfOrientation)}>
+                        <option value="auto">Auto</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option>
+                      </select>
+                    </label>
+                    <label>Margin
+                      <select aria-label="PDF margin" value={pdfMargin} onChange={(event) => setPdfMargin(Number(event.target.value))}>
+                        <option value={0}>None</option><option value={24}>Small</option><option value={48}>Large</option>
+                      </select>
+                    </label>
+                    <label>Quality
+                      <select aria-label="PDF quality" value={pdfQuality} onChange={(event) => setPdfQuality(Number(event.target.value))}>
+                        <option value={1}>Standard</option><option value={2}>High</option><option value={3}>Print</option>
+                      </select>
+                    </label>
+                  </> : null}
+                </div>
+              ) : <p className="export-note">CSV includes cell text in row order with spreadsheet-compatible UTF-8 encoding.</p>}
             </div>
             <dl className="export-summary">
-              <div><dt>Visible objects</dt><dd>{nodes.filter((node) => !node.hidden).length}</dd></div>
-              <div><dt>Vector paths</dt><dd>{nodes.reduce((count, node) => count + (node.data.kind === 'vector' ? node.data.paths.filter((path) => path.visible).length : 0), 0)}</dd></div>
+              <div><dt>Scope</dt><dd>{exportScope === 'canvas' ? 'Full canvas' : exportScope === 'selection' ? 'Selected layers' : 'Selected cells'}</dd></div>
+              <div><dt>Layers</dt><dd>{hydrated ? (exportScope === 'selection' ? selectedNodeCount : exportScope === 'canvas' ? nodes.filter((node) => !node.hidden).length : 1) : '—'}</dd></div>
               <div><dt>Processing</dt><dd>On device</dd></div>
             </dl>
             <div className="dialog-actions">
-              <button type="button" className="secondary-button" onClick={() => setExportOpen(false)}>Cancel</button>
-              <button type="button" className="primary-button" onClick={performExport}><Download size={14} /> Download SVG</button>
+              <button type="button" className="secondary-button" disabled={exportBusy} onClick={() => setExportOpen(false)}>Cancel</button>
+              <button type="button" className="primary-button" disabled={exportBusy} onClick={() => void performExport()}>
+                {exportBusy ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} {exportBusy ? 'Preparing…' : `Download ${exportFormat.toUpperCase()}`}
+              </button>
             </div>
           </form>
         </dialog>

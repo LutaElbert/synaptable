@@ -312,26 +312,48 @@ function renderEdges(edges: EditorEdge[], nodes: EditorNode[], offsetX: number, 
     .join('');
 }
 
-export function buildSvgDocument(nodes: EditorNode[], edges: EditorEdge[]): string {
+export type SvgExportOptions = {
+  padding?: number;
+  background?: 'transparent' | 'white';
+};
+
+export type SvgExportResult = {
+  svg: string;
+  width: number;
+  height: number;
+};
+
+export function buildSvgExport(
+  nodes: EditorNode[],
+  edges: EditorEdge[],
+  { padding = 48, background = 'transparent' }: SvgExportOptions = {},
+): SvgExportResult {
   const visibleNodes = nodes.filter((node) => !node.hidden);
   if (visibleNodes.length === 0) throw new Error('There is nothing visible to export.');
 
-  const padding = 48;
-  const minX = Math.min(...visibleNodes.map((node) => node.position.x)) - padding;
-  const minY = Math.min(...visibleNodes.map((node) => node.position.y)) - padding;
-  const maxX = Math.max(...visibleNodes.map((node) => node.position.x + nodeSize(node).width)) + padding;
-  const maxY = Math.max(...visibleNodes.map((node) => node.position.y + nodeSize(node).height)) + padding;
+  const safePadding = Math.max(0, Math.min(240, Math.round(padding)));
+  const minX = Math.min(...visibleNodes.map((node) => node.position.x)) - safePadding;
+  const minY = Math.min(...visibleNodes.map((node) => node.position.y)) - safePadding;
+  const maxX = Math.max(...visibleNodes.map((node) => node.position.x + nodeSize(node).width)) + safePadding;
+  const maxY = Math.max(...visibleNodes.map((node) => node.position.y + nodeSize(node).height)) + safePadding;
   const width = Math.max(1, maxX - minX);
   const height = Math.max(1, maxY - minY);
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="title desc">
   <title id="title">SynapTable editable diagram</title>
   <desc id="desc">An editable SVG exported from SynapTable.</desc>
   <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a9adb7" /></marker></defs>
+  ${background === 'white' ? `<rect width="${width}" height="${height}" fill="#ffffff" />` : ''}
   ${renderEdges(edges, visibleNodes, minX, minY)}
   ${visibleNodes.map((node) => renderNode(node, minX, minY)).join('\n  ')}
 </svg>`;
+
+  return { svg, width, height };
+}
+
+export function buildSvgDocument(nodes: EditorNode[], edges: EditorEdge[]): string {
+  return buildSvgExport(nodes, edges).svg;
 }
 
 export function downloadSvg(svg: string, fileName: string) {

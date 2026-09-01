@@ -647,7 +647,8 @@ test('preserves Unicode and RTL cell text through search, reload, and SVG export
   await page.reload();
   await expect(page.locator('main[data-ready="true"]')).toBeVisible();
   await expect(page.locator('.react-flow__node-table').getByText(unicodeText, { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Export SVG' }).click();
+  await page.getByRole('button', { name: 'Export canvas' }).click();
+  await page.getByText('SVG', { exact: true }).click();
   const svgDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download SVG' }).click();
   const downloadPath = await (await svgDownload).path();

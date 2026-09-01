@@ -1281,7 +1281,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .toast-info svg { color: var(--accent); }
 
 .export-dialog {
-  inline-size: min(430px, calc(100vw - 28px));
+  inline-size: min(540px, calc(100vw - 28px));
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 17px;
@@ -1294,7 +1294,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .dialog-icon { display: grid; place-items: center; inline-size: 40px; block-size: 40px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
 .dialog-copy h2 { margin: 3px 0 0; font-size: 17px; letter-spacing: -.03em; }
 .dialog-copy p { margin: 7px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
-.export-summary, .dialog-actions { grid-column: 1 / -1; }
+.export-summary, .export-controls, .dialog-actions { grid-column: 1 / -1; }
+.export-controls { display: grid; gap: 13px; }
+.export-controls fieldset { min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.export-controls legend { margin-block-end: 6px; color: var(--muted); font-size: 9px; font-weight: 680; }
+.export-segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: #f7f7fa; }
+.export-segmented.export-formats { grid-template-columns: repeat(4, 1fr); }
+.export-segmented label { display: grid; min-block-size: 32px; place-items: center; border-radius: 7px; color: #5b5e67; font-size: 9px; font-weight: 680; cursor: pointer; }
+.export-segmented label:has(input:checked) { background: white; box-shadow: 0 1px 4px rgb(25 26 31 / 10%); color: var(--accent); }
+.export-segmented label:has(input:disabled) { opacity: .42; cursor: not-allowed; }
+.export-segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.export-segmented label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.export-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding: 11px; border: 1px solid var(--line); border-radius: 11px; }
+.export-settings-grid label { display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 650; }
+.export-settings-grid select { inline-size: 100%; min-block-size: 34px; padding-inline: 9px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); font: inherit; }
+.export-note { margin: 0; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: #fafafd; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .export-summary { display: grid; gap: 0; margin: 5px 0 0; padding: 0 12px; border: 1px solid var(--line); border-radius: 11px; background: #fafafd; }
 .export-summary div { display: flex; justify-content: space-between; padding-block: 10px; border-block-end: 1px solid var(--line); font-size: 9px; }
 .export-summary div:last-child { border-block-end: 0; }

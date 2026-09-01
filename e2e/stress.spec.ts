@@ -194,7 +194,8 @@ test('renders, guards, exports, and restores the 2,000-cell table boundary', asy
   await expect(page.locator('.react-flow__node-table .table-cell')).toHaveCount(2_000);
 
   const exportStarted = Date.now();
-  await page.getByRole('button', { name: 'Export SVG' }).click();
+  await page.getByRole('button', { name: 'Export canvas' }).click();
+  await page.getByText('SVG', { exact: true }).click();
   const svgDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download SVG' }).click();
   const download = await svgDownload;

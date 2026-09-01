@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSvgDocument } from './export-svg';
+import { buildSvgDocument, buildSvgExport } from './export-svg';
 import { initialDocument } from './initial-document';
 import { createTableData, tableDimensions } from './table-grid';
 import type { EditorNode } from './types';
@@ -102,6 +102,17 @@ describe('buildSvgDocument', () => {
 
   it('rejects an empty visible canvas', () => {
     expect(() => buildSvgDocument([], [])).toThrow('nothing visible');
+  });
+
+  it('applies configurable padding and an optional white background', () => {
+    const node = structuredClone(initialDocument.nodes[0]);
+    node.style = { width: 220, height: 100 };
+    const transparent = buildSvgExport([node], [], { padding: 0 });
+    const white = buildSvgExport([node], [], { padding: 20, background: 'white' });
+    expect(white.width).toBe(transparent.width + 40);
+    expect(white.height).toBe(transparent.height + 40);
+    expect(white.svg).toContain(`<rect width="${white.width}" height="${white.height}" fill="#ffffff" />`);
+    expect(transparent.svg).not.toContain('fill="#ffffff" />');
   });
 
   it('exports connector labels and styles', () => {
