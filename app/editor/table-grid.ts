@@ -69,6 +69,10 @@ function createRow(columnCount: number, values: string[] = []): TableRow {
   };
 }
 
+function blankCellFrom(cell: TableCell, text = ''): TableCell {
+  return { ...cell, id: createId(), text: text.slice(0, TABLE_MAX_CELL_TEXT) };
+}
+
 export function createTableData({
   name = 'New table',
   rows = TABLE_DEFAULT_ROWS,
@@ -181,12 +185,58 @@ export function updateTableCell(
   };
 }
 
+export function updateTableCells(
+  data: TableNodeData,
+  addresses: TableCellAddress[],
+  updater: (cell: TableCell) => TableCell,
+): TableNodeData {
+  if (!addresses.length) return data;
+  const selected = new Set(addresses.map((address) => `${address.rowId}\u0000${address.columnId}`));
+  let changed = false;
+  const rows = data.rows.map((row) => {
+    let rowChanged = false;
+    const cells = row.cells.map((cell, columnIndex) => {
+      const column = data.columns[columnIndex];
+      if (!column || !selected.has(`${row.id}\u0000${column.id}`)) return cell;
+      rowChanged = true;
+      changed = true;
+      return updater(cell);
+    });
+    return rowChanged ? { ...row, cells } : row;
+  });
+  return changed ? { ...data, rows } : data;
+}
+
 export function insertTableRow(data: TableNodeData, index: number, values: string[] = []): TableNodeData {
   if (data.rows.length >= TABLE_MAX_ROWS || (data.rows.length + 1) * data.columns.length > TABLE_MAX_CELLS) {
     throw new Error(`A table can contain at most ${TABLE_MAX_CELLS.toLocaleString()} cells.`);
   }
+  const insertionIndex = clamp(index, 0, data.rows.length);
+  const template = data.rows[insertionIndex > 0 ? insertionIndex - 1 : 0];
   const rows = [...data.rows];
-  rows.splice(clamp(index, 0, rows.length), 0, createRow(data.columns.length, values));
+  rows.splice(insertionIndex, 0, template
+    ? {
+        id: createId(),
+        height: template.height,
+        cells: template.cells.map((cell, cellIndex) => blankCellFrom(cell, values[cellIndex] ?? '')),
+      }
+    : createRow(data.columns.length, values));
+  return { ...data, rows };
+}
+
+export function duplicateTableRow(data: TableNodeData, index: number): TableNodeData {
+  if (data.rows.length >= TABLE_MAX_ROWS || (data.rows.length + 1) * data.columns.length > TABLE_MAX_CELLS) {
+    throw new Error(`A table can contain at most ${TABLE_MAX_CELLS.toLocaleString()} cells.`);
+  }
+  const source = data.rows[index];
+  if (!source) return data;
+  const duplicate: TableRow = {
+    ...source,
+    id: createId(),
+    cells: source.cells.map((cell) => ({ ...cell, id: createId() })),
+  };
+  const rows = [...data.rows];
+  rows.splice(index + 1, 0, duplicate);
   return { ...data, rows };
 }
 
@@ -209,14 +259,37 @@ export function insertTableColumn(data: TableNodeData, index: number, values: st
     throw new Error(`A table can contain at most ${TABLE_MAX_CELLS.toLocaleString()} cells.`);
   }
   const insertionIndex = clamp(index, 0, data.columns.length);
+  const templateIndex = insertionIndex > 0 ? insertionIndex - 1 : 0;
   const columns = [...data.columns];
-  columns.splice(insertionIndex, 0, createColumn());
+  columns.splice(insertionIndex, 0, createColumn(data.columns[templateIndex]?.width));
   return {
     ...data,
     columns,
     rows: data.rows.map((row, rowIndex) => {
       const cells = [...row.cells];
-      cells.splice(insertionIndex, 0, createCell(values[rowIndex] ?? ''));
+      const template = row.cells[templateIndex];
+      cells.splice(insertionIndex, 0, template
+        ? blankCellFrom(template, values[rowIndex] ?? '')
+        : createCell(values[rowIndex] ?? ''));
+      return { ...row, cells };
+    }),
+  };
+}
+
+export function duplicateTableColumn(data: TableNodeData, index: number): TableNodeData {
+  if (data.columns.length >= TABLE_MAX_COLUMNS || data.rows.length * (data.columns.length + 1) > TABLE_MAX_CELLS) {
+    throw new Error(`A table can contain at most ${TABLE_MAX_CELLS.toLocaleString()} cells.`);
+  }
+  const source = data.columns[index];
+  if (!source) return data;
+  const columns = [...data.columns];
+  columns.splice(index + 1, 0, { ...source, id: createId() });
+  return {
+    ...data,
+    columns,
+    rows: data.rows.map((row) => {
+      const cells = [...row.cells];
+      cells.splice(index + 1, 0, { ...row.cells[index], id: createId() });
       return { ...row, cells };
     }),
   };
@@ -267,6 +340,49 @@ export function resizeTableColumn(data: TableNodeData, index: number, width: num
     columns: data.columns.map((column, columnIndex) => columnIndex === index
       ? { ...column, width: clamp(width, TABLE_MIN_COLUMN_WIDTH, TABLE_MAX_COLUMN_WIDTH) }
       : column),
+  };
+}
+
+export function distributeTableRows(data: TableNodeData): TableNodeData {
+  const total = data.rows.reduce((sum, row) => sum + row.height, 0);
+  const height = clamp(total / data.rows.length, TABLE_MIN_ROW_HEIGHT, TABLE_MAX_ROW_HEIGHT);
+  return { ...data, rows: data.rows.map((row) => ({ ...row, height })) };
+}
+
+export function distributeTableColumns(data: TableNodeData): TableNodeData {
+  const total = data.columns.reduce((sum, column) => sum + column.width, 0);
+  const width = clamp(total / data.columns.length, TABLE_MIN_COLUMN_WIDTH, TABLE_MAX_COLUMN_WIDTH);
+  return { ...data, columns: data.columns.map((column) => ({ ...column, width })) };
+}
+
+export function fitTableColumnToContent(data: TableNodeData, index: number): TableNodeData {
+  if (!data.columns[index]) return data;
+  const longestLine = data.rows.reduce((maximum, row) => Math.max(
+    maximum,
+    ...(row.cells[index]?.text.split('\n').map((line) => [...line].length) ?? [0]),
+  ), 0);
+  return resizeTableColumn(data, index, Math.ceil(longestLine * 6.2 + 24));
+}
+
+export function fitTableRowToContent(data: TableNodeData, index: number): TableNodeData {
+  const row = data.rows[index];
+  if (!row) return data;
+  const lines = row.cells.reduce((maximum, cell, columnIndex) => {
+    const charactersPerLine = Math.max(1, Math.floor((data.columns[columnIndex].width - 18) / 6.2));
+    const wrappedLines = cell.text.split('\n').reduce(
+      (total, line) => total + Math.max(1, Math.ceil([...line].length / charactersPerLine)),
+      0,
+    );
+    return Math.max(maximum, wrappedLines);
+  }, 1);
+  return resizeTableRow(data, index, Math.ceil(lines * 14 + 16));
+}
+
+export function resetTableSizing(data: TableNodeData): TableNodeData {
+  return {
+    ...data,
+    columns: data.columns.map((column) => ({ ...column, width: TABLE_DEFAULT_COLUMN_WIDTH })),
+    rows: data.rows.map((row) => ({ ...row, height: TABLE_DEFAULT_ROW_HEIGHT })),
   };
 }
 
@@ -328,6 +444,24 @@ export function clipboardGridFromHtml(html: string): ClipboardGrid | null {
 
 export function clipboardGrid(html: string, text: string): ClipboardGrid {
   return clipboardGridFromHtml(html) ?? clipboardGridFromText(text);
+}
+
+export function clipboardGridToText(grid: ClipboardGrid) {
+  return grid.map((row) => row.join('\t')).join('\n');
+}
+
+function escapeClipboardHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+    .replaceAll('\n', '<br>');
+}
+
+export function clipboardGridToHtml(grid: ClipboardGrid) {
+  return `<table><tbody>${grid.map((row) => `<tr>${row.map((cell) => `<td>${escapeClipboardHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 
 export function pasteTableGrid(

@@ -476,9 +476,9 @@ Deferred styling:
 - No clipboard, backup, or imported content can create HTML/script execution.
 - A rejected operation leaves nodes, edges, history, selection, and autosave state unchanged.
 
-## 15. Current implementation gap analysis
+## 15. Current implementation status and remaining gaps
 
-The committed version 5 baseline already provides:
+The version 5 table baseline provides:
 
 - Default 3 × 3 creation from toolbar and templates.
 - Whole-table canvas behavior and proportional resizing.
@@ -489,22 +489,31 @@ The committed version 5 baseline already provides:
 - Selection-to-table conversion.
 - Search, persistence, strict validation, deep duplication, SVG export, and a 2,000-cell cap.
 
-The next implementation pass should close these gaps in order:
+The current implementation branch additionally provides:
 
-1. Clear table-versus-cell click hierarchy and Escape ladder.
-2. Direct row/column boundary resize handles.
-3. Explicit insert above/below/left/right commands.
-4. Row and column grabber selection.
-5. Rectangular cell range selection.
-6. Copy/cut from inner selections.
-7. Duplicate row/column and drag reordering.
-8. Fit-to-content and distribute sizing commands.
-9. Touch-specific affordances and empty-canvas spreadsheet paste.
-10. Focused assistive-technology validation and any resulting semantic adjustments.
+- A non-persisted table/cell/range/row/column/editing interaction-state union.
+- Deterministic table-versus-cell click hierarchy and Escape ladder.
+- Row/column grabbers and rectangular pointer/keyboard range selection.
+- Printable-key editing, Home/End navigation, range clearing, and guarded canvas deletion.
+- Pointer-captured internal row/column resize handles with Escape cancellation and keyboard resizing.
+- Edge add controls and explicit insert above/below/left/right inspector commands.
+- Row/column duplication, explicit deletion, accessible move commands, exact sizing, fit, distribute, and reset.
+- Range copy/cut as TSV plus escaped HTML, range-aware paste, bulk styling, clear contents, and clear formatting.
+- Cross-engine caption/row sizing normalization so persisted geometry matches Chromium, Firefox, and WebKit rendering.
+
+The remaining gaps are now:
+
+1. Drag row/column reordering with insertion indicators and canvas auto-pan.
+2. Touch-sized resize/reorder affordances and a long-press command menu.
+3. Empty-canvas spreadsheet paste and the creation size picker.
+4. Search-to-cell reveal and optional table/row/column context menus.
+5. Manual Sheets/Excel/Docs clipboard interop and VoiceOver/NVDA validation.
 
 ## 16. Implementation phases
 
 ### Phase A — Selection foundation
+
+Status: implemented; automated table coverage passes in Chromium, Firefox, and WebKit.
 
 Deliver:
 
@@ -520,6 +529,8 @@ Gate:
 - No selection state is persisted or added to history.
 
 ### Phase B — Direct structure and resizing
+
+Status: implemented for boundary resizing and accessible inspector/direct commands. Drag reordering remains in Phase D.
 
 Deliver:
 
@@ -537,6 +548,8 @@ Gate:
 
 ### Phase C — Clipboard and bulk formatting
 
+Status: implemented and covered with synthetic browser clipboard matrices and hostile-HTML escaping. Manual third-party clipboard validation remains a release check.
+
 Deliver:
 
 - Range copy/cut as TSV and escaped HTML.
@@ -551,6 +564,8 @@ Gate:
 - One action equals one undo step.
 
 ### Phase D — Reorder, touch, and workflow polish
+
+Status: pending.
 
 Deliver:
 

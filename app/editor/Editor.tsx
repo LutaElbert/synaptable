@@ -125,14 +125,31 @@ import { RichTextView } from './RichTextView';
 import {
   TableNode,
   TableNodeActionContext,
-  type ActiveTableCell,
   type TableNavigationDirection,
 } from './TableNode';
 import {
+  normalizeTableInteraction,
+  tableColumnRange,
+  tableInteractionCells,
+  tableInteractionFocus,
+  tableInteractionGrid,
+  tableInteractionTopLeft,
+  tableRowRange,
+  type TableInteraction,
+} from './table-interaction';
+import {
   adjacentTableCell,
   cloneTableData,
+  clipboardGridToHtml,
+  clipboardGridToText,
   createTableData,
+  distributeTableColumns,
+  distributeTableRows,
+  duplicateTableColumn,
+  duplicateTableRow,
   firstTableCell,
+  fitTableColumnToContent,
+  fitTableRowToContent,
   insertTableColumn,
   insertTableRow,
   moveTableColumn,
@@ -142,6 +159,7 @@ import {
   removeTableRow,
   resizeTableColumn,
   resizeTableRow,
+  resetTableSizing,
   scaleTable,
   sequentialTableCell,
   tableCellAt,
@@ -149,6 +167,7 @@ import {
   tableFromNodes,
   tableSearchText,
   updateTableCell,
+  updateTableCells,
   TABLE_MAX_CELLS,
   TABLE_MAX_COLUMNS,
   TABLE_MAX_COLUMN_WIDTH,
@@ -583,7 +602,7 @@ function EditorInner() {
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [editingConceptId, setEditingConceptId] = useState<string | null>(null);
   const [editingConceptField, setEditingConceptField] = useState<'title' | 'body'>('title');
-  const [activeTableCell, setActiveTableCell] = useState<ActiveTableCell | null>(null);
+  const [tableInteraction, setTableInteraction] = useState<TableInteraction | null>(null);
   const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [conceptTemplate, setConceptTemplate] = useState<QuickTemplate>('idea');
@@ -1220,7 +1239,7 @@ function EditorInner() {
     ]);
     setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
     setSelectedPath(null);
-    setActiveTableCell({ nodeId: id, ...firstTableCell(data), mode: 'selected' });
+    setTableInteraction({ mode: 'table', nodeId: id });
     layerSelectionAnchorRef.current = id;
     announce('Table added. Press Enter to edit the selected cell.', 'success');
   }, [announce, recordHistory, screenToFlowPosition]);
@@ -1366,7 +1385,7 @@ function EditorInner() {
         tableNode,
       ]);
       setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
-      setActiveTableCell({ nodeId: id, ...firstTableCell(data), mode: 'selected' });
+      setTableInteraction({ mode: 'table', nodeId: id });
       layerSelectionAnchorRef.current = id;
       announce(`Organized ${selected.length} ${selected.length === 1 ? 'layer' : 'layers'} into table rows. Originals were kept.`, 'success');
     } catch (error) {
@@ -1905,33 +1924,86 @@ function EditorInner() {
       : node);
   }, [updateNode]);
 
-  const focusTableCell = useCallback((cell: ActiveTableCell | null) => {
-    if (!cell) return;
+  const focusTableCell = useCallback((nodeId: string, address: TableCellAddress | null) => {
+    if (!address) return;
     window.requestAnimationFrame(() => {
-      const selector = `[data-table-node-id="${CSS.escape(cell.nodeId)}"][data-table-row-id="${CSS.escape(cell.rowId)}"][data-table-column-id="${CSS.escape(cell.columnId)}"]`;
+      const tableSelector = `.react-flow__node[data-id="${CSS.escape(nodeId)}"]`;
+      if (document.querySelector(`${tableSelector} .table-cell-editor`)) return;
+      const selector = `[data-table-node-id="${CSS.escape(nodeId)}"][data-table-row-id="${CSS.escape(address.rowId)}"][data-table-column-id="${CSS.escape(address.columnId)}"]`;
       document.querySelector<HTMLElement>(selector)?.focus();
     });
   }, []);
 
-  const selectTableCell = useCallback((id: string, address: TableCellAddress) => {
-    const next = { nodeId: id, ...address, mode: 'selected' as const };
-    setActiveTableCell((current) => current?.nodeId === id
-      && current.rowId === address.rowId
-      && current.columnId === address.columnId
-      && current.mode === 'selected'
-      ? current
-      : next);
-    if (!nodesRef.current.find((node) => node.id === id)?.selected) selectNode(id);
-  }, [selectNode]);
+  const focusTableNode = useCallback((nodeId: string) => {
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(nodeId)}"]`)?.focus();
+    });
+  }, []);
 
-  const beginTableCellEdit = useCallback((id: string, address: TableCellAddress) => {
+  const selectWholeTable = useCallback((id: string) => {
+    tableEditOriginRef.current = null;
+    setTableInteraction({ mode: 'table', nodeId: id });
+    const selected = nodesRef.current.filter((node) => node.selected);
+    if (selected.length !== 1 || selected[0].id !== id) selectNode(id);
+    focusTableNode(id);
+  }, [focusTableNode, selectNode]);
+
+  const selectTableCell = useCallback((id: string, address: TableCellAddress, extend = false) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || !tableCellAt(node.data, address)) return;
+    setTableInteraction((current) => {
+      const anchor = extend && current?.nodeId === id && current.mode === 'cell'
+        ? current.anchor
+        : address;
+      return { mode: 'cell', nodeId: id, anchor, focus: address };
+    });
+    const selected = nodesRef.current.filter((item) => item.selected);
+    if (selected.length !== 1 || selected[0].id !== id) selectNode(id);
+    focusTableCell(id, address);
+  }, [focusTableCell, selectNode]);
+
+  const selectTableRow = useCallback((id: string, rowId: string, extend = false) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || !node.data.rows.some((row) => row.id === rowId)) return;
+    const data = node.data;
+    setTableInteraction((current) => {
+      const anchor = extend && current?.nodeId === id && current.mode === 'row'
+        ? current.rowIds[0]
+        : rowId;
+      return { mode: 'row', nodeId: id, rowIds: tableRowRange(data, anchor, rowId) };
+    });
+  }, []);
+
+  const selectTableColumn = useCallback((id: string, columnId: string, extend = false) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || !node.data.columns.some((column) => column.id === columnId)) return;
+    const data = node.data;
+    setTableInteraction((current) => {
+      const anchor = extend && current?.nodeId === id && current.mode === 'column'
+        ? current.columnIds[0]
+        : columnId;
+      return { mode: 'column', nodeId: id, columnIds: tableColumnRange(data, anchor, columnId) };
+    });
+  }, []);
+
+  const beginTableCellEdit = useCallback((
+    id: string,
+    address: TableCellAddress,
+    replacement?: string,
+  ) => {
     const node = nodesRef.current.find((item) => item.id === id);
     if (!node || node.data.kind !== 'table' || node.data.locked || !tableCellAt(node.data, address)) return;
     if (!tableEditOriginRef.current) {
       tableEditOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
     }
-    setActiveTableCell({ nodeId: id, ...address, mode: 'editing' });
-    if (!node.selected) selectNode(id);
+    if (replacement !== undefined) {
+      setNodes((current) => current.map((item) => item.id === id && item.data.kind === 'table'
+        ? { ...item, data: updateTableCell(item.data, address, (cell) => ({ ...cell, text: replacement.slice(0, 2_000) })) }
+        : item));
+    }
+    setTableInteraction({ mode: 'editing', nodeId: id, cell: address });
+    const selected = nodesRef.current.filter((item) => item.selected);
+    if (selected.length !== 1 || selected[0].id !== id) selectNode(id);
   }, [selectNode]);
 
   const updateTableCellText = useCallback((id: string, address: TableCellAddress, text: string) => {
@@ -1945,7 +2017,7 @@ function EditorInner() {
 
   const commitTableCellEdit = useCallback(() => {
     const origin = tableEditOriginRef.current;
-    const active = activeTableCell;
+    const active = tableInteraction?.mode === 'editing' ? tableInteraction : null;
     if (origin && active) {
       const before = origin.nodes.find((node) => node.id === active.nodeId);
       const after = nodesRef.current.find((node) => node.id === active.nodeId);
@@ -1953,14 +2025,14 @@ function EditorInner() {
     }
     tableEditOriginRef.current = null;
     if (!active) return;
-    const next = { ...active, mode: 'selected' as const };
-    setActiveTableCell(next);
-    focusTableCell(next);
-  }, [activeTableCell, focusTableCell, recordHistory]);
+    const next: TableInteraction = { mode: 'cell', nodeId: active.nodeId, anchor: active.cell, focus: active.cell };
+    setTableInteraction(next);
+    focusTableCell(active.nodeId, active.cell);
+  }, [focusTableCell, recordHistory, tableInteraction]);
 
   const cancelTableCellEdit = useCallback(() => {
     const origin = tableEditOriginRef.current;
-    const active = activeTableCell;
+    const active = tableInteraction?.mode === 'editing' ? tableInteraction : null;
     if (origin) {
       nodesRef.current = origin.nodes;
       edgesRef.current = origin.edges;
@@ -1969,27 +2041,74 @@ function EditorInner() {
     }
     tableEditOriginRef.current = null;
     if (!active) return;
-    const next = { ...active, mode: 'selected' as const };
-    setActiveTableCell(next);
-    focusTableCell(next);
-  }, [activeTableCell, focusTableCell]);
+    const next: TableInteraction = { mode: 'cell', nodeId: active.nodeId, anchor: active.cell, focus: active.cell };
+    setTableInteraction(next);
+    focusTableCell(active.nodeId, active.cell);
+  }, [focusTableCell, tableInteraction]);
+
+  const clearSelectedTableCells = useCallback((id: string) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || tableInteraction?.nodeId !== id) return;
+    const data = node.data;
+    const addresses = tableInteractionCells(data, tableInteraction);
+    if (!addresses.length || !addresses.some((address) => tableCellAt(data, address)?.cell.text)) return;
+    recordHistory();
+    setNodes((current) => current.map((item) => item.id === id && item.data.kind === 'table'
+      ? { ...item, data: updateTableCells(item.data, addresses, (cell) => ({ ...cell, text: '' })) }
+      : item));
+    announce(`Cleared ${addresses.length} ${addresses.length === 1 ? 'cell' : 'cells'}.`);
+  }, [announce, recordHistory, tableInteraction]);
+
+  const copySelectedTableCells = useCallback((id: string, clipboardData: DataTransfer, cut: boolean) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked || tableInteraction?.nodeId !== id) return;
+    const data = node.data;
+    const grid = tableInteractionGrid(data, tableInteraction);
+    const addresses = tableInteractionCells(data, tableInteraction);
+    if (!grid.length || !addresses.length) return;
+    clipboardData.setData('text/plain', clipboardGridToText(grid));
+    clipboardData.setData('text/html', clipboardGridToHtml(grid));
+    if (cut && addresses.some((address) => tableCellAt(data, address)?.cell.text)) {
+      recordHistory();
+      setNodes((current) => current.map((item) => item.id === id && item.data.kind === 'table'
+        ? { ...item, data: updateTableCells(item.data, addresses, (cell) => ({ ...cell, text: '' })) }
+        : item));
+    }
+    const columns = Math.max(1, ...grid.map((row) => row.length));
+    announce(`${cut ? 'Cut' : 'Copied'} ${grid.length} × ${columns} cells.`, 'success');
+  }, [announce, recordHistory, tableInteraction]);
 
   const navigateTableCell = useCallback((
     id: string,
     address: TableCellAddress,
     direction: TableNavigationDirection,
+    extend = false,
   ) => {
     const node = nodesRef.current.find((item) => item.id === id);
     if (!node || node.data.kind !== 'table') return;
     let data = node.data;
-    let target = direction === 'next' || direction === 'previous'
-      ? sequentialTableCell(data, address, direction === 'next' ? 1 : -1)
-      : adjacentTableCell(
-          data,
-          address,
-          direction === 'up' ? -1 : direction === 'down' ? 1 : 0,
-          direction === 'left' ? -1 : direction === 'right' ? 1 : 0,
-        );
+    const current = tableCellAt(data, address);
+    if (!current) return;
+    let target: TableCellAddress | null;
+    if (direction === 'next' || direction === 'previous') {
+      target = sequentialTableCell(data, address, direction === 'next' ? 1 : -1);
+    } else if (direction === 'row-start' || direction === 'row-end') {
+      target = {
+        rowId: current.row.id,
+        columnId: data.columns[direction === 'row-start' ? 0 : data.columns.length - 1].id,
+      };
+    } else if (direction === 'table-start' || direction === 'table-end') {
+      target = direction === 'table-start'
+        ? firstTableCell(data)
+        : { rowId: data.rows.at(-1)!.id, columnId: data.columns.at(-1)!.id };
+    } else {
+      target = adjacentTableCell(
+        data,
+        address,
+        direction === 'up' ? -1 : direction === 'down' ? 1 : 0,
+        direction === 'left' ? -1 : direction === 'right' ? 1 : 0,
+      );
+    }
     if (!target && direction === 'next') {
       try {
         recordHistory();
@@ -1997,7 +2116,7 @@ function EditorInner() {
         const dimensions = tableDimensions(data);
         const nextRow = data.rows.at(-1)!;
         target = { rowId: nextRow.id, columnId: data.columns[0].id };
-        setNodes((current) => current.map((item) => item.id === id
+        setNodes((currentNodes) => currentNodes.map((item) => item.id === id
           ? { ...item, data, style: { ...item.style, ...dimensions } }
           : item));
         announce('Added a new table row.');
@@ -2007,27 +2126,73 @@ function EditorInner() {
       }
     }
     if (!target) target = address;
-    const next = { nodeId: id, ...target, mode: 'selected' as const };
-    setActiveTableCell(next);
-    focusTableCell(next);
-  }, [announce, focusTableCell, recordHistory]);
+    const anchor = extend && tableInteraction?.nodeId === id && tableInteraction.mode === 'cell'
+      ? tableInteraction.anchor
+      : target;
+    const next: TableInteraction = { mode: 'cell', nodeId: id, anchor, focus: target };
+    setTableInteraction(next);
+    focusTableCell(id, target);
+  }, [announce, focusTableCell, recordHistory, tableInteraction]);
 
   const pasteIntoTable = useCallback((id: string, address: TableCellAddress, grid: ClipboardGrid) => {
     const node = nodesRef.current.find((item) => item.id === id);
     if (!node || node.data.kind !== 'table' || node.data.locked) return;
     try {
-      const data = pasteTableGrid(node.data, address, grid);
+      const start = tableInteraction?.nodeId === id
+        ? tableInteractionTopLeft(node.data, tableInteraction) ?? address
+        : address;
+      const startCell = tableCellAt(node.data, start);
+      if (!startCell) return;
+      const data = pasteTableGrid(node.data, start, grid);
       const dimensions = tableDimensions(data);
       recordHistory(tableEditOriginRef.current ?? undefined);
       tableEditOriginRef.current = null;
       setNodes((current) => current.map((item) => item.id === id
         ? { ...item, data, style: { ...item.style, ...dimensions } }
         : item));
-      setActiveTableCell({ nodeId: id, ...address, mode: 'selected' });
       const pastedColumns = Math.max(1, ...grid.map((row) => row.length));
+      const focus = {
+        rowId: data.rows[Math.min(data.rows.length - 1, startCell.rowIndex + grid.length - 1)].id,
+        columnId: data.columns[Math.min(data.columns.length - 1, startCell.columnIndex + pastedColumns - 1)].id,
+      };
+      setTableInteraction({ mode: 'cell', nodeId: id, anchor: start, focus });
       announce(`Pasted ${grid.length} × ${pastedColumns} cells.`, 'success');
     } catch (error) {
       announce(error instanceof Error ? error.message : 'The cells could not be pasted.', 'error');
+    }
+  }, [announce, recordHistory, tableInteraction]);
+
+  const insertTableRowDirect = useCallback((id: string, index: number) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked) return;
+    try {
+      const data = insertTableRow(node.data, index);
+      const inserted = data.rows[Math.max(0, Math.min(index, data.rows.length - 1))];
+      recordHistory();
+      setNodes((current) => current.map((item) => item.id === id
+        ? { ...item, data, style: { ...item.style, ...tableDimensions(data) } }
+        : item));
+      setTableInteraction({ mode: 'row', nodeId: id, rowIds: [inserted.id] });
+      announce('Added a table row.');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The row could not be added.', 'error');
+    }
+  }, [announce, recordHistory]);
+
+  const insertTableColumnDirect = useCallback((id: string, index: number) => {
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node || node.data.kind !== 'table' || node.data.locked) return;
+    try {
+      const data = insertTableColumn(node.data, index);
+      const inserted = data.columns[Math.max(0, Math.min(index, data.columns.length - 1))];
+      recordHistory();
+      setNodes((current) => current.map((item) => item.id === id
+        ? { ...item, data, style: { ...item.style, ...tableDimensions(data) } }
+        : item));
+      setTableInteraction({ mode: 'column', nodeId: id, columnIds: [inserted.id] });
+      announce('Added a table column.');
+    } catch (error) {
+      announce(error instanceof Error ? error.message : 'The column could not be added.', 'error');
     }
   }, [announce, recordHistory]);
 
@@ -2102,15 +2267,22 @@ function EditorInner() {
 
   const tableNodeActionValue = useMemo(
     () => ({
-      activeCell: activeTableCell,
+      interaction: tableInteraction,
       selectedNodeCount,
+      selectTable: selectWholeTable,
       selectCell: selectTableCell,
+      selectRow: selectTableRow,
+      selectColumn: selectTableColumn,
       beginCellEdit: beginTableCellEdit,
       updateCellText: updateTableCellText,
       commitCellEdit: commitTableCellEdit,
       cancelCellEdit: cancelTableCellEdit,
+      clearCells: clearSelectedTableCells,
+      copyCells: copySelectedTableCells,
       navigateCell: navigateTableCell,
       pasteGrid: pasteIntoTable,
+      insertRow: insertTableRowDirect,
+      insertColumn: insertTableColumnDirect,
       recordResizeStart: () => {
         if (!resizeOriginRef.current) {
           resizeOriginRef.current = cloneSnapshot(nodesRef.current, edgesRef.current);
@@ -2132,6 +2304,35 @@ function EditorInner() {
         nodesRef.current = resizedNodes;
         setNodes(resizedNodes);
       },
+      resizeColumn: (id: string, columnIndex: number, width: number) => {
+        if (!resizeOriginRef.current) return;
+        const resizedNodes = nodesRef.current.map((node) => {
+          if (node.id !== id || node.data.kind !== 'table') return node;
+          const data = resizeTableColumn(node.data, columnIndex, width);
+          return { ...node, data, style: { ...node.style, ...tableDimensions(data) } };
+        });
+        nodesRef.current = resizedNodes;
+        setNodes(resizedNodes);
+      },
+      resizeRow: (id: string, rowIndex: number, height: number) => {
+        if (!resizeOriginRef.current) return;
+        const resizedNodes = nodesRef.current.map((node) => {
+          if (node.id !== id || node.data.kind !== 'table') return node;
+          const data = resizeTableRow(node.data, rowIndex, height);
+          return { ...node, data, style: { ...node.style, ...tableDimensions(data) } };
+        });
+        nodesRef.current = resizedNodes;
+        setNodes(resizedNodes);
+      },
+      cancelResize: () => {
+        const origin = resizeOriginRef.current;
+        if (!origin) return;
+        nodesRef.current = origin.nodes;
+        edgesRef.current = origin.edges;
+        setNodes(origin.nodes);
+        setEdges(origin.edges);
+        resizeOriginRef.current = null;
+      },
       recordResizeEnd: (id: string) => {
         const origin = resizeOriginRef.current;
         const originNode = origin?.nodes.find((node) => node.id === id);
@@ -2146,15 +2347,22 @@ function EditorInner() {
       },
     }),
     [
-      activeTableCell,
       beginTableCellEdit,
       cancelTableCellEdit,
+      clearSelectedTableCells,
       commitTableCellEdit,
+      copySelectedTableCells,
+      insertTableColumnDirect,
+      insertTableRowDirect,
       navigateTableCell,
       pasteIntoTable,
       recordHistory,
       selectedNodeCount,
+      selectTableColumn,
       selectTableCell,
+      selectTableRow,
+      selectWholeTable,
+      tableInteraction,
       updateTableCellText,
     ],
   );
@@ -2169,32 +2377,55 @@ function EditorInner() {
       if (!selected || selected.data.kind !== 'table' || selected.data.locked) return;
       event.preventDefault();
       event.stopPropagation();
-      const current = activeTableCell?.nodeId === selected.id
-        ? activeTableCell
-        : { nodeId: selected.id, ...firstTableCell(selected.data), mode: 'selected' as const };
-      setActiveTableCell(current);
-      focusTableCell(current);
+      const address = tableInteraction?.nodeId === selected.id
+        ? tableInteractionFocus(selected.data, tableInteraction) ?? firstTableCell(selected.data)
+        : firstTableCell(selected.data);
+      setTableInteraction({ mode: 'cell', nodeId: selected.id, anchor: address, focus: address });
+      focusTableCell(selected.id, address);
     };
     window.addEventListener('keydown', beginTableFromKeyboard, true);
     return () => window.removeEventListener('keydown', beginTableFromKeyboard, true);
-  }, [activeTableCell, focusTableCell]);
+  }, [focusTableCell, tableInteraction]);
 
   useEffect(() => {
-    if (!activeTableCell) return;
-    const node = nodes.find((item) => item.id === activeTableCell.nodeId);
-    if (!node || node.data.kind !== 'table') {
+    const stepOutOfTable = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key !== 'Escape' || !tableInteraction || tableInteraction.mode === 'editing') return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (tableInteraction.mode !== 'table') {
+        setTableInteraction({ mode: 'table', nodeId: tableInteraction.nodeId });
+        focusTableNode(tableInteraction.nodeId);
+        return;
+      }
+      setTableInteraction(null);
+      setNodes((current) => current.map((node) => node.selected ? { ...node, selected: false } : node));
+      setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+      (document.activeElement as HTMLElement | null)?.blur();
+    };
+    window.addEventListener('keydown', stepOutOfTable, true);
+    return () => window.removeEventListener('keydown', stepOutOfTable, true);
+  }, [focusTableNode, tableInteraction]);
+
+  useEffect(() => {
+    if (!tableInteraction) return;
+    const selected = nodes.filter((item) => item.selected);
+    const node = nodes.find((item) => item.id === tableInteraction.nodeId);
+    if (!node || node.data.kind !== 'table' || selected.length !== 1 || selected[0].id !== node.id) {
       tableEditOriginRef.current = null;
-      const frame = window.requestAnimationFrame(() => setActiveTableCell(null));
+      const frame = window.requestAnimationFrame(() => setTableInteraction(null));
       return () => window.cancelAnimationFrame(frame);
     }
-    if (tableCellAt(node.data, activeTableCell)) return;
-    const next = { nodeId: node.id, ...firstTableCell(node.data), mode: 'selected' as const };
+    const data = node.data;
+    const next = normalizeTableInteraction(data, tableInteraction);
+    if (next === tableInteraction) return;
     const frame = window.requestAnimationFrame(() => {
-      setActiveTableCell(next);
-      focusTableCell(next);
+      setTableInteraction(next);
+      focusTableCell(node.id, tableInteractionFocus(data, next));
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [activeTableCell, focusTableCell, nodes]);
+  }, [focusTableCell, nodes, tableInteraction]);
 
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
   const layerNodes = [...nodes].reverse().filter((node) => {
@@ -2559,7 +2790,10 @@ function EditorInner() {
             }}
             onSelectionStart={handleSelectionStart}
             onSelectionEnd={handleSelectionEnd}
-            onPaneClick={() => setSelectedPath(null)}
+            onPaneClick={() => {
+              setSelectedPath(null);
+              setTableInteraction(null);
+            }}
             onMove={(_, viewport) => setViewportZoom(viewport.zoom)}
             fitView
             fitViewOptions={{ padding: 0.22 }}
@@ -2585,7 +2819,7 @@ function EditorInner() {
             nodesFocusable
             edgesFocusable
             selectNodesOnDrag={toolMode === 'select' && !temporaryPanActive}
-            deleteKeyCode={['Backspace', 'Delete']}
+            deleteKeyCode={tableInteraction && tableInteraction.mode !== 'table' ? null : ['Backspace', 'Delete']}
             ariaLabelConfig={{
               'controls.ariaLabel': 'Canvas controls',
               'minimap.ariaLabel': 'Diagram overview',
@@ -2781,7 +3015,7 @@ function EditorInner() {
           ) : selectedNode ? (
             <NodeInspector
               node={selectedNode}
-              activeTableCell={activeTableCell}
+              tableInteraction={tableInteraction}
               conversionOptions={conversionOptions}
               onConversionOptionsChange={setConversionOptions}
               onUpdate={updateNode}
@@ -2907,7 +3141,7 @@ function EditorInner() {
 
 type NodeInspectorProps = {
   node: EditorNode;
-  activeTableCell: ActiveTableCell | null;
+  tableInteraction: TableInteraction | null;
   conversionOptions: ConversionOptions;
   onConversionOptionsChange: (options: ConversionOptions) => void;
   onUpdate: (id: string, updater: (node: EditorNode) => EditorNode, shouldRecord?: boolean) => void;
@@ -3046,7 +3280,7 @@ function MultiSelectionInspector({
 
 function NodeInspector({
   node,
-  activeTableCell,
+  tableInteraction,
   conversionOptions,
   onConversionOptionsChange,
   onUpdate,
@@ -3060,6 +3294,7 @@ function NodeInspector({
   onEditConcept,
   converting,
 }: NodeInspectorProps) {
+  const tableData = node.data.kind === 'table' ? node.data : null;
   const updateData = (data: Partial<EditorNode['data']>, shouldRecord = true) =>
     onUpdate(
       node.id,
@@ -3069,9 +3304,46 @@ function NodeInspector({
       }),
       shouldRecord,
     );
-  const selectedTableCell = node.data.kind === 'table' && activeTableCell?.nodeId === node.id
-    ? tableCellAt(node.data, activeTableCell)
+  const selectedTableAddress = node.data.kind === 'table' && tableInteraction?.nodeId === node.id
+    ? tableInteractionFocus(node.data, tableInteraction)
     : null;
+  const selectedTableCell = node.data.kind === 'table'
+    ? tableCellAt(node.data, selectedTableAddress)
+    : null;
+  const selectedTableAddresses = node.data.kind === 'table' && tableInteraction?.nodeId === node.id
+    ? tableInteractionCells(node.data, tableInteraction)
+    : [];
+  const tableSelectionLabel = tableInteraction?.nodeId !== node.id
+    ? null
+    : tableInteraction.mode === 'row'
+      ? `${tableInteraction.rowIds.length} ${tableInteraction.rowIds.length === 1 ? 'row' : 'rows'}`
+      : tableInteraction.mode === 'column'
+        ? `${tableInteraction.columnIds.length} ${tableInteraction.columnIds.length === 1 ? 'column' : 'columns'}`
+        : tableInteraction.mode === 'cell' && selectedTableAddresses.length > 1
+          ? `${selectedTableAddresses.length} cells`
+          : selectedTableCell
+            ? `row ${selectedTableCell.rowIndex + 1}, column ${selectedTableCell.columnIndex + 1}`
+            : null;
+  const selectedTableRowIndexes = !tableData
+    ? []
+    : tableInteraction?.nodeId === node.id && tableInteraction.mode === 'row'
+      ? tableInteraction.rowIds
+          .map((id) => tableData.rows.findIndex((row) => row.id === id))
+          .filter((index) => index >= 0)
+          .sort((left, right) => left - right)
+      : selectedTableCell
+        ? [selectedTableCell.rowIndex]
+        : [];
+  const selectedTableColumnIndexes = !tableData
+    ? []
+    : tableInteraction?.nodeId === node.id && tableInteraction.mode === 'column'
+      ? tableInteraction.columnIds
+          .map((id) => tableData.columns.findIndex((column) => column.id === id))
+          .filter((index) => index >= 0)
+          .sort((left, right) => left - right)
+      : selectedTableCell
+        ? [selectedTableCell.columnIndex]
+        : [];
   const updateTableData = (
     updater: (data: TableNodeData) => TableNodeData,
     shouldRecord = true,
@@ -3209,56 +3481,97 @@ function NodeInspector({
               <button
                 type="button"
                 disabled={node.data.locked || node.data.rows.length >= TABLE_MAX_ROWS || (node.data.rows.length + 1) * node.data.columns.length > TABLE_MAX_CELLS}
-                onClick={() => updateTableData((data) => insertTableRow(data, selectedTableCell ? selectedTableCell.rowIndex + 1 : data.rows.length))}
-              ><Plus size={12} /> Row</button>
+                onClick={() => updateTableData((data) => insertTableRow(data, selectedTableRowIndexes[0] ?? data.rows.length))}
+              ><Plus size={12} /> Above</button>
               <button
                 type="button"
-                disabled={node.data.locked || node.data.rows.length <= 1}
-                onClick={() => updateTableData((data) => removeTableRow(data, selectedTableCell?.rowIndex ?? data.rows.length - 1))}
-              ><Trash2 size={12} /> Row</button>
+                disabled={node.data.locked || node.data.rows.length >= TABLE_MAX_ROWS || (node.data.rows.length + 1) * node.data.columns.length > TABLE_MAX_CELLS}
+                onClick={() => updateTableData((data) => insertTableRow(data, selectedTableRowIndexes.at(-1) !== undefined ? selectedTableRowIndexes.at(-1)! + 1 : data.rows.length))}
+              ><Plus size={12} /> Below</button>
               <button
                 type="button"
-                disabled={node.data.locked || !selectedTableCell || selectedTableCell.rowIndex === 0}
-                onClick={() => updateTableData((data) => moveTableRow(data, selectedTableCell?.rowIndex ?? 0, -1))}
-              ><ArrowUp size={12} /> Row</button>
+                disabled={node.data.locked || !selectedTableRowIndexes.length || node.data.rows.length + selectedTableRowIndexes.length > TABLE_MAX_ROWS || (node.data.rows.length + selectedTableRowIndexes.length) * node.data.columns.length > TABLE_MAX_CELLS}
+                onClick={() => updateTableData((data) => selectedTableRowIndexes.reduce(
+                  (next, rowIndex, offset) => duplicateTableRow(next, rowIndex + offset),
+                  data,
+                ))}
+              ><Copy size={12} /> Duplicate</button>
               <button
                 type="button"
-                disabled={node.data.locked || !selectedTableCell || selectedTableCell.rowIndex === node.data.rows.length - 1}
-                onClick={() => updateTableData((data) => moveTableRow(data, selectedTableCell?.rowIndex ?? 0, 1))}
-              ><ArrowDown size={12} /> Row</button>
+                disabled={node.data.locked || !selectedTableRowIndexes.length || node.data.rows.length - selectedTableRowIndexes.length < 1}
+                onClick={() => updateTableData((data) => [...selectedTableRowIndexes].reverse().reduce(
+                  (next, rowIndex) => removeTableRow(next, rowIndex),
+                  data,
+                ))}
+              ><Trash2 size={12} /> Delete</button>
+              <button
+                type="button"
+                aria-label="Move selected row up"
+                disabled={node.data.locked || selectedTableRowIndexes.length !== 1 || selectedTableRowIndexes[0] === 0}
+                onClick={() => updateTableData((data) => moveTableRow(data, selectedTableRowIndexes[0], -1))}
+              ><ArrowUp size={12} /> Up</button>
+              <button
+                type="button"
+                aria-label="Move selected row down"
+                disabled={node.data.locked || selectedTableRowIndexes.length !== 1 || selectedTableRowIndexes[0] === node.data.rows.length - 1}
+                onClick={() => updateTableData((data) => moveTableRow(data, selectedTableRowIndexes[0], 1))}
+              ><ArrowDown size={12} /> Down</button>
             </div>
             <div className="table-structure-grid" role="group" aria-label="Table column controls">
               <button
                 type="button"
                 disabled={node.data.locked || node.data.columns.length >= TABLE_MAX_COLUMNS || node.data.rows.length * (node.data.columns.length + 1) > TABLE_MAX_CELLS}
-                onClick={() => updateTableData((data) => insertTableColumn(data, selectedTableCell ? selectedTableCell.columnIndex + 1 : data.columns.length))}
-              ><Plus size={12} /> Column</button>
+                onClick={() => updateTableData((data) => insertTableColumn(data, selectedTableColumnIndexes[0] ?? data.columns.length))}
+              ><Plus size={12} /> Left</button>
               <button
                 type="button"
-                disabled={node.data.locked || node.data.columns.length <= 1}
-                onClick={() => updateTableData((data) => removeTableColumn(data, selectedTableCell?.columnIndex ?? data.columns.length - 1))}
-              ><Trash2 size={12} /> Column</button>
+                disabled={node.data.locked || node.data.columns.length >= TABLE_MAX_COLUMNS || node.data.rows.length * (node.data.columns.length + 1) > TABLE_MAX_CELLS}
+                onClick={() => updateTableData((data) => insertTableColumn(data, selectedTableColumnIndexes.at(-1) !== undefined ? selectedTableColumnIndexes.at(-1)! + 1 : data.columns.length))}
+              ><Plus size={12} /> Right</button>
               <button
                 type="button"
-                disabled={node.data.locked || !selectedTableCell || selectedTableCell.columnIndex === 0}
-                onClick={() => updateTableData((data) => moveTableColumn(data, selectedTableCell?.columnIndex ?? 0, -1))}
-              >← Column</button>
+                disabled={node.data.locked || !selectedTableColumnIndexes.length || node.data.columns.length + selectedTableColumnIndexes.length > TABLE_MAX_COLUMNS || node.data.rows.length * (node.data.columns.length + selectedTableColumnIndexes.length) > TABLE_MAX_CELLS}
+                onClick={() => updateTableData((data) => selectedTableColumnIndexes.reduce(
+                  (next, columnIndex, offset) => duplicateTableColumn(next, columnIndex + offset),
+                  data,
+                ))}
+              ><Copy size={12} /> Duplicate</button>
               <button
                 type="button"
-                disabled={node.data.locked || !selectedTableCell || selectedTableCell.columnIndex === node.data.columns.length - 1}
-                onClick={() => updateTableData((data) => moveTableColumn(data, selectedTableCell?.columnIndex ?? 0, 1))}
-              >Column →</button>
+                disabled={node.data.locked || !selectedTableColumnIndexes.length || node.data.columns.length - selectedTableColumnIndexes.length < 1}
+                onClick={() => updateTableData((data) => [...selectedTableColumnIndexes].reverse().reduce(
+                  (next, columnIndex) => removeTableColumn(next, columnIndex),
+                  data,
+                ))}
+              ><Trash2 size={12} /> Delete</button>
+              <button
+                type="button"
+                aria-label="Move selected column left"
+                disabled={node.data.locked || selectedTableColumnIndexes.length !== 1 || selectedTableColumnIndexes[0] === 0}
+                onClick={() => updateTableData((data) => moveTableColumn(data, selectedTableColumnIndexes[0], -1))}
+              >← Left</button>
+              <button
+                type="button"
+                aria-label="Move selected column right"
+                disabled={node.data.locked || selectedTableColumnIndexes.length !== 1 || selectedTableColumnIndexes[0] === node.data.columns.length - 1}
+                onClick={() => updateTableData((data) => moveTableColumn(data, selectedTableColumnIndexes[0], 1))}
+              >Right →</button>
+            </div>
+            <div className="table-sizing-actions" role="group" aria-label="Table sizing controls">
+              <button type="button" disabled={node.data.locked} onClick={() => updateTableData(distributeTableColumns)}>Equal columns</button>
+              <button type="button" disabled={node.data.locked} onClick={() => updateTableData(distributeTableRows)}>Equal rows</button>
+              <button type="button" disabled={node.data.locked} onClick={() => updateTableData(resetTableSizing)}>Reset sizing</button>
             </div>
           </div>
           {selectedTableCell ? (
             <div className="inspector-section table-cell-section">
-              <span className="section-label">Selected cell · row {selectedTableCell.rowIndex + 1}, column {selectedTableCell.columnIndex + 1}</span>
+              <span className="section-label">Selected {tableSelectionLabel}</span>
               <label className="stacked-field section-label-spaced">
                 <span>Background</span>
                 <select
                   value={selectedTableCell.cell.tone}
                   disabled={node.data.locked}
-                  onChange={(event) => updateTableData((data) => updateTableCell(data, activeTableCell!, (cell) => ({ ...cell, tone: event.target.value as TableCellTone })))}
+                  onChange={(event) => updateTableData((data) => updateTableCells(data, selectedTableAddresses, (cell) => ({ ...cell, tone: event.target.value as TableCellTone })))}
                 >
                   <option value="none">None</option>
                   <option value="gray">Gray</option>
@@ -3276,7 +3589,7 @@ function NodeInspector({
                       key={alignment}
                       type="button"
                       aria-pressed={selectedTableCell.cell.horizontalAlign === alignment}
-                      onClick={() => updateTableData((data) => updateTableCell(data, activeTableCell!, (cell) => ({ ...cell, horizontalAlign: alignment })))}
+                      onClick={() => updateTableData((data) => updateTableCells(data, selectedTableAddresses, (cell) => ({ ...cell, horizontalAlign: alignment })))}
                     >{alignment}</button>
                   ))}
                 </div>
@@ -3306,6 +3619,34 @@ function NodeInspector({
                     onBlur={onEditEnd}
                   />
                 </label>
+              </div>
+              <div className="table-sizing-actions" role="group" aria-label="Selected row and column sizing">
+                <button
+                  type="button"
+                  disabled={node.data.locked}
+                  onClick={() => updateTableData((data) => fitTableColumnToContent(data, selectedTableCell.columnIndex))}
+                >Fit column</button>
+                <button
+                  type="button"
+                  disabled={node.data.locked}
+                  onClick={() => updateTableData((data) => fitTableRowToContent(data, selectedTableCell.rowIndex))}
+                >Fit row</button>
+              </div>
+              <div className="table-sizing-actions" role="group" aria-label="Selected cell clearing controls">
+                <button
+                  type="button"
+                  disabled={node.data.locked}
+                  onClick={() => updateTableData((data) => updateTableCells(data, selectedTableAddresses, (cell) => ({ ...cell, text: '' })))}
+                >Clear contents</button>
+                <button
+                  type="button"
+                  disabled={node.data.locked}
+                  onClick={() => updateTableData((data) => updateTableCells(data, selectedTableAddresses, (cell) => ({
+                    ...cell,
+                    tone: 'none',
+                    horizontalAlign: 'left',
+                  })))}
+                >Clear formatting</button>
               </div>
             </div>
           ) : (

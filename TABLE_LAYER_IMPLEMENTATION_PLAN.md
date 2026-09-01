@@ -1,6 +1,6 @@
 # SynapTable table layer implementation plan
 
-> Status: implemented locally on `codex/table-layer-mvp`; awaiting the intended user's representative-table review before merge.
+> Status: core MVP plus selection, direct resizing, structural commands, and range clipboard/formatting are implemented locally on `codex/table-layer-mvp`. Drag reordering, touch polish, and representative-user review remain before release.
 >
 > Product assumption: the first release is a simple visual table for comparisons, schedules, lists, and lightweight planning. It is not a database or spreadsheet.
 >
@@ -48,7 +48,7 @@ The initial conversion is intentionally non-destructive: the source layers remai
 - Sorting, filtering, grouping, alternate views, and database records.
 - CSV/XLSX file import or CSV export.
 - Rich text, links, images, widgets, or nested canvas objects inside cells.
-- Merged cells and multi-cell range selection.
+- Merged cells and discontiguous cell selection.
 - Real-time collaboration or synchronized table copies.
 - Drag-to-reorder rows and columns; accessible move controls ship first.
 - Dragging rows onto the canvas or maintaining a live link between a row and a canvas node.
@@ -61,7 +61,7 @@ SynapTable already provides most canvas-level behavior generically:
 
 - `app/editor/types.ts` defines the `EditorNodeData` union and the current `concept`, `raster`, and `vector` node kinds.
 - `app/editor/Editor.tsx` registers React Flow node renderers and owns selection, history, autosave, node movement, locking, visibility, duplication, deletion, connectors, layer search, templates, and inspectors.
-- `app/editor/document-file.ts` validates and migrates document and backup data. The current document and project version is 4.
+- `app/editor/document-file.ts` validates and migrates document and backup data. The current document and project version is 5.
 - `app/editor/persistence.ts` stores a validated `EditorDocument` and checkpoints in IndexedDB, so a valid new node kind participates automatically.
 - `app/editor/export-svg.ts` has a renderer and dimension calculation for every existing node kind.
 - `app/editor/node-layout.ts` supplies shared node dimensions used by branches, tidy, and export-adjacent behavior.
@@ -140,10 +140,10 @@ Create pure helpers in `app/editor/table-grid.ts` for default creation, invarian
 
 ### Canvas mode versus cell mode
 
-There are two distinct selection levels:
+There are distinct canvas and inner-table selection levels:
 
 - **Canvas selection** selects the entire table for movement, connections, duplication, locking, layer actions, and inspector routing.
-- **Cell selection** is ephemeral UI state: `{ nodeId, rowId, columnId, mode: 'selected' | 'editing' }`. It must not be serialized or added to undo history.
+- **Inner-table selection** is an ephemeral union for whole-table, cell/range, row, column, and editing modes. It must not be serialized or added to undo history. The authoritative union and transition plan are in [`TABLE_BEHAVIOR_AND_TEST_PLAN.md`](./TABLE_BEHAVIOR_AND_TEST_PLAN.md#4-interaction-state-model).
 
 The table caption and outer frame remain the drag surface. The semantic grid uses React Flow's `nodrag` and `nowheel` boundaries so text selection, cell editing, and row/column resizing do not move or pan the canvas accidentally. All connector handles remain on the table's outer node.
 

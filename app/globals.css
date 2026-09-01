@@ -631,6 +631,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   backdrop-filter: blur(8px);
 }
 .table-node {
+  position: relative;
   inline-size: 100%;
   block-size: 100%;
   overflow: hidden;
@@ -642,7 +643,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 }
 .canvas-table {
   inline-size: 100%;
-  block-size: 100%;
+  /* Table captions sit outside the table grid in some engines. Reserve their
+     persisted height so rows render at the same size in every browser. */
+  block-size: calc(100% - 38px);
   table-layout: fixed;
   border-collapse: collapse;
   border-spacing: 0;
@@ -656,6 +659,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   border-block-end: 1px solid var(--line);
   background: #fbfbfc;
   text-align: start;
+  user-select: none;
+  cursor: grab;
 }
 .canvas-table caption strong,
 .canvas-table caption span {
@@ -690,10 +695,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .table-cell.cell-tone-mint { background: #eaf8f1; color: #227456; }
 .table-cell.cell-tone-amber { background: #fff5da; color: #805c0f; }
 .table-cell.cell-tone-rose { background: #fff0f2; color: #994052; }
+.table-cell.is-selected {
+  box-shadow: inset 0 0 0 999px rgb(99 91 255 / 10%);
+}
 .table-cell.is-active {
   z-index: 1;
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+  box-shadow: inset 0 0 0 999px rgb(99 91 255 / 14%);
 }
 .table-cell:focus-visible {
   z-index: 2;
@@ -716,6 +725,130 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   font: inherit;
   font-weight: inherit;
   line-height: inherit;
+}
+.table-direct-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.table-grabber {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  inline-size: 18px;
+  block-size: 18px;
+  padding: 0;
+  border: 1px solid #c9cbd3;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 94%);
+  color: #71747d;
+  box-shadow: 0 2px 8px rgb(31 33 40 / 14%);
+  opacity: 0;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: opacity 100ms ease, border-color 100ms ease, background 100ms ease;
+}
+.table-node:hover .table-grabber,
+.table-grabber:focus-visible,
+.table-grabber[aria-pressed="true"] { opacity: 1; }
+.table-grabber:hover,
+.table-grabber:focus-visible,
+.table-grabber[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: #f1f0ff;
+}
+.table-grabber:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 72%, white);
+  outline-offset: 2px;
+}
+.table-grabber span {
+  display: block;
+  inline-size: 8px;
+  block-size: 4px;
+  border-block: 1px solid currentColor;
+}
+.table-column-grabber {
+  inset-block-start: 38px;
+  transform: translate(-50%, -50%);
+}
+.table-row-grabber {
+  inset-inline-start: 8px;
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+.table-boundary {
+  position: absolute;
+  z-index: 2;
+  display: block;
+  box-sizing: border-box;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+}
+.table-boundary::after {
+  position: absolute;
+  content: '';
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+.table-boundary:hover::after,
+.table-boundary:focus-visible::after,
+.table-boundary:active::after { opacity: 1; }
+.table-boundary:focus-visible { outline: 0; }
+.table-column-boundary {
+  inset-block: 38px 0;
+  inline-size: 10px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+}
+.table-column-boundary::after {
+  inset-block: 0;
+  inset-inline-start: 4px;
+  inline-size: 2px;
+}
+.table-row-boundary {
+  inset-inline: 0;
+  block-size: 10px;
+  transform: translateY(-50%);
+  cursor: row-resize;
+}
+.table-row-boundary::after {
+  inset-inline: 0;
+  inset-block-start: 4px;
+  block-size: 2px;
+}
+.table-edge-add {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  inline-size: 20px;
+  block-size: 20px;
+  padding: 0;
+  border: 1px solid #c9cbd3;
+  border-radius: 7px;
+  background: rgb(255 255 255 / 96%);
+  color: var(--accent);
+  box-shadow: 0 2px 8px rgb(31 33 40 / 14%);
+  opacity: 0;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.table-node:hover .table-edge-add,
+.table-edge-add:focus-visible { opacity: 1; }
+.table-edge-add:hover,
+.table-edge-add:focus-visible { border-color: var(--accent); background: #f1f0ff; }
+.table-edge-add:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 72%, white); outline-offset: 2px; }
+.table-add-row { inset-inline-start: 50%; inset-block-end: 2px; transform: translateX(-50%); }
+.table-add-column { inset-inline-end: 2px; inset-block-start: 50%; transform: translateY(-50%); }
+@media (prefers-contrast: more) {
+  .table-cell.is-selected { box-shadow: inset 0 0 0 2px currentColor; }
+  .table-cell.is-active { outline-width: 4px; outline-color: currentColor; }
+  .table-grabber { border-width: 2px; opacity: 1; }
+  .table-edge-add { border-width: 2px; opacity: 1; }
 }
 .react-flow__node:has(.table-cell-editor) .react-flow__handle { opacity: 0; pointer-events: none; }
 .react-flow__handle {
@@ -984,6 +1117,25 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 }
 .table-structure-grid button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 40%, white); color: var(--accent); }
 .table-structure-grid button:disabled { opacity: .42; }
+.table-sizing-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  margin-block-start: 8px;
+}
+.table-sizing-actions button {
+  min-block-size: 29px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fafafd;
+  color: #555962;
+  font-size: 8px;
+}
+.table-sizing-actions button:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.table-sizing-actions button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 40%, white); color: var(--accent); }
+.table-sizing-actions button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 38%, transparent); outline-offset: 1px; }
+.table-sizing-actions button:disabled { opacity: .42; }
 .section-label-spaced { margin-block-start: 10px; }
 .table-alignment-row { grid-template-columns: repeat(3, 1fr); }
 .table-alignment-row button { text-transform: capitalize; }
