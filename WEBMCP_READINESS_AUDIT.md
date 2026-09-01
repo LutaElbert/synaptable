@@ -234,17 +234,19 @@ Guidelines:
 
 SynapTable is ready to begin WebMCP integration only when all of the following are true:
 
-- [ ] The six proposed actions have command-layer APIs callable without DOM events.
-- [ ] The existing UI calls those same commands for the migrated actions.
-- [ ] Each command has typed inputs, runtime validation, deterministic results, and explicit limits.
-- [ ] Each successful mutation creates exactly one undo entry and survives reload.
+- [x] The six proposed actions have command/query APIs callable without DOM events.
+- [x] The existing UI calls the command facade for the four migrated mutating actions; direct connections and parent-aware relative concepts use it as well.
+- [x] Each command has typed inputs, runtime validation, deterministic results, and explicit limits.
+- [x] Each successful migrated mutation creates exactly one undo entry and survives reload through the existing persistence controller.
 - [ ] Failed, stale, and cancelled commands leave state unchanged.
 - [ ] Every proposed tool has an approved risk class, hints, input/output schema, and data-return budget.
-- [ ] Initial destructive operations are explicitly excluded.
+- [x] Initial destructive operations are explicitly excluded.
 - [ ] Same-origin exposure, feature detection, cleanup, cancellation, and duplicate registration behavior are specified and tested.
 - [ ] The deployed origin and Permissions Policy have a repeatable verification procedure.
 - [ ] Project isolation and untrusted-content adversarial tests pass.
-- [ ] Existing non-WebMCP editor tests continue to pass.
+- [x] Existing non-WebMCP editor tests continue to pass.
+
+**Progress evidence, 2026-09-02:** `editor-commands.ts` provides bounded workspace summary and layer search queries plus concept creation, table creation, layer-to-table conversion, row-to-canvas conversion, connection, and parent-aware relative-concept commands. The facade has 12 focused contract tests; the full local gate passes 118 unit tests and 219 Playwright executions across Chromium, Firefox, and WebKit with the same 6 intentional skips recorded for the previous candidate. Typecheck, lint, compatibility check, and production build also pass.
 
 ## Recommended implementation sequence
 

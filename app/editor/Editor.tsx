@@ -5,7 +5,6 @@ import {
   Controls,
   Handle,
   MiniMap,
-  MarkerType,
   NodeResizer,
   NodeToolbar,
   Panel,
@@ -13,7 +12,6 @@ import {
   ReactFlow,
   ReactFlowProvider,
   SelectionMode,
-  addEdge,
   applyEdgeChanges,
   applyNodeChanges,
   reconnectEdge,
@@ -86,6 +84,16 @@ import {
   serializeProjectBackup,
 } from './document-file';
 import {
+  connectLayersCommand,
+  createCanvasNodesFromRowsCommand,
+  createConceptCommand,
+  createRelativeConceptCommand,
+  createTableCommand,
+  organizeLayersIntoTableCommand,
+  type EditorCommand,
+  type EditorCommandOutcome,
+} from './editor-commands';
+import {
   downloadBlob,
   pngToPdfBlob,
   resolveExportContent,
@@ -117,7 +125,6 @@ import {
   CONCEPT_MIN_HEIGHT,
   CONCEPT_MIN_WIDTH,
   editorNodeDimensions,
-  relativeConceptLayout,
 } from './node-layout';
 import {
   createLocalCheckpoint,
@@ -175,14 +182,13 @@ import {
   tableRowRange,
   type TableInteraction,
 } from './table-interaction';
-import { canvasNodesFromTable } from './table-to-canvas';
+import { tableSelectionForCanvas } from './table-to-canvas';
 import {
   adjacentTableCell,
   cloneTableData,
   clipboardGrid,
   clipboardGridToHtml,
   clipboardGridToText,
-  createTableData,
   distributeTableColumns,
   distributeTableRows,
   duplicateTableColumn,
@@ -195,7 +201,6 @@ import {
   insertTableRow,
   moveTableColumn,
   moveTableRow,
-  nextTableName,
   pasteTableGrid,
   removeTableColumn,
   removeTableRow,
@@ -207,7 +212,6 @@ import {
   tableCellAt,
   tableCellHasContent,
   tableDimensions,
-  tableFromNodes,
   tableSearchText,
   updateTableCell,
   updateTableCells,
@@ -780,6 +784,22 @@ function EditorInner() {
     refreshHistoryState();
   }, [refreshHistoryState]);
 
+  const executeEditorCommand = useCallback((command: EditorCommand): EditorCommandOutcome => {
+    const outcome = command({ nodes: nodesRef.current, edges: edgesRef.current });
+    if (!outcome.result.ok) {
+      announce(outcome.result.summary, 'error');
+      return outcome;
+    }
+    recordHistory();
+    // Publish the immutable transition to refs immediately so two commands in
+    // the same task cannot both execute against stale React render state.
+    nodesRef.current = outcome.nodes;
+    edgesRef.current = outcome.edges;
+    setNodes(outcome.nodes);
+    setEdges(outcome.edges);
+    return outcome;
+  }, [announce, recordHistory]);
+
   const undo = useCallback(() => {
     const previous = pastRef.current.pop();
     if (!previous) return;
@@ -1024,28 +1044,9 @@ function EditorInner() {
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      const issue = connectionIssue(nodesRef.current, edgesRef.current, connection);
-      if (issue) {
-        announce(connectionIssueMessage(issue), 'error');
-        return;
-      }
-      recordHistory();
-      setEdges((current) =>
-        addEdge(
-          {
-            ...connection,
-            id: crypto.randomUUID(),
-            type: 'smoothstep',
-            style: { stroke: '#a9adb7', strokeWidth: 1.5 },
-            markerEnd: { type: MarkerType.ArrowClosed },
-            label: '',
-            data: { label: '', kind: 'default' },
-          },
-          current,
-        ),
-      );
+      executeEditorCommand(connectLayersCommand({ connection }));
     },
-    [announce, recordHistory],
+    [executeEditorCommand],
   );
 
   const handleReconnect = useCallback((edge: EditorEdge, connection: Connection) => {
@@ -1385,41 +1386,15 @@ function EditorInner() {
 
   const addConceptAt = useCallback((screenPoint: { x: number; y: number }, editAfterCreate = false) => {
     const center = screenToFlowPosition(screenPoint);
-    const id = crypto.randomUUID();
-    recordHistory();
-    setNodes((current) => [
-      ...current.map((node) => ({ ...node, selected: false })),
-      {
-        id,
-        type: 'concept',
-        position: { x: center.x - 94, y: center.y - 39 },
-        style: { width: CONCEPT_DEFAULT_WIDTH, height: CONCEPT_MIN_HEIGHT },
-        draggable: true,
-        deletable: true,
-        data: {
-          kind: 'concept',
-          name: 'New concept',
-          label: 'New concept',
-          title: conceptTitleFromPlainText('New concept'),
-          body: emptyRichText(),
-          eyebrow: 'Concept',
-          tone: 'ink',
-          collapsed: false,
-          horizontalAlign: 'left',
-          verticalAlign: 'top',
-          opacity: 1,
-          locked: false,
-        },
-        selected: true,
-      },
-    ]);
-    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    const outcome = executeEditorCommand(createConceptCommand({ center }));
+    if (!outcome.result.ok) return;
+    const id = outcome.result.affectedIds[0];
     setSelectedPath(null);
     layerSelectionAnchorRef.current = id;
     if (editAfterCreate) {
       window.requestAnimationFrame(() => setEditingConceptId(id));
     }
-  }, [recordHistory, screenToFlowPosition]);
+  }, [executeEditorCommand, screenToFlowPosition]);
 
   const addConceptNode = useCallback(() => {
     addConceptAt({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
@@ -1439,35 +1414,22 @@ function EditorInner() {
     clientPoint?: { x: number; y: number };
   } = {}) => {
     const center = screenToFlowPosition(clientPoint ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 });
-    const id = crypto.randomUUID();
-    const data = createTableData({
-      name: nextTableName(nodesRef.current),
+    const outcome = executeEditorCommand(createTableCommand({
+      center,
       rows,
       columns,
       values,
       headerRow,
-    });
-    const dimensions = tableDimensions(data);
-    recordHistory();
-    setNodes((current) => [
-      ...current.map((node) => ({ ...node, selected: false })),
-      {
-        id,
-        type: 'table',
-        position: { x: center.x - dimensions.width / 2, y: center.y - dimensions.height / 2 },
-        style: dimensions,
-        draggable: true,
-        deletable: true,
-        selected: true,
-        data,
-      },
-    ]);
-    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    }));
+    if (!outcome.result.ok) return;
+    const id = outcome.result.affectedIds[0];
+    const table = outcome.nodes.find((node) => node.id === id);
+    if (!table || table.data.kind !== 'table') return;
     setSelectedPath(null);
     setTableInteraction({ mode: 'table', nodeId: id });
     layerSelectionAnchorRef.current = id;
-    announce(`${data.name} added. Press Enter to edit the selected cell.`, 'success');
-  }, [announce, recordHistory, screenToFlowPosition]);
+    announce(`${table.data.name} added. Press Enter to edit the selected cell.`, 'success');
+  }, [announce, executeEditorCommand, screenToFlowPosition]);
 
   const addTableNode = useCallback(() => addTableAt(), [addTableAt]);
 
@@ -1656,54 +1618,30 @@ function EditorInner() {
   const convertSelectedNodesToTable = useCallback(() => {
     const selected = nodesRef.current.filter((node) => node.selected && !node.data.locked);
     if (!selected.length) return;
-    try {
-      const id = crypto.randomUUID();
-      const readingOrder = [...selected].sort((leftNode, rightNode) => (
-        leftNode.position.y - rightNode.position.y || leftNode.position.x - rightNode.position.x
-      ));
-      const data = tableFromNodes(readingOrder);
-      const dimensions = tableDimensions(data);
-      const left = Math.min(...selected.map((node) => node.position.x));
-      const top = Math.min(...selected.map((node) => node.position.y));
-      const tableNode: EditorNode = {
-        id,
-        type: 'table',
-        position: { x: left + 36, y: top + 36 },
-        style: dimensions,
-        draggable: true,
-        deletable: true,
-        selected: true,
-        data,
-      };
-      recordHistory();
-      setNodes((current) => [
-        ...current.map((node) => ({ ...node, selected: false })),
-        tableNode,
-      ]);
-      setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
-      setTableInteraction({ mode: 'table', nodeId: id });
-      layerSelectionAnchorRef.current = id;
-      announce(`Organized ${selected.length} ${selected.length === 1 ? 'layer' : 'layers'} into table rows. Originals were kept.`, 'success');
-    } catch (error) {
-      announce(error instanceof Error ? error.message : 'The selected layers could not be organized.', 'error');
-    }
-  }, [announce, recordHistory]);
+    const outcome = executeEditorCommand(organizeLayersIntoTableCommand({
+      layerIds: selected.map((node) => node.id),
+    }));
+    if (!outcome.result.ok) return;
+    const id = outcome.result.affectedIds[0];
+    setTableInteraction({ mode: 'table', nodeId: id });
+    layerSelectionAnchorRef.current = id;
+    announce(outcome.result.summary, 'success');
+  }, [announce, executeEditorCommand]);
 
   const createCanvasNodesFromTable = () => {
     const source = nodesRef.current.find((node) => node.id === selectedNodeId);
     if (!source || source.data.kind !== 'table' || source.data.locked) return;
+    const data = source.data;
     const interaction = tableInteraction?.nodeId === source.id ? tableInteraction : { mode: 'table' as const, nodeId: source.id };
-    const generated = canvasNodesFromTable(source, nodesRef.current, interaction);
-    if (!generated.length) {
-      announce('Select at least one data row and column to create canvas nodes.', 'info');
-      return;
-    }
-    recordHistory();
-    setNodes((current) => [
-      ...current.map((node) => ({ ...node, selected: false })),
-      ...generated,
-    ]);
-    setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));
+    const selection = tableSelectionForCanvas(data, interaction);
+    const outcome = executeEditorCommand(createCanvasNodesFromRowsCommand({
+      tableId: source.id,
+      rowIds: selection.rowIndexes.map((index) => data.rows[index].id),
+      columnIds: selection.columnIndexes.map((index) => data.columns[index].id),
+    }));
+    if (!outcome.result.ok) return;
+    const generatedIds = new Set(outcome.result.affectedIds);
+    const generated = outcome.nodes.filter((node) => generatedIds.has(node.id));
     setTableInteraction(null);
     setSelectedPath(null);
     layerSelectionAnchorRef.current = generated[0].id;
@@ -1718,7 +1656,7 @@ function EditorInner() {
       });
       if (outside) void fitView({ nodes: generated, duration: 300, padding: 0.25 });
     });
-    announce(`${generated.length} canvas ${generated.length === 1 ? 'node' : 'nodes'} created from ${source.data.name}.`, 'success');
+    announce(outcome.result.summary, 'success');
   };
 
   const setSelectedNodesLocked = useCallback((locked: boolean) => {
@@ -1800,65 +1738,14 @@ function EditorInner() {
   }, [editingConceptId, recordHistory, selectNode]);
 
   const addConceptRelative = useCallback((id: string, relation: 'child' | 'sibling') => {
-    const source = nodesRef.current.find((node) => node.id === id);
-    if (!source || source.data.locked) return;
-    const newId = crypto.randomUUID();
-    const layout = relativeConceptLayout(nodesRef.current, edgesRef.current, id, relation, newId);
-    const position = layout.positions.get(newId);
-    if (!position) return;
-    const nextNode: EditorNode = {
-      id: newId,
-      type: 'concept',
-      position,
-      style: { width: CONCEPT_DEFAULT_WIDTH, height: CONCEPT_MIN_HEIGHT },
-      draggable: true,
-      deletable: true,
-      selected: true,
-      data: {
-        kind: 'concept',
-        name: 'New concept',
-        label: 'New concept',
-        title: conceptTitleFromPlainText('New concept'),
-        body: emptyRichText(),
-        eyebrow: relation === 'child' ? 'Child idea' : 'Related idea',
-        tone: 'ink',
-        collapsed: false,
-        horizontalAlign: 'left',
-        verticalAlign: 'top',
-        opacity: 1,
-        locked: false,
-      },
-    };
-    recordHistory();
-    setNodes((current) => [
-      ...current.map((node) => ({
-        ...node,
-        position: layout.positions.get(node.id) ?? node.position,
-        selected: false,
-      })),
-      nextNode,
-    ]);
-    if (layout.parentId) {
-      const parentId = layout.parentId;
-      setEdges((current) => [...current, {
-        id: crypto.randomUUID(),
-        source: parentId,
-        target: newId,
-        ...(layout.direction === 'vertical'
-          ? { sourceHandle: 'bottom', targetHandle: 'top' }
-          : {}),
-        type: 'smoothstep',
-        animated: false,
-        markerEnd: { type: MarkerType.ArrowClosed },
-        style: { stroke: '#a9adb7', strokeWidth: 1.5 },
-        data: { label: '', kind: 'default' },
-      }]);
-    }
+    const outcome = executeEditorCommand(createRelativeConceptCommand({ sourceId: id, relation }));
+    if (!outcome.result.ok) return;
+    const newId = outcome.result.affectedIds[0];
     window.setTimeout(() => {
       fitView({ nodes: [{ id: newId }], duration: 220, padding: 0.65, maxZoom: 1.4 });
       beginConceptEdit(newId);
     }, 60);
-  }, [beginConceptEdit, fitView, recordHistory]);
+  }, [beginConceptEdit, executeEditorCommand, fitView]);
 
   const updateConceptTitle = useCallback((id: string, title: RichTextDocument) => {
     const label = richTextToPlainText(title).slice(0, 500);
