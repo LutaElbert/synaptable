@@ -93,6 +93,7 @@ import {
   type EditorCommand,
   type EditorCommandOutcome,
 } from './editor-commands';
+import { executeEditorCommandSafely } from './editor-command-safety';
 import {
   downloadBlob,
   pngToPdfBlob,
@@ -677,6 +678,8 @@ function EditorInner() {
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   const titleRef = useRef(title);
+  const documentRevisionRef = useRef(0);
+  const guardedCommandStateRef = useRef<{ nodes: EditorNode[]; edges: EditorEdge[] } | null>(null);
   const pastRef = useRef<EditorSnapshot[]>([]);
   const futureRef = useRef<EditorSnapshot[]>([]);
   const dragOriginRef = useRef<EditorSnapshot | null>(null);
@@ -752,7 +755,11 @@ function EditorInner() {
     const next = { title, nodes, edges };
     const previous = autosaveInputRef.current;
     autosaveInputRef.current = next;
+    const guardedState = guardedCommandStateRef.current;
+    const isGuardedCommandCommit = guardedState?.nodes === nodes && guardedState.edges === edges;
+    if (isGuardedCommandCommit) guardedCommandStateRef.current = null;
     if (!persistableEditorStateEqual(previous, next)) {
+      if (!isGuardedCommandCommit) documentRevisionRef.current += 1;
       // Mark the document dirty before the changed canvas is painted. This
       // prevents an older queued write from presenting a stale "saved" state.
       saveTicketRef.current += 1;
@@ -785,7 +792,16 @@ function EditorInner() {
   }, [refreshHistoryState]);
 
   const executeEditorCommand = useCallback((command: EditorCommand): EditorCommandOutcome => {
-    const outcome = command({ nodes: nodesRef.current, edges: edgesRef.current });
+    const projectId = activeProjectIdRef.current ?? '';
+    const outcome = executeEditorCommandSafely({
+      projectId,
+      revision: documentRevisionRef.current,
+      state: { nodes: nodesRef.current, edges: edgesRef.current },
+    }, {
+      projectId,
+      expectedRevision: documentRevisionRef.current,
+      command,
+    });
     if (!outcome.result.ok) {
       announce(outcome.result.summary, 'error');
       return outcome;
@@ -795,6 +811,8 @@ function EditorInner() {
     // the same task cannot both execute against stale React render state.
     nodesRef.current = outcome.nodes;
     edgesRef.current = outcome.edges;
+    documentRevisionRef.current = outcome.revision;
+    guardedCommandStateRef.current = { nodes: outcome.nodes, edges: outcome.edges };
     setNodes(outcome.nodes);
     setEdges(outcome.edges);
     return outcome;
@@ -836,6 +854,8 @@ function EditorInner() {
     const nextEdges = document.edges.map((edge) => ({ ...edge, selected: false }));
     nodesRef.current = nextNodes;
     edgesRef.current = nextEdges;
+    documentRevisionRef.current = 0;
+    guardedCommandStateRef.current = null;
     titleRef.current = document.title;
     autosaveInputRef.current = { title: document.title, nodes: nextNodes, edges: nextEdges };
     saveTicketRef.current += 1;
@@ -2123,6 +2143,7 @@ function EditorInner() {
       if (projectId === activeProjectIdRef.current) {
         titleRef.current = document.title;
         autosaveInputRef.current = { ...autosaveInputRef.current, title: document.title };
+        documentRevisionRef.current += 1;
         setTitle(document.title);
       }
       await refreshProjects();

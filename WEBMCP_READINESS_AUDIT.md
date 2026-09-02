@@ -238,15 +238,25 @@ SynapTable is ready to begin WebMCP integration only when all of the following a
 - [x] The existing UI calls the command facade for the four migrated mutating actions; direct connections and parent-aware relative concepts use it as well.
 - [x] Each command has typed inputs, runtime validation, deterministic results, and explicit limits.
 - [x] Each successful migrated mutation creates exactly one undo entry and survives reload through the existing persistence controller.
-- [ ] Failed, stale, and cancelled commands leave state unchanged.
+- [x] Failed, stale, and cancelled commands leave state unchanged.
 - [ ] Every proposed tool has an approved risk class, hints, input/output schema, and data-return budget.
 - [x] Initial destructive operations are explicitly excluded.
 - [ ] Same-origin exposure, feature detection, cleanup, cancellation, and duplicate registration behavior are specified and tested.
 - [ ] The deployed origin and Permissions Policy have a repeatable verification procedure.
-- [ ] Project isolation and untrusted-content adversarial tests pass.
+- [x] Project isolation and untrusted-content adversarial tests pass at the command-safety boundary.
 - [x] Existing non-WebMCP editor tests continue to pass.
 
-**Progress evidence, 2026-09-02:** `editor-commands.ts` provides bounded workspace summary and layer search queries plus concept creation, table creation, layer-to-table conversion, row-to-canvas conversion, connection, and parent-aware relative-concept commands. The facade has 12 focused contract tests; the full local gate passes 118 unit tests and 219 Playwright executions across Chromium, Firefox, and WebKit with the same 6 intentional skips recorded for the previous candidate. Typecheck, lint, compatibility check, and production build also pass.
+**Progress evidence, 2026-09-02:** `editor-commands.ts` provides bounded workspace summary and layer search queries plus concept creation, table creation, layer-to-table conversion, row-to-canvas conversion, connection, and parent-aware relative-concept commands. `editor-command-safety.ts` adds active-project and revision guards, pre/post `AbortSignal` cancellation, serialized commits, safe exception containment, and a 1,500-byte public-result budget. The facade has 12 focused command tests and 11 focused safety tests; the full local gate passes 129 unit tests. Chromium and Firefox pass their browser projects, and the serial WebKit release-evidence run passes 72 cases with 3 intentional skips. Typecheck, lint, compatibility check, dependency audit, and production build also pass.
+
+### Implemented command-safety contract
+
+- Every guarded request names the active project and expected document revision.
+- Wrong-project, stale, already-aborted, and post-execution-aborted requests return the original state.
+- Pure commands run before commit, so cancellation and validation failures cannot leave partial canvas state.
+- The queue waits for the atomic persistence/publish callback before the next request can inspect state.
+- Unexpected command, read, and persistence exceptions return generic messages without leaking document or storage details.
+- Read queries use the same project, revision, and cancellation guards.
+- Public mutation summaries are separately bounded to 1,500 serialized bytes; omitted IDs are disclosed without returning the complete document.
 
 ## Recommended implementation sequence
 
@@ -255,8 +265,8 @@ Use focused conventional branch names and keep WebMCP registration out of the pr
 1. `refactor/editor-command-facade`
    - Define command context/results and extract the six candidate actions.
    - Migrate the UI to use those commands.
-2. `test/editor-command-contracts`
-   - Add atomicity, undo, persistence, cancellation-ready, stale-state, and isolation coverage.
+2. `feat/editor-command-safety` — completed
+   - Added atomicity, cancellation, stale-state, active-project isolation, serialized commit, safe-error, and output-budget coverage.
 3. `docs/webmcp-tool-strategy`
    - Finalize tool schemas, limits, hints, approval rules, result envelopes, and threat model.
 4. `feat/webmcp-foundation`
