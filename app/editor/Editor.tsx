@@ -1329,7 +1329,7 @@ function EditorInner({ webMcpEnabled }: { webMcpEnabled: boolean }) {
     const collapsed = collapsedDescendantIds(nodesRef.current, edgesRef.current);
     const selectableIds = new Set(
       nodesRef.current
-        .filter((node) => !node.hidden && !node.data.locked && !collapsed.has(node.id))
+        .filter((node) => !node.hidden && !collapsed.has(node.id))
         .map((node) => node.id),
     );
     setNodes((current) => current.map((node) => ({
@@ -1342,7 +1342,7 @@ function EditorInner({ webMcpEnabled }: { webMcpEnabled: boolean }) {
     announce(
       selectableIds.size
         ? `${selectableIds.size} ${selectableIds.size === 1 ? 'layer' : 'layers'} selected.`
-        : 'There are no visible unlocked layers to select.',
+        : 'There are no visible layers to select.',
     );
   }, [announce]);
 
@@ -1373,10 +1373,10 @@ function EditorInner({ webMcpEnabled }: { webMcpEnabled: boolean }) {
       return current.map((node) => ({
         ...node,
         selected: operation === 'replace'
-          ? marqueeIds.has(node.id) && !node.data.locked
+          ? marqueeIds.has(node.id)
           : operation === 'add'
-            ? origin.has(node.id) || (marqueeIds.has(node.id) && !node.data.locked)
-            : origin.has(node.id) && !(marqueeIds.has(node.id) && !node.data.locked),
+            ? origin.has(node.id) || marqueeIds.has(node.id)
+            : origin.has(node.id) && !marqueeIds.has(node.id),
       }));
     });
     setEdges((current) => current.map((edge) => edge.selected ? { ...edge, selected: false } : edge));

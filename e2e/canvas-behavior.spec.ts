@@ -197,7 +197,7 @@ test('space, middle mouse, and trackpad navigation do not disturb layer selectio
   await expect(canvasNode(page, 'Research')).toHaveClass(/selected/);
 });
 
-test('select all respects editing and locked layers and supports bulk actions', async ({ page }) => {
+test('select all respects editing, includes locked layers, and supports safe bulk actions', async ({ page }) => {
   await openEditor(page);
   const title = page.locator('.document-title input');
   await title.click();
@@ -208,8 +208,8 @@ test('select all respects editing and locked layers and supports bulk actions', 
 
   await page.getByRole('button', { name: 'Lock Research', exact: true }).click();
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
-  await expect(page.locator('.inspector-panel').getByText('2 layers selected', { exact: true }).first()).toBeVisible();
-  await expect(canvasNode(page, 'Research')).not.toHaveClass(/selected/);
+  await expect(page.locator('.inspector-panel').getByText('3 layers selected', { exact: true }).first()).toBeVisible();
+  await expect(canvasNode(page, 'Research')).toHaveClass(/selected/);
 
   const originalLayerCount = await page.locator('.layer-list > li').count();
   const originalEdgeCount = await page.locator('.react-flow__edge').count();
@@ -223,6 +223,53 @@ test('select all respects editing and locked layers and supports bulk actions', 
   await expect(page.getByRole('button', { name: 'Unlock Editable layers copy', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Unlock selected layers', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Lock Editable layers copy', exact: true })).toBeVisible();
+});
+
+test('locked layers remain selectable on the canvas and expose bulk unlock after marquee selection', async ({ page }) => {
+  await openEditor(page);
+  const explore = canvasNode(page, 'Explore tools');
+  const editable = canvasNode(page, 'Editable layers');
+
+  await page.getByRole('button', { name: 'Explore tools', exact: true }).click();
+  await page.getByRole('button', { name: 'Editable layers', exact: true }).click({ modifiers: ['Meta'] });
+  await page.getByRole('button', { name: 'Lock selected layers', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Unlock Explore tools', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Unlock Editable layers', exact: true })).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Fit view' }).click();
+  await page.waitForTimeout(400);
+  // Firefox and WebKit can place the fitted node under a pinned side panel at
+  // their default test viewport; force the node event rather than testing the
+  // panel overlap here.
+  await explore.click({ force: true });
+  await expect(explore).toHaveClass(/selected/);
+  await expect(page.getByRole('button', { name: 'Unlock Explore tools', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Fit view' }).click();
+  await page.waitForTimeout(400);
+
+  const exploreBox = await explore.boundingBox();
+  const editableBox = await editable.boundingBox();
+  expect(exploreBox).toBeTruthy();
+  expect(editableBox).toBeTruthy();
+  const left = Math.min(exploreBox!.x, editableBox!.x);
+  const top = Math.min(exploreBox!.y, editableBox!.y);
+  const right = Math.max(exploreBox!.x + exploreBox!.width, editableBox!.x + editableBox!.width);
+  const bottom = Math.max(exploreBox!.y + exploreBox!.height, editableBox!.y + editableBox!.height);
+  await dragBox(page, {
+    x: left - 14,
+    y: top - 14,
+    width: right - left + 28,
+    height: bottom - top + 28,
+  });
+
+  await expect(explore).toHaveClass(/selected/);
+  await expect(editable).toHaveClass(/selected/);
+  const lockedActions = page.getByRole('group', { name: '2 selected layer actions' });
+  await expect(lockedActions).toBeVisible();
+  await expect(lockedActions.getByRole('button', { name: 'Unlock selected layers' })).toBeEnabled();
 });
 
 test('double-clicking one layer drills from multi-selection into editing', async ({ page }) => {
