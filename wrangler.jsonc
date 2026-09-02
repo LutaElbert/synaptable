@@ -13,5 +13,13 @@
       "enabled": true,
       "invocation_logs": true
     }
+  },
+  "env": {
+    "preview": {
+      "name": "synaptable-preview",
+      "vars": {
+        "SYNAPTABLE_WEBMCP_ENABLED": "true"
+      }
+    }
   }
 }
