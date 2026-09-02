@@ -1,5 +1,5 @@
 import {
-  createCanvasNodesFromRowsCommand,
+  createCanvasNodesFromRowIndexesCommand,
   createConceptCommand,
   createTableCommand,
   findLayers,
@@ -62,9 +62,11 @@ type OrganizeLayersInput = ProjectContextInput & {
 
 type CreateNodesFromRowsInput = ProjectContextInput & {
   tableId: string;
-  rowIds: string[];
-  columnIds: string[];
+  rowIndexes: number[];
+  columnIndexes: number[];
 };
+
+const NEVER_ABORTED_SIGNAL = new AbortController().signal;
 
 export type WebMcpToolRuntime = {
   getSession: () => EditorCommandSession;
@@ -110,17 +112,18 @@ async function executeMutation(
 export async function executeApprovedWebMcpTool(
   name: ApprovedWebMcpToolName,
   input: unknown,
-  options: WebMcpExecuteOptions,
+  options: WebMcpExecuteOptions | undefined,
   runtime: WebMcpToolRuntime,
 ): Promise<WebMcpToolResult> {
-  if (options.signal.aborted) return cancelled(runtime);
+  const signal = options?.signal ?? NEVER_ABORTED_SIGNAL;
+  if (signal.aborted) return cancelled(runtime);
   const validation = validateWebMcpInput(name, input);
   if (!validation.ok) {
     const result = invalidInputResult(runtime, validation);
     if (isMutationTool(name)) runtime.notify(result.summary, 'error');
     return result;
   }
-  if (options.signal.aborted) return cancelled(runtime);
+  if (signal.aborted) return cancelled(runtime);
   const value = validation.value;
 
   switch (name) {
@@ -132,7 +135,7 @@ export async function executeApprovedWebMcpTool(
       const read = readEditorStateSafely(session, {
         projectId: session.projectId,
         expectedRevision: session.revision,
-        signal: options.signal,
+        signal,
         read: (state) => getWorkspaceSummary(state, {
           projectId: session.projectId,
           projectName: runtime.getProjectName(),
@@ -148,7 +151,7 @@ export async function executeApprovedWebMcpTool(
       const read = readEditorStateSafely(session, {
         projectId: normalized.projectId,
         expectedRevision: normalized.expectedRevision,
-        signal: options.signal,
+        signal,
         read: (state) => findLayers(state, {
           query: normalized.query,
           kinds: normalized.kinds,
@@ -166,7 +169,7 @@ export async function executeApprovedWebMcpTool(
         title: normalized.title,
         body: normalized.body,
         eyebrow: normalized.eyebrow,
-      }), options.signal);
+      }), signal);
     }
     case 'create_table': {
       const normalized = value as CreateTableInput;
@@ -177,22 +180,22 @@ export async function executeApprovedWebMcpTool(
         columns: normalized.columns,
         headerRow: normalized.headerRow,
         values: normalized.values,
-      }), options.signal);
+      }), signal);
     }
     case 'organize_layers_into_table': {
       const normalized = value as OrganizeLayersInput;
       return executeMutation(runtime, contextFrom(value), organizeLayersIntoTableCommand({
         layerIds: normalized.layerIds,
         name: normalized.name,
-      }), options.signal);
+      }), signal);
     }
     case 'create_canvas_nodes_from_rows': {
       const normalized = value as CreateNodesFromRowsInput;
-      return executeMutation(runtime, contextFrom(value), createCanvasNodesFromRowsCommand({
+      return executeMutation(runtime, contextFrom(value), createCanvasNodesFromRowIndexesCommand({
         tableId: normalized.tableId,
-        rowIds: normalized.rowIds,
-        columnIds: normalized.columnIds,
-      }), options.signal);
+        rowIndexes: normalized.rowIndexes,
+        columnIndexes: normalized.columnIndexes,
+      }), signal);
     }
   }
 }

@@ -84,6 +84,30 @@ describe('WebMCP catalog and input schemas', () => {
     }
   });
 
+  it('accepts bounded row indexes and rejects opaque IDs, duplicates, and out-of-range indexes', () => {
+    const context = { projectId: 'project-a', expectedRevision: 3, tableId: 'table-a' };
+    expect(validateWebMcpInput('create_canvas_nodes_from_rows', {
+      ...context,
+      rowIndexes: [1, 2],
+      columnIndexes: [0, 1],
+    })).toMatchObject({ ok: true });
+    expect(validateWebMcpInput('create_canvas_nodes_from_rows', {
+      ...context,
+      rowIds: ['opaque-row'],
+      columnIds: ['opaque-column'],
+    })).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+    expect(validateWebMcpInput('create_canvas_nodes_from_rows', {
+      ...context,
+      rowIndexes: [1, 1],
+      columnIndexes: [0],
+    })).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+    expect(validateWebMcpInput('create_canvas_nodes_from_rows', {
+      ...context,
+      rowIndexes: [100],
+      columnIndexes: [0],
+    })).toMatchObject({ ok: false, code: 'LIMIT_EXCEEDED' });
+  });
+
   it('enforces table product, matrix, aggregate text, and serialized byte budgets', () => {
     expect(validateWebMcpInput('create_table', {
       projectId: 'project-a',

@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 type BrowserTool = {
   name: string;
   annotations?: { readOnlyHint?: boolean; untrustedContentHint?: boolean };
-  execute: (input: unknown, options: { signal: AbortSignal }) => Promise<unknown>;
+  execute: (input: unknown, options?: { signal?: AbortSignal }) => Promise<unknown>;
 };
 
 test.beforeEach(async ({ page }) => {
@@ -46,7 +46,7 @@ test('registers the approved tools once and persists an atomic agent mutation', 
   const summary = await page.evaluate(async () => {
     const tools = (window as unknown as { __synaptableWebMcpTools: BrowserTool[] }).__synaptableWebMcpTools;
     const tool = tools.find((candidate) => candidate.name === 'get_workspace_summary');
-    return tool?.execute({}, { signal: new AbortController().signal });
+    return tool?.execute({});
   }) as { ok: boolean; projectId: string; revision: number };
   expect(summary).toMatchObject({ ok: true, revision: 0 });
 
@@ -92,6 +92,83 @@ test('keeps every registered result marked as untrusted and read annotations acc
   expect(annotations.every((annotation) => annotation?.untrustedContentHint)).toBe(true);
   expect(annotations.slice(0, 2).every((annotation) => annotation?.readOnlyHint)).toBe(true);
   expect(annotations.slice(2).every((annotation) => annotation?.readOnlyHint === false)).toBe(true);
+});
+
+test('discovers table dimensions and converts rows by public indexes in one undo step', async ({ page }) => {
+  await page.goto('/');
+  await expect.poll(() => page.evaluate(() => (
+    (window as unknown as { __synaptableWebMcpTools?: BrowserTool[] }).__synaptableWebMcpTools?.length ?? 0
+  ))).toBe(6);
+
+  const tableName = `Indexed scenes ${Date.now()}`;
+  const outcome = await page.evaluate(async (name) => {
+    const tools = (window as unknown as { __synaptableWebMcpTools: BrowserTool[] }).__synaptableWebMcpTools;
+    const byName = (toolName: string) => tools.find((tool) => tool.name === toolName);
+    const summary = await byName('get_workspace_summary')?.execute({}) as {
+      projectId: string;
+      revision: number;
+    };
+    const table = await byName('create_table')?.execute({
+      projectId: summary.projectId,
+      expectedRevision: summary.revision,
+      name,
+      rows: 3,
+      columns: 2,
+      headerRow: true,
+      values: [['Scene', 'Status'], ['Opening', 'Ready'], ['Climax', 'Draft']],
+    }) as { ok: boolean; revision: number; affectedIds: string[] };
+    const found = await byName('find_layers')?.execute({
+      projectId: summary.projectId,
+      expectedRevision: table.revision,
+      query: name,
+      kinds: ['table'],
+      limit: 1,
+    }) as {
+      revision: number;
+      data: { matches: Array<{
+        id: string;
+        table?: { rowCount: number; columnCount: number; headerRow: boolean };
+      }> };
+    };
+    const converted = await byName('create_canvas_nodes_from_rows')?.execute({
+      projectId: summary.projectId,
+      expectedRevision: found.revision,
+      tableId: found.data.matches[0].id,
+      rowIndexes: [1, 2],
+      columnIndexes: [0, 1],
+    });
+    return { table, found, converted };
+  }, tableName) as {
+    table: { ok: boolean; revision: number; affectedIds: string[] };
+    found: {
+      revision: number;
+      data: { matches: Array<{
+        id: string;
+        table?: { rowCount: number; columnCount: number; headerRow: boolean };
+      }> };
+    };
+    converted: { ok: boolean; revision: number; affectedCount: number };
+  };
+
+  expect(outcome.table).toMatchObject({ ok: true, revision: 1 });
+  expect(outcome.found.data.matches[0]).toMatchObject({
+    id: outcome.table.affectedIds[0],
+    table: { rowCount: 3, columnCount: 2, headerRow: true },
+  });
+  expect(outcome.converted).toMatchObject({ ok: true, revision: 2, affectedCount: 2 });
+  const conceptNodes = page.locator('.react-flow__node-concept');
+  await expect(page.locator('.react-flow__node-table').filter({ hasText: tableName })).toHaveCount(1);
+  await expect(conceptNodes.filter({ hasText: 'Opening' })).toHaveCount(1);
+  await expect(conceptNodes.filter({ hasText: 'Climax' })).toHaveCount(1);
+  await expect(page.locator('main[data-save-state="saved"]')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.locator('.react-flow__node-table').filter({ hasText: tableName })).toHaveCount(1);
+  await expect(conceptNodes.filter({ hasText: 'Opening' })).toHaveCount(0);
+  await expect(conceptNodes.filter({ hasText: 'Climax' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(conceptNodes.filter({ hasText: 'Opening' })).toHaveCount(1);
+  await expect(conceptNodes.filter({ hasText: 'Climax' })).toHaveCount(1);
 });
 
 test('serializes concurrent mutations, rejects stale replay, and honors cancellation', async ({ page }) => {
