@@ -1,0 +1,500 @@
+{
+  "catalogVersion": "1.0.0",
+  "schemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "resultBudgetBytes": 1500,
+  "$defs": {
+    "toolError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok",
+        "projectId",
+        "revision",
+        "code",
+        "summary",
+        "retryable",
+        "refreshRequired"
+      ],
+      "properties": {
+        "ok": { "const": false },
+        "projectId": { "type": "string", "maxLength": 160 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "code": {
+          "type": "string",
+          "enum": [
+            "CANCELLED",
+            "PROJECT_CHANGED",
+            "STALE_REVISION",
+            "INVALID_INPUT",
+            "NOT_FOUND",
+            "PROTECTED_CONTENT",
+            "LIMIT_EXCEEDED",
+            "CONFLICT",
+            "PERSISTENCE_FAILED",
+            "INTERNAL_ERROR"
+          ]
+        },
+        "summary": { "type": "string", "maxLength": 500 },
+        "retryable": { "type": "boolean" },
+        "refreshRequired": { "type": "boolean" }
+      }
+    },
+    "mutationSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok",
+        "projectId",
+        "revision",
+        "summary",
+        "affectedIds",
+        "affectedCount",
+        "undoAvailable"
+      ],
+      "properties": {
+        "ok": { "const": true },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "summary": { "type": "string", "maxLength": 500 },
+        "affectedIds": {
+          "type": "array",
+          "maxItems": 25,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 160 }
+        },
+        "affectedCount": { "type": "integer", "minimum": 1 },
+        "undoAvailable": { "const": true },
+        "warnings": {
+          "type": "array",
+          "maxItems": 3,
+          "items": { "type": "string", "maxLength": 200 }
+        }
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "get_workspace_summary",
+      "title": "Get workspace summary",
+      "description": "Read the active SynapTable project identity, revision, layer counts, and visible selection. Use this first and again after stale-context errors. It does not return note bodies or table cell values.",
+      "riskClass": "read-only",
+      "annotations": {
+        "readOnlyHint": true,
+        "untrustedContentHint": true
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "outputSchema": {
+        "oneOf": [
+          { "$ref": "#/$defs/toolError" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ok", "projectId", "revision", "summary", "data"],
+            "properties": {
+              "ok": { "const": true },
+              "projectId": { "type": "string", "minLength": 1, "maxLength": 160 },
+              "revision": { "type": "integer", "minimum": 0 },
+              "summary": { "type": "string", "maxLength": 500 },
+              "data": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "projectName",
+                  "layerCount",
+                  "connectorCount",
+                  "layerCounts",
+                  "selectedIds",
+                  "hiddenCount",
+                  "lockedCount"
+                ],
+                "properties": {
+                  "projectName": { "type": "string", "maxLength": 500 },
+                  "layerCount": { "type": "integer", "minimum": 0 },
+                  "connectorCount": { "type": "integer", "minimum": 0 },
+                  "layerCounts": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["concept", "raster", "vector", "table"],
+                    "properties": {
+                      "concept": { "type": "integer", "minimum": 0 },
+                      "raster": { "type": "integer", "minimum": 0 },
+                      "vector": { "type": "integer", "minimum": 0 },
+                      "table": { "type": "integer", "minimum": 0 }
+                    }
+                  },
+                  "selectedIds": {
+                    "type": "array",
+                    "maxItems": 25,
+                    "uniqueItems": true,
+                    "items": { "type": "string", "minLength": 1, "maxLength": 160 }
+                  },
+                  "hiddenCount": { "type": "integer", "minimum": 0 },
+                  "lockedCount": { "type": "integer", "minimum": 0 }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "find_layers",
+      "title": "Find canvas layers",
+      "description": "Find visible layers in the active project by a short text query and optional layer kinds. Returns stable IDs, kinds, and truncated labels only; it does not return note bodies or table cells.",
+      "riskClass": "read-only",
+      "annotations": {
+        "readOnlyHint": true,
+        "untrustedContentHint": true
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["projectId", "expectedRevision"],
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "Active project ID returned by get_workspace_summary."
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Workspace revision returned by the latest successful tool call."
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 200,
+            "default": "",
+            "description": "Case-insensitive text to find. Empty text lists visible layers."
+          },
+          "kinds": {
+            "type": "array",
+            "maxItems": 4,
+            "uniqueItems": true,
+            "items": { "type": "string", "enum": ["concept", "raster", "vector", "table"] },
+            "description": "Optional layer kinds to include."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 10,
+            "description": "Maximum matches to return; output budgeting may reduce this further."
+          }
+        }
+      },
+      "outputSchema": {
+        "oneOf": [
+          { "$ref": "#/$defs/toolError" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ok", "projectId", "revision", "summary", "data"],
+            "properties": {
+              "ok": { "const": true },
+              "projectId": { "type": "string", "minLength": 1, "maxLength": 160 },
+              "revision": { "type": "integer", "minimum": 0 },
+              "summary": { "type": "string", "maxLength": 500 },
+              "data": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["matches", "totalMatches", "truncated"],
+                "properties": {
+                  "matches": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["id", "name", "kind"],
+                      "properties": {
+                        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+                        "name": { "type": "string", "maxLength": 80 },
+                        "kind": { "type": "string", "enum": ["concept", "raster", "vector", "table"] }
+                      }
+                    }
+                  },
+                  "totalMatches": { "type": "integer", "minimum": 0 },
+                  "truncated": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "create_concept",
+      "title": "Create a concept",
+      "description": "Create one concept layer in the active project. The operation is atomic, persists before success, creates one undo step, and uses the visible canvas center when position is omitted.",
+      "riskClass": "reversible-mutation",
+      "annotations": {
+        "readOnlyHint": false,
+        "untrustedContentHint": true
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["projectId", "expectedRevision"],
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "Active project ID returned by get_workspace_summary."
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Workspace revision returned by the latest successful tool call."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 500,
+            "default": "New concept",
+            "description": "Concept title; blank text becomes Untitled concept."
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 20000,
+            "default": "",
+            "description": "Optional plain-text concept body."
+          },
+          "eyebrow": {
+            "type": "string",
+            "maxLength": 500,
+            "default": "Concept",
+            "description": "Short label displayed above the concept title."
+          },
+          "position": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["x", "y"],
+            "properties": {
+              "x": {
+                "type": "number",
+                "minimum": -1000000,
+                "maximum": 1000000,
+                "description": "Horizontal canvas coordinate for the new layer center."
+              },
+              "y": {
+                "type": "number",
+                "minimum": -1000000,
+                "maximum": 1000000,
+                "description": "Vertical canvas coordinate for the new layer center."
+              }
+            }
+          }
+        }
+      },
+      "outputSchema": {
+        "oneOf": [
+          { "$ref": "#/$defs/toolError" },
+          { "$ref": "#/$defs/mutationSuccess" }
+        ]
+      }
+    },
+    {
+      "name": "create_table",
+      "title": "Create a table",
+      "description": "Create one bounded table in the active project with optional initial plain-text values. The operation is atomic, persists before success, and creates one undo step.",
+      "riskClass": "reversible-mutation",
+      "annotations": {
+        "readOnlyHint": false,
+        "untrustedContentHint": true
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["projectId", "expectedRevision"],
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "Active project ID returned by get_workspace_summary."
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Workspace revision returned by the latest successful tool call."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Optional table name; blank text uses the next generated table name."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 3,
+            "description": "Total rows including the optional header row."
+          },
+          "columns": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 3,
+            "description": "Total table columns. Rows multiplied by columns cannot exceed 2,000."
+          },
+          "headerRow": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the first row is styled and treated as a header."
+          },
+          "values": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "array",
+              "maxItems": 30,
+              "items": { "type": "string", "maxLength": 2000 }
+            },
+            "description": "Optional row-major initial cell text within the requested dimensions."
+          },
+          "position": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["x", "y"],
+            "properties": {
+              "x": {
+                "type": "number",
+                "minimum": -1000000,
+                "maximum": 1000000,
+                "description": "Horizontal canvas coordinate for the new layer center."
+              },
+              "y": {
+                "type": "number",
+                "minimum": -1000000,
+                "maximum": 1000000,
+                "description": "Vertical canvas coordinate for the new layer center."
+              }
+            }
+          }
+        }
+      },
+      "outputSchema": {
+        "oneOf": [
+          { "$ref": "#/$defs/toolError" },
+          { "$ref": "#/$defs/mutationSuccess" }
+        ]
+      }
+    },
+    {
+      "name": "organize_layers_into_table",
+      "title": "Organize layers into a table",
+      "description": "Create a table whose rows summarize explicit visible, unlocked layers in canvas reading order. Original layers remain unchanged. The operation creates one undo step.",
+      "riskClass": "reversible-mutation",
+      "annotations": {
+        "readOnlyHint": false,
+        "untrustedContentHint": true
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["projectId", "expectedRevision", "layerIds"],
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "Active project ID returned by get_workspace_summary."
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Workspace revision returned by the latest successful tool call."
+          },
+          "layerIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 99,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1, "maxLength": 160 },
+            "description": "Explicit visible, unlocked layer IDs from the active project."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 500,
+            "default": "Organized ideas",
+            "description": "Name for the new table."
+          }
+        }
+      },
+      "outputSchema": {
+        "oneOf": [
+          { "$ref": "#/$defs/toolError" },
+          { "$ref": "#/$defs/mutationSuccess" }
+        ]
+      }
+    },
+    {
+      "name": "create_canvas_nodes_from_rows",
+      "title": "Create canvas nodes from rows",
+      "description": "Create concept layers from explicit rows and columns of one visible, unlocked table. The source table remains unchanged. One call supports at most 25 rows and creates one undo step.",
+      "riskClass": "reversible-mutation",
+      "annotations": {
+        "readOnlyHint": false,
+        "untrustedContentHint": true
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["projectId", "expectedRevision", "tableId", "rowIds", "columnIds"],
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "Active project ID returned by get_workspace_summary."
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Workspace revision returned by the latest successful tool call."
+          },
+          "tableId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "Visible, unlocked source table ID."
+          },
+          "rowIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 25,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1, "maxLength": 160 },
+            "description": "Explicit data-row IDs; header rows cannot be converted."
+          },
+          "columnIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 30,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1, "maxLength": 160 },
+            "description": "Explicit column IDs whose cell text forms each concept."
+          }
+        }
+      },
+      "outputSchema": {
+        "oneOf": [
+          { "$ref": "#/$defs/toolError" },
+          { "$ref": "#/$defs/mutationSuccess" }
+        ]
+      }
+    }
+  ]
+}

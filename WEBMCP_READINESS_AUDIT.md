@@ -1,8 +1,8 @@
 # SynapTable WebMCP Readiness Audit
 
 **Audit date:** 2026-09-02  
-**Status:** Pre-implementation audit  
-**Overall verdict:** **AMBER — product baseline is healthy, but WebMCP tool registration should wait until the command and safety contracts below are complete.**
+**Status:** Foundation-ready; registration not implemented
+**Overall verdict:** **AMBER — the command, safety, tool-strategy, and schema contracts are ready, but WebMCP registration should wait for the controlled lifecycle, adapter tests, and deployed-header verification below.**
 
 ## Purpose and scope
 
@@ -23,9 +23,9 @@ SynapTable already has a good foundation:
 - A broad automated test suite around existing canvas behavior.
 - A visible, user-controlled browser workspace, which is a good match for WebMCP's interaction model.
 
-The main readiness gap is architectural. Most editor mutations still live as React callbacks in the large `Editor.tsx` component. Registering those callbacks directly as WebMCP tools would couple agent behavior to rendered UI state, make deterministic testing difficult, and risk inconsistent undo, persistence, selection, and error handling.
+The audit's original architectural gap has been remediated: the approved actions now use a typed editor-command facade plus project/revision, cancellation, serialization, persistence, and output-budget guards. The remaining P0 gap is the WebMCP adapter and registration lifecycle. It must consume those contracts without coupling tool execution back to DOM events or transient UI callbacks.
 
-**Recommendation:** build a typed editor-command facade first. Both the UI and future WebMCP adapters should call the same commands.
+**Current recommendation:** implement the adapter and controlled registration lifecycle from [`WEBMCP_TOOL_STRATEGY.md`](./WEBMCP_TOOL_STRATEGY.md). Both the UI and WebMCP adapter must continue to call the same commands.
 
 ```text
 Toolbar / keyboard / canvas UI ─┐
@@ -39,14 +39,14 @@ Future WebMCP tool adapter ─────┘                         ├─> on
 | Area | Status | Finding |
 | --- | --- | --- |
 | Product/data baseline | Green | Versioned schema, UUIDs, validation, persistence, and undo already exist. |
-| Command architecture | Red | Mutations are concentrated in UI callbacks rather than reusable domain commands. |
-| Initial tool strategy | Red | No approved tool catalog, risk classification, or input/output contracts exist. |
-| Runtime validation | Amber | Project data is validated, but agent-tool arguments and results are not yet defined. |
-| Human control | Amber | UI confirmations exist for some destructive actions; there is no agent-specific approval policy. |
-| Security and privacy | Amber | Local-first design is strong; tool exposure, content trust, and data minimization rules are missing. |
-| Registration lifecycle | Red | No feature detection, registration/unregistration, cancellation, or stale-state policy exists. |
+| Command architecture | Green | The UI and future adapter share typed commands/queries with atomic safety guards. |
+| Initial tool strategy | Green | Six tools, risk classes, schemas, budgets, and policies are defined in [`WEBMCP_TOOL_STRATEGY.md`](./WEBMCP_TOOL_STRATEGY.md). |
+| Runtime validation | Amber | Command validation and exact tool schemas exist; the registration adapter and stable typed error mapping remain to be implemented. |
+| Human control | Green for initial scope | The initial catalog contains only reads and reversible mutations with visible results and undo; destructive tools are deferred. |
+| Security and privacy | Amber | Same-origin, untrusted-content, minimization, logging, and budget policies are specified but not yet enforced by a WebMCP adapter. |
+| Registration lifecycle | Red | Lifecycle behavior is specified, but feature detection, registration/unregistration, and duplicate prevention are not implemented or tested. |
 | Deployment policy | Amber | Security headers exist, but the WebMCP `tools` policy and origin-keyed behavior need explicit verification. |
-| Tests and evaluations | Red | Existing UI tests do not cover tool contracts, adversarial inputs, cancellation, or deterministic results. |
+| Tests and evaluations | Amber | Command safety and adversarial project-isolation coverage exist; schema, adapter, registration, and agent-browser tests remain. |
 | Progressive enhancement | Green by design | Existing UI does not depend on WebMCP and must remain that way. |
 
 ## Existing release proof remains required
@@ -103,6 +103,8 @@ Every tool specification must document:
 - Whether visible user confirmation is required.
 - `readOnlyHint` and `untrustedContentHint` values.
 - Undo, autosave, cancellation, and partial-failure behavior.
+
+**Completed specification:** [`WEBMCP_TOOL_STRATEGY.md`](./WEBMCP_TOOL_STRATEGY.md) defines the approved six-tool catalog and policies. [`WEBMCP_TOOL_SCHEMAS.json`](./WEBMCP_TOOL_SCHEMAS.json) is the machine-readable versioned contract for tool definitions, input/output schemas, hints, and budgets.
 
 ### WMCP-03: Validate at both schema and runtime boundaries
 
@@ -239,7 +241,7 @@ SynapTable is ready to begin WebMCP integration only when all of the following a
 - [x] Each command has typed inputs, runtime validation, deterministic results, and explicit limits.
 - [x] Each successful migrated mutation creates exactly one undo entry and survives reload through the existing persistence controller.
 - [x] Failed, stale, and cancelled commands leave state unchanged.
-- [ ] Every proposed tool has an approved risk class, hints, input/output schema, and data-return budget.
+- [x] Every proposed tool has an approved risk class, hints, input/output schema, and data-return budget.
 - [x] Initial destructive operations are explicitly excluded.
 - [ ] Same-origin exposure, feature detection, cleanup, cancellation, and duplicate registration behavior are specified and tested.
 - [ ] The deployed origin and Permissions Policy have a repeatable verification procedure.
