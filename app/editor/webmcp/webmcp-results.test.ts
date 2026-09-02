@@ -88,5 +88,25 @@ describe('WebMCP public results', () => {
     expect(result.data.truncated).toBe(true);
     expect(webMcpSerializedBytes(result)).toBeLessThanOrEqual(WEBMCP_RESULT_MAX_BYTES);
   });
-});
 
+  it('returns table dimensions without returning table cell content', () => {
+    const result = webMcpLayerSearchResult('project-a', 3, {
+      matches: [{
+        id: 'table-a',
+        name: 'Scenes',
+        kind: 'table',
+        table: { rowCount: 4, columnCount: 3, headerRow: true },
+      }],
+      totalMatches: 1,
+      truncated: false,
+    });
+    expect(result.data.matches[0]).toEqual({
+      id: 'table-a',
+      name: 'Scenes',
+      kind: 'table',
+      table: { rowCount: 4, columnCount: 3, headerRow: true },
+    });
+    expect(JSON.stringify(result)).not.toContain('cells');
+    expect(webMcpSerializedBytes(result)).toBeLessThanOrEqual(WEBMCP_RESULT_MAX_BYTES);
+  });
+});

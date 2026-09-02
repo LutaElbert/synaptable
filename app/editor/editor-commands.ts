@@ -82,7 +82,12 @@ export type WorkspaceSummary = {
 };
 
 export type LayerSearchResult = {
-  matches: Array<{ id: string; name: string; kind: LayerKind }>;
+  matches: Array<{
+    id: string;
+    name: string;
+    kind: LayerKind;
+    table?: { rowCount: number; columnCount: number; headerRow: boolean };
+  }>;
   totalMatches: number;
   truncated: boolean;
 };
@@ -252,6 +257,13 @@ export function findLayers(
       id: node.id,
       name: node.data.name,
       kind: node.data.kind,
+      ...(node.data.kind === 'table' ? {
+        table: {
+          rowCount: node.data.rows.length,
+          columnCount: node.data.columns.length,
+          headerRow: node.data.headerRow,
+        },
+      } : {}),
     })),
     totalMatches: matching.length,
     truncated: matching.length > safeLimit,
@@ -459,6 +471,47 @@ export function createCanvasNodesFromRowsCommand({
       nodes: [...state.nodes.map((node) => ({ ...node, selected: false })), ...generated],
       edges: deselectEdges(state.edges),
     }, `${generated.length} canvas ${generated.length === 1 ? 'node' : 'nodes'} created from ${data.name}.`, generated.map((node) => node.id));
+  };
+}
+
+export function createCanvasNodesFromRowIndexesCommand({
+  tableId,
+  rowIndexes,
+  columnIndexes,
+  createId = defaultIdFactory,
+}: {
+  tableId: string;
+  rowIndexes: number[];
+  columnIndexes: number[];
+  createId?: IdFactory;
+}): EditorCommand {
+  return (state) => {
+    const source = state.nodes.find((node) => node.id === tableId);
+    if (!source || source.data.kind !== 'table') {
+      return failure(state, 'NOT_FOUND', 'Choose an existing table.');
+    }
+    const data = source.data;
+    if (
+      new Set(rowIndexes).size !== rowIndexes.length
+      || new Set(columnIndexes).size !== columnIndexes.length
+    ) {
+      return failure(state, 'CONFLICT', 'Each table row and column can be selected only once.');
+    }
+    if (
+      rowIndexes.some((index) => !Number.isInteger(index) || index < 0 || index >= data.rows.length)
+      || columnIndexes.some((index) => !Number.isInteger(index) || index < 0 || index >= data.columns.length)
+    ) {
+      return failure(state, 'INVALID_INPUT', 'Choose row and column indexes within the current table dimensions.');
+    }
+    if (data.headerRow && rowIndexes.includes(0)) {
+      return failure(state, 'INVALID_INPUT', 'Header rows cannot be converted into canvas nodes.');
+    }
+    return createCanvasNodesFromRowsCommand({
+      tableId,
+      rowIds: rowIndexes.map((index) => data.rows[index].id),
+      columnIds: columnIndexes.map((index) => data.columns[index].id),
+      createId,
+    })(state);
   };
 }
 

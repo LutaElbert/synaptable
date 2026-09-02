@@ -64,6 +64,17 @@ describe('approved WebMCP canvas tools', () => {
     expect(definitions.every((definition) => definition.annotations?.untrustedContentHint)).toBe(true);
   });
 
+  it('supports the native one-argument execute callback', async () => {
+    const { runtime } = runtimeFixture();
+    const summary = createApprovedWebMcpToolDefinitions(runtime)
+      .find((definition) => definition.name === 'get_workspace_summary');
+    await expect(summary?.execute({})).resolves.toMatchObject({
+      ok: true,
+      projectId: 'project-a',
+      revision: 0,
+    });
+  });
+
   it('bootstraps only the active workspace with bounded counts and no bodies', async () => {
     const { runtime } = runtimeFixture();
     const result = await executeApprovedWebMcpTool('get_workspace_summary', {}, options(), runtime);
@@ -162,8 +173,8 @@ describe('approved WebMCP canvas tools', () => {
       projectId: 'project-a',
       expectedRevision: 1,
       tableId: table.id,
-      rowIds: [table.data.rows[1].id],
-      columnIds: table.data.columns.map((column) => column.id),
+      rowIndexes: [1],
+      columnIndexes: [0, 1],
     }, options(), fixture.runtime);
     expect(converted).toMatchObject({ ok: true, revision: 2, affectedCount: 1 });
     const sourceAfter = fixture.session().state.nodes.find((node) => node.id === table.id);
@@ -217,8 +228,8 @@ describe('approved WebMCP canvas tools', () => {
       projectId: 'project-a',
       expectedRevision: 1,
       tableId: table.id,
-      rowIds: [table.data.rows[0].id],
-      columnIds: [table.data.columns[0].id],
+      rowIndexes: [0],
+      columnIndexes: [0],
     }, options(), fixture.runtime);
     expect(result).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
     expect(fixture.session().state.nodes).toHaveLength(count);

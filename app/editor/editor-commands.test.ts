@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   connectLayersCommand,
+  createCanvasNodesFromRowIndexesCommand,
   createCanvasNodesFromRowsCommand,
   createConceptCommand,
   createRelativeConceptCommand,
@@ -79,6 +80,19 @@ describe('editor command facade', () => {
       totalMatches: 2,
       truncated: true,
     });
+  });
+
+  it('reports table dimensions and header status without returning cell content', () => {
+    const source = tableNode([['Scene', 'Status'], ['Opening', 'Ready']]);
+    const result = findLayers({ nodes: [source], edges: [] }, { query: 'Scenes' });
+
+    expect(result.matches).toEqual([{
+      id: source.id,
+      name: 'Scenes',
+      kind: 'table',
+      table: { rowCount: 2, columnCount: 2, headerRow: true },
+    }]);
+    expect(JSON.stringify(result)).not.toContain('Opening');
   });
 
   it('creates a concept immutably with a deterministic result envelope', () => {
@@ -201,6 +215,49 @@ describe('editor command facade', () => {
     expect(outcome.nodes[0]).toEqual({ ...sourceBefore, selected: false });
     expect(outcome.nodes[0].data).toEqual(sourceBefore.data);
     expect(outcome.nodes[1]).toMatchObject({ id: 'climax-node', data: { kind: 'concept', name: 'Climax' } });
+  });
+
+  it('resolves current row and column indexes atomically while preserving the source table', () => {
+    const source = tableNode([
+      ['Scene', 'Status', 'Owner'],
+      ['Opening', 'Ready', 'Mara'],
+      ['Climax', 'Draft', 'Ivo'],
+    ]);
+    const state = { nodes: [source], edges: [] };
+    const sourceBefore = structuredClone(source);
+    const outcome = createCanvasNodesFromRowIndexesCommand({
+      tableId: source.id,
+      rowIndexes: [2],
+      columnIndexes: [0, 1],
+      createId: ids('climax-index-node'),
+    })(state);
+
+    expect(outcome.result).toMatchObject({ ok: true, affectedIds: ['climax-index-node'] });
+    expect(outcome.nodes[0]).toEqual({ ...sourceBefore, selected: false });
+    expect(outcome.nodes[1]).toMatchObject({
+      id: 'climax-index-node',
+      data: { kind: 'concept', name: 'Climax' },
+    });
+  });
+
+  it('rejects header and out-of-range indexes without partial output', () => {
+    const source = tableNode([['Scene'], ['Opening']]);
+    const state = { nodes: [source], edges: [] };
+    const header = createCanvasNodesFromRowIndexesCommand({
+      tableId: source.id,
+      rowIndexes: [0],
+      columnIndexes: [0],
+    })(state);
+    const outOfRange = createCanvasNodesFromRowIndexesCommand({
+      tableId: source.id,
+      rowIndexes: [2],
+      columnIndexes: [0],
+    })(state);
+
+    expect(header.result).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+    expect(outOfRange.result).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+    expect(header.nodes).toBe(state.nodes);
+    expect(outOfRange.edges).toBe(state.edges);
   });
 
   it('rejects stale table row IDs without partial output', () => {

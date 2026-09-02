@@ -4,7 +4,7 @@ export type WebMcpToolAnnotations = {
 };
 
 export type WebMcpExecuteOptions = {
-  signal: AbortSignal;
+  signal?: AbortSignal;
 };
 
 export type WebMcpToolDefinition = {
@@ -12,7 +12,7 @@ export type WebMcpToolDefinition = {
   title?: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  execute: (input: unknown, options: WebMcpExecuteOptions) => unknown | Promise<unknown>;
+  execute: (input: unknown, options?: WebMcpExecuteOptions) => unknown | Promise<unknown>;
   annotations?: WebMcpToolAnnotations;
 };
 
@@ -32,4 +32,3 @@ declare global {
     modelContext?: WebMcpModelContext;
   }
 }
-
