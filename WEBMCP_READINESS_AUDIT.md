@@ -1,14 +1,14 @@
 # SynapTable WebMCP Readiness Audit
 
 **Audit date:** 2026-09-02  
-**Status:** Foundation-ready; registration not implemented
-**Overall verdict:** **AMBER — the command, safety, tool-strategy, and schema contracts are ready, but WebMCP registration should wait for the controlled lifecycle, adapter tests, and deployed-header verification below.**
+**Status:** Local implementation complete; preview and manual gates pending
+**Overall verdict:** **AMBER — the six-tool implementation and local regression/security gates are green, but real agent-capable Chromium, Cloudflare Preview, release-proof, Devpost, and production approval gates remain open.**
 
 ## Purpose and scope
 
-This audit answers one question: **what must SynapTable have in place before WebMCP is added?**
+This audit began with one question: **what must SynapTable have in place before WebMCP is added?** It now records that the local implementation gate is complete and identifies the remaining external evidence.
 
-It covers the current local-first canvas architecture, proposed agent-facing actions, security and privacy boundaries, browser/deployment requirements, and the tests needed before tools are exposed. It does not implement WebMCP or change current product behavior.
+It covers the local-first canvas architecture, implemented agent-facing actions, security and privacy boundaries, browser/deployment requirements, and the tests required before tools are enabled beyond local validation.
 
 WebMCP is currently an experimental Draft Community Group Report. SynapTable must therefore treat it as progressive enhancement: the editor must remain fully functional when the API is unavailable.
 
@@ -23,14 +23,14 @@ SynapTable already has a good foundation:
 - A broad automated test suite around existing canvas behavior.
 - A visible, user-controlled browser workspace, which is a good match for WebMCP's interaction model.
 
-The audit's original architectural gap has been remediated: the approved actions now use a typed editor-command facade plus project/revision, cancellation, serialization, persistence, and output-budget guards. The remaining P0 gap is the WebMCP adapter and registration lifecycle. It must consume those contracts without coupling tool execution back to DOM events or transient UI callbacks.
+The audit's original architectural gap has been remediated. The approved actions use a typed editor-command facade plus project/revision, cancellation, serialization, persistence, and output-budget guards. The WebMCP adapter, CSP-safe schema validation, registration lifecycle, same-origin headers, and six tool mappings are implemented behind a disabled-by-default server flag.
 
-**Current recommendation:** execute [`WEBMCP_COMPLETION_IMPLEMENTATION_PLAN.md`](./WEBMCP_COMPLETION_IMPLEMENTATION_PLAN.md) against the contracts in [`WEBMCP_TOOL_STRATEGY.md`](./WEBMCP_TOOL_STRATEGY.md). Both the UI and WebMCP adapter must continue to call the same commands.
+**Current recommendation:** use [`WEBMCP_RELEASE_VALIDATION_RECORD.md`](./WEBMCP_RELEASE_VALIDATION_RECORD.md) to complete real agent-browser and approved Cloudflare Preview evidence. Keep production and final Devpost submission behind their separate explicit approvals.
 
 ```text
 Toolbar / keyboard / canvas UI ─┐
                                ├─> Editor command facade ─> validated state mutation
-Future WebMCP tool adapter ─────┘                         ├─> one undo entry
+WebMCP tool adapter ────────────┘                         ├─> one undo entry
                                                          └─> autosave result
 ```
 
@@ -41,13 +41,13 @@ Future WebMCP tool adapter ─────┘                         ├─> on
 | Product/data baseline | Green | Versioned schema, UUIDs, validation, persistence, and undo already exist. |
 | Command architecture | Green | The UI and future adapter share typed commands/queries with atomic safety guards. |
 | Initial tool strategy | Green | Six tools, risk classes, schemas, budgets, and policies are defined in [`WEBMCP_TOOL_STRATEGY.md`](./WEBMCP_TOOL_STRATEGY.md). |
-| Runtime validation | Amber | Command validation and exact tool schemas exist; the registration adapter and stable typed error mapping remain to be implemented. |
+| Runtime validation | Green locally | Typed errors, precompiled closed schemas, business limits, and bounded result envelopes are implemented and tested. |
 | Human control | Green for initial scope | The initial catalog contains only reads and reversible mutations with visible results and undo; destructive tools are deferred. |
-| Security and privacy | Amber | Same-origin, untrusted-content, minimization, logging, and budget policies are specified but not yet enforced by a WebMCP adapter. |
-| Registration lifecycle | Red | Lifecycle behavior is specified, but feature detection, registration/unregistration, and duplicate prevention are not implemented or tested. |
-| Deployment policy | Amber | Security headers exist, but the WebMCP `tools` policy and origin-keyed behavior need explicit verification. |
-| Tests and evaluations | Amber | Command safety and adversarial project-isolation coverage exist; schema, adapter, registration, and agent-browser tests remain. |
-| Progressive enhancement | Green by design | Existing UI does not depend on WebMCP and must remain that way. |
+| Security and privacy | Green locally | Same-origin policy, untrusted annotations, content minimization, project isolation, budgets, and content-safe failures are enforced and tested. |
+| Registration lifecycle | Green locally | Feature detection, static registration, abort cleanup, remount protection, cancellation, and unsupported-browser behavior are tested. |
+| Deployment policy | Amber | Both response paths configure `tools=(self)`, but the actual Cloudflare Preview response and origin behavior need approved verification. |
+| Tests and evaluations | Amber | Unit and mocked cross-browser WebMCP cases pass; real agent-capable Chromium and manual release environments remain. |
+| Progressive enhancement | Green | Default-off mode loads no registration chunk; unsupported browsers retain the existing editor. |
 
 ## Existing release proof remains required
 
@@ -243,12 +243,12 @@ SynapTable is ready to begin WebMCP integration only when all of the following a
 - [x] Failed, stale, and cancelled commands leave state unchanged.
 - [x] Every proposed tool has an approved risk class, hints, input/output schema, and data-return budget.
 - [x] Initial destructive operations are explicitly excluded.
-- [ ] Same-origin exposure, feature detection, cleanup, cancellation, and duplicate registration behavior are specified and tested.
-- [ ] The deployed origin and Permissions Policy have a repeatable verification procedure.
+- [x] Same-origin exposure, feature detection, cleanup, cancellation, and duplicate registration behavior are specified and tested.
+- [x] The deployed origin and Permissions Policy have a repeatable verification procedure; execution on the actual preview origin remains pending approval.
 - [x] Project isolation and untrusted-content adversarial tests pass at the command-safety boundary.
 - [x] Existing non-WebMCP editor tests continue to pass.
 
-**Progress evidence, 2026-09-02:** `editor-commands.ts` provides bounded workspace summary and layer search queries plus concept creation, table creation, layer-to-table conversion, row-to-canvas conversion, connection, and parent-aware relative-concept commands. `editor-command-safety.ts` adds active-project and revision guards, pre/post `AbortSignal` cancellation, serialized commits, safe exception containment, and a 1,500-byte public-result budget. The facade has 12 focused command tests and 11 focused safety tests; the full local gate passes 129 unit tests. Chromium and Firefox pass their browser projects, and the serial WebKit release-evidence run passes 72 cases with 3 intentional skips. Typecheck, lint, compatibility check, dependency audit, and production build also pass.
+**Progress evidence, 2026-09-02:** implementation commit `e6c969dda1a29057e774c384e3f3c8e81585d732` adds stable typed failures, six CSP-safe schema-validated tools, server-side default-off feature gating, registration cleanup, persisted atomic mutation handling, and shared same-origin response policy. The supported Node 24.19 local gate passes 167 unit tests in 22 files. Chromium passes 79/79 browser cases; Firefox and WebKit each pass 76 with 3 intentional skips. Typecheck, lint, Vinext compatibility, dependency audit, and production build pass. See [`WEBMCP_RELEASE_VALIDATION_RECORD.md`](./WEBMCP_RELEASE_VALIDATION_RECORD.md) for exact evidence and remaining gates.
 
 ### Implemented command-safety contract
 
@@ -287,7 +287,7 @@ The existing audit remediation work remains valuable, but not every remaining re
 
 ## Exit recommendation
 
-Do not add `document.modelContext.registerTool()` calls yet. First complete WMCP-01 through WMCP-09 at the design/command-contract level. Once the acceptance checklist passes, start `feat/webmcp-foundation` with read-only tools behind a flag, then add reversible canvas mutations one at a time.
+Keep WebMCP disabled by default outside controlled testing. The next authorized step is real agent-capable Chromium validation, followed by an owner-approved Cloudflare Preview. Do not enable production or submit to Devpost until the remaining record gates and explicit confirmations are complete.
 
 ## Primary references
 
