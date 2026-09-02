@@ -25,7 +25,7 @@ SynapTable already has a good foundation:
 
 The audit's original architectural gap has been remediated: the approved actions now use a typed editor-command facade plus project/revision, cancellation, serialization, persistence, and output-budget guards. The remaining P0 gap is the WebMCP adapter and registration lifecycle. It must consume those contracts without coupling tool execution back to DOM events or transient UI callbacks.
 
-**Current recommendation:** implement the adapter and controlled registration lifecycle from [`WEBMCP_TOOL_STRATEGY.md`](./WEBMCP_TOOL_STRATEGY.md). Both the UI and WebMCP adapter must continue to call the same commands.
+**Current recommendation:** execute [`WEBMCP_COMPLETION_IMPLEMENTATION_PLAN.md`](./WEBMCP_COMPLETION_IMPLEMENTATION_PLAN.md) against the contracts in [`WEBMCP_TOOL_STRATEGY.md`](./WEBMCP_TOOL_STRATEGY.md). Both the UI and WebMCP adapter must continue to call the same commands.
 
 ```text
 Toolbar / keyboard / canvas UI ─┐
