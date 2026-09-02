@@ -41,6 +41,18 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+## Experimental WebMCP tools
+
+WebMCP is disabled by default. To test the approved same-origin canvas tools in a capable experimental browser, start the server with the explicit server-side flag:
+
+```sh
+SYNAPTABLE_WEBMCP_ENABLED=true npm run dev
+```
+
+When both the flag and `document.modelContext` are available, SynapTable lazily registers exactly six tools: workspace summary, layer search, concept creation, table creation, organizing layers into a table, and creating concepts from explicit table rows. Unsupported browsers keep the normal editor behavior. Tool mutations use the same local project, revision, undo, and IndexedDB persistence boundaries as visible editor actions; no project-content backend or telemetry is introduced.
+
+The approved contracts are in [WEBMCP_TOOL_STRATEGY.md](./WEBMCP_TOOL_STRATEGY.md) and [WEBMCP_TOOL_SCHEMAS.json](./WEBMCP_TOOL_SCHEMAS.json). After changing those schemas, regenerate the CSP-safe standalone validators with `npm run generate:webmcp-validators` and commit the generated file. Production enablement remains a separate approval.
+
 ## Editing shortcuts
 
 - `Enter` edits the selected concept.
@@ -62,6 +74,7 @@ npm run check
 npm run typecheck
 npm run lint
 npm test
+npm run generate:webmcp-validators
 npm run build
 npm run test:e2e
 npm audit

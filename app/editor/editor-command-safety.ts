@@ -1,5 +1,7 @@
+import { EDITOR_COMMAND_ERROR_CODES } from './editor-commands';
 import type {
   EditorCommand,
+  EditorCommandErrorCode,
   EditorCommandOutcome,
   EditorCommandResult,
   EditorCommandState,
@@ -39,10 +41,17 @@ export type EditorReadRequest<T> = {
 
 export type SafeEditorReadResult<T> =
   | { ok: true; projectId: string; revision: number; data: T }
-  | { ok: false; projectId: string; revision: number; summary: string };
+  | {
+    ok: false;
+    projectId: string;
+    revision: number;
+    code: EditorCommandErrorCode;
+    summary: string;
+  };
 
 function failedExecution(
   session: Readonly<EditorCommandSession>,
+  code: EditorCommandErrorCode,
   summary: string,
 ): SafeEditorCommandExecution {
   return {
@@ -51,20 +60,26 @@ function failedExecution(
     nodes: session.state.nodes,
     edges: session.state.edges,
     committed: false,
-    result: { ok: false, summary, affectedIds: [], undoAvailable: false },
+    result: { ok: false, code, summary, affectedIds: [], undoAvailable: false },
   };
 }
 
 function requestIssue(
   session: Readonly<EditorCommandSession>,
   request: { projectId: string; expectedRevision: number; signal?: AbortSignal },
-): string | null {
-  if (request.signal?.aborted) return 'The command was cancelled.';
+): { code: EditorCommandErrorCode; summary: string } | null {
+  if (request.signal?.aborted) return { code: 'CANCELLED', summary: 'The command was cancelled.' };
   if (!request.projectId || request.projectId !== session.projectId) {
-    return 'The active project changed. Refresh the workspace context and try again.';
+    return {
+      code: 'PROJECT_CHANGED',
+      summary: 'The active project changed. Refresh the workspace context and try again.',
+    };
   }
   if (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision !== session.revision) {
-    return 'The workspace changed. Refresh the workspace context and try again.';
+    return {
+      code: 'STALE_REVISION',
+      summary: 'The workspace changed. Refresh the workspace context and try again.',
+    };
   }
   return null;
 }
@@ -74,6 +89,7 @@ function validOutcome(outcome: EditorCommandOutcome): boolean {
   return Array.isArray(outcome.nodes)
     && Array.isArray(outcome.edges)
     && typeof result?.ok === 'boolean'
+    && (result.ok || EDITOR_COMMAND_ERROR_CODES.includes(result.code))
     && typeof result.summary === 'string'
     && Array.isArray(result.affectedIds)
     && result.affectedIds.every((id) => typeof id === 'string')
@@ -89,21 +105,21 @@ export function executeEditorCommandSafely(
   request: EditorCommandRequest,
 ): SafeEditorCommandExecution {
   const beforeIssue = requestIssue(session, request);
-  if (beforeIssue) return failedExecution(session, beforeIssue);
+  if (beforeIssue) return failedExecution(session, beforeIssue.code, beforeIssue.summary);
 
   let outcome: EditorCommandOutcome;
   try {
     outcome = request.command(session.state);
   } catch {
-    return failedExecution(session, 'The command could not be completed safely.');
+    return failedExecution(session, 'INTERNAL_ERROR', 'The command could not be completed safely.');
   }
 
-  if (request.signal?.aborted) return failedExecution(session, 'The command was cancelled.');
+  if (request.signal?.aborted) return failedExecution(session, 'CANCELLED', 'The command was cancelled.');
   if (!validOutcome(outcome)) {
-    return failedExecution(session, 'The command returned an invalid result.');
+    return failedExecution(session, 'INTERNAL_ERROR', 'The command returned an invalid result.');
   }
   if (!outcome.result.ok) {
-    return failedExecution(session, outcome.result.summary);
+    return failedExecution(session, outcome.result.code, outcome.result.summary);
   }
   return {
     ...outcome,
@@ -119,7 +135,13 @@ export function readEditorStateSafely<T>(
 ): SafeEditorReadResult<T> {
   const issue = requestIssue(session, request);
   if (issue) {
-    return { ok: false, projectId: session.projectId, revision: session.revision, summary: issue };
+    return {
+      ok: false,
+      projectId: session.projectId,
+      revision: session.revision,
+      code: issue.code,
+      summary: issue.summary,
+    };
   }
   try {
     const data = request.read(session.state);
@@ -128,6 +150,7 @@ export function readEditorStateSafely<T>(
         ok: false,
         projectId: session.projectId,
         revision: session.revision,
+        code: 'CANCELLED',
         summary: 'The command was cancelled.',
       };
     }
@@ -137,6 +160,7 @@ export function readEditorStateSafely<T>(
       ok: false,
       projectId: session.projectId,
       revision: session.revision,
+      code: 'INTERNAL_ERROR',
       summary: 'The workspace could not be read safely.',
     };
   }
@@ -154,8 +178,7 @@ export function boundedPublicCommandResult(
     ? Math.min(maxBytes, PUBLIC_COMMAND_RESULT_MAX_BYTES)
     : PUBLIC_COMMAND_RESULT_MAX_BYTES;
   const originalAffectedCount = result.affectedIds.length;
-  const output: EditorCommandResult = {
-    ok: result.ok,
+  const common = {
     summary: result.summary.slice(0, PUBLIC_SUMMARY_MAX_CHARACTERS),
     affectedIds: result.affectedIds
       .filter((id) => typeof id === 'string' && id.length > 0)
@@ -166,6 +189,9 @@ export function boundedPublicCommandResult(
       .slice(0, PUBLIC_WARNING_LIMIT)
       .map((warning) => warning.slice(0, PUBLIC_WARNING_MAX_CHARACTERS)),
   };
+  const output: EditorCommandResult = result.ok
+    ? { ok: true, ...common }
+    : { ok: false, code: result.code, ...common };
 
   while (serializedBytes(output) > safeBudget && output.affectedIds.length) {
     output.affectedIds.pop();
@@ -217,7 +243,10 @@ export class EditorCommandQueue {
           return execution;
         } catch {
           const current = getSession();
-          return failedExecution(current, 'The command could not be saved safely.');
+          if (request.signal?.aborted) {
+            return failedExecution(current, 'CANCELLED', 'The command was cancelled.');
+          }
+          return failedExecution(current, 'PERSISTENCE_FAILED', 'The command could not be saved safely.');
         }
       });
     this.#tail = run.then(() => undefined, () => undefined);

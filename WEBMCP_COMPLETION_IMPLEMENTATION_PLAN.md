@@ -65,8 +65,8 @@ Suggested local commits:
 
 ```text
 WEBMCP_TOOL_SCHEMAS.json
-        ↓ compile once when enabled
-WebMCP input validator and result normalizer
+        ↓ precompile during development/build preparation
+CSP-safe standalone validator and result normalizer
         ↓
 Six static tool definitions
         ↓ execute with active session + AbortSignal
@@ -83,14 +83,14 @@ Recommended modules:
 app/editor/webmcp/
   webmcp-types.ts           experimental browser API and catalog types
   webmcp-feature.ts         disabled-by-default flag and capability detection
-  webmcp-schema.ts          catalog loading, Ajv compilation, defaults, byte limits
+  webmcp-schema.ts          catalog loading, precompiled validation, defaults, byte limits
   webmcp-results.ts         typed errors and bounded public result envelopes
   webmcp-tools.ts           six tool adapters mapped to editor commands/queries
   webmcp-registration.ts    register-once lifecycle and AbortController cleanup
   webmcp-*.test.ts          focused schema, tool, lifecycle, and security tests
 ```
 
-Use a direct, pinned-compatible Ajv 2020 dependency for runtime input validation. Compile the six schemas once in a dynamically loaded WebMCP chunk after both the feature flag and browser capability pass. Do not rely on an undeclared transitive dependency. Record the resulting lazy-chunk size and keep Ajv out of the ordinary editor startup path.
+Use a direct, pinned-compatible Ajv 2020 development dependency to generate standalone validators from the approved schemas. Commit the generated CSP-safe validator module and dynamically load it only after both the feature flag and browser capability pass. Runtime `eval`/`Function` compilation is prohibited. Record the resulting lazy-chunk size and keep the WebMCP implementation out of the ordinary editor startup path.
 
 The React editor owns one registration controller. Tool callbacks read the current session, active project metadata, viewport-center resolver, command queue, commit callback, and notification callback through stable refs. Canvas state changes must not re-register the tools.
 
@@ -162,7 +162,7 @@ The React editor owns one registration controller. Tool callbacks read the curre
 
 #### Work
 
-1. Add `NEXT_PUBLIC_SYNAPTABLE_WEBMCP_ENABLED` with an explicit parser that treats only `1` or `true` as enabled.
+1. Add server-side `SYNAPTABLE_WEBMCP_ENABLED` with an explicit parser that treats only `1` or `true` as enabled, then pass only the resulting boolean to the client editor.
 2. Default to disabled when absent, blank, malformed, or false.
 3. Define the minimum experimental `Document.modelContext` types locally. Do not broaden global types beyond the API members used.
 4. Capability-detect the API at runtime after the client mounts.
@@ -186,7 +186,7 @@ The React editor owns one registration controller. Tool callbacks read the curre
 #### Work
 
 1. Import the catalog as the single source for definitions and input schemas.
-2. Compile all six standalone input schemas once using Ajv 2020.
+2. Precompile all six standalone input schemas using Ajv 2020 and commit the generated CSP-safe validators.
 3. Reject invalid JSON objects, unknown properties, incorrect types, missing context, duplicate IDs, and schema boundary violations before calling commands.
 4. Apply schema defaults explicitly in normalization code.
 5. Enforce the 256 KiB serialized-input budget before deep processing.
@@ -199,7 +199,7 @@ The React editor owns one registration controller. Tool callbacks read the curre
 
 | ID | Scenario | Expected result |
 | --- | --- | --- |
-| SCH-001 | Catalog loads | Exactly six unique definitions compile |
+| SCH-001 | Catalog loads | Exactly six unique precompiled definitions validate |
 | SCH-002 | Unknown input property | `INVALID_INPUT`; adapter not invoked |
 | SCH-003 | Missing project/revision on non-bootstrap tool | `INVALID_INPUT` |
 | SCH-004 | Duplicate layer/row/column IDs | Schema rejection before command execution |
@@ -436,7 +436,7 @@ Record test counts, intentional skips, bundle sizes, and the commit in the relea
 
 - [ ] Chromium, Firefox, and WebKit existing editor suites have no new unexplained failure or skip.
 - [ ] Feature disabled produces no behavioral or accessibility regression.
-- [ ] The editor startup bundle does not eagerly absorb the WebMCP/Ajv implementation.
+- [ ] The editor startup bundle does not eagerly absorb the WebMCP implementation or Ajv compiler.
 - [ ] Any new lazy chunk and gzip size are recorded and reviewed.
 - [ ] The working tree has no generated browser artifacts or unrelated changes.
 
@@ -480,7 +480,7 @@ Preview deployment requires owner approval. It does not authorize production dep
 ### Deployment procedure
 
 1. Build locally and deploy using the existing preview command.
-2. Enable `NEXT_PUBLIC_SYNAPTABLE_WEBMCP_ENABLED=true` only for the approved preview environment.
+2. Enable `SYNAPTABLE_WEBMCP_ENABLED=true` only for the approved preview environment.
 3. Capture the exact preview URL and commit.
 4. Use browser/network inspection or `curl -I` to verify the actual document response.
 5. Run the core agent workflow against the deployed origin.
@@ -594,7 +594,7 @@ Stop implementation or deployment and report the blocker when:
 - the WebMCP API or schema differs materially from the approved current draft;
 - correct cancellation cannot be guaranteed before commit;
 - typed error migration changes existing UI behavior unexpectedly;
-- Ajv is added to the ordinary startup bundle or creates an unacceptable size regression;
+- Ajv compilation or the WebMCP implementation is added to the ordinary startup bundle or creates an unacceptable size regression;
 - any cross-project content is returned;
 - duplicate registrations survive cleanup;
 - actual Cloudflare headers differ from both configured response paths;

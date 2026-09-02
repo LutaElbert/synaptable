@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import { PERMISSIONS_POLICY } from './app/security-headers';
 
 const productionHeaders = [
   {
@@ -30,7 +31,7 @@ const nextConfig: NextConfig = {
           { key: 'X-Frame-Options', value: 'DENY' },
           {
             key: 'Permissions-Policy',
-            value: 'camera=(), geolocation=(), microphone=(), payment=(), usb=()',
+            value: PERMISSIONS_POLICY,
           },
           ...(process.env.NODE_ENV === 'production' ? productionHeaders : []),
         ],

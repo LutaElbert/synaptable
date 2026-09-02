@@ -262,14 +262,32 @@ export async function createLocalProject(document: EditorDocument): Promise<Loca
   }
 }
 
-export async function saveLocalDocument(projectId: string, document: EditorDocument): Promise<void> {
+export async function saveLocalDocument(
+  projectId: string,
+  document: EditorDocument,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (signal?.aborted) throw new DOMException('The save was cancelled.', 'AbortError');
   const project = storedProject(projectId, document);
   const database = await openDatabase();
   try {
+    if (signal?.aborted) throw new DOMException('The save was cancelled.', 'AbortError');
     const transaction = database.transaction(DOCUMENT_STORE_NAME, 'readwrite');
+    const abortTransaction = () => {
+      try {
+        transaction.abort();
+      } catch {
+        // The transaction already completed; its committed result is authoritative.
+      }
+    };
+    signal?.addEventListener('abort', abortTransaction, { once: true });
     const completion = transactionComplete(transaction);
     transaction.objectStore(DOCUMENT_STORE_NAME).put(project);
-    await completion;
+    try {
+      await completion;
+    } finally {
+      signal?.removeEventListener('abort', abortTransaction);
+    }
   } finally {
     database.close();
   }
