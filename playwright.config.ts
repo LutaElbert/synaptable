@@ -37,6 +37,10 @@ export default defineConfig({
     : {
         command: 'npm run dev',
         url: baseURL,
+        env: {
+          ...process.env,
+          SYNAPTABLE_WEBMCP_ENABLED: 'true',
+        },
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
       },

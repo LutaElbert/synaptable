@@ -73,8 +73,16 @@ describe('editor command safety', () => {
     const stale = executeEditorCommandSafely(current, request(command, { expectedRevision: 3 }));
 
     expect(command).not.toHaveBeenCalled();
-    expect(wrongProject).toMatchObject({ committed: false, revision: 4, result: { ok: false } });
-    expect(stale).toMatchObject({ committed: false, revision: 4, result: { ok: false } });
+    expect(wrongProject).toMatchObject({
+      committed: false,
+      revision: 4,
+      result: { ok: false, code: 'PROJECT_CHANGED' },
+    });
+    expect(stale).toMatchObject({
+      committed: false,
+      revision: 4,
+      result: { ok: false, code: 'STALE_REVISION' },
+    });
     expect(wrongProject.nodes).toBe(current.state.nodes);
     expect(stale.edges).toBe(current.state.edges);
   });
@@ -96,8 +104,14 @@ describe('editor command safety', () => {
     const after = executeEditorCommandSafely(current, request(abortAfter, { signal: afterController.signal }));
 
     expect(beforeCommand).not.toHaveBeenCalled();
-    expect(before).toMatchObject({ committed: false, result: { summary: 'The command was cancelled.' } });
-    expect(after).toMatchObject({ committed: false, result: { summary: 'The command was cancelled.' } });
+    expect(before).toMatchObject({
+      committed: false,
+      result: { code: 'CANCELLED', summary: 'The command was cancelled.' },
+    });
+    expect(after).toMatchObject({
+      committed: false,
+      result: { code: 'CANCELLED', summary: 'The command was cancelled.' },
+    });
     expect(before.nodes).toBe(current.state.nodes);
     expect(after.nodes).toBe(current.state.nodes);
   });
@@ -127,6 +141,7 @@ describe('editor command safety', () => {
       edges: [],
       result: {
         ok: false,
+        code: 'INVALID_INPUT',
         summary: 'The requested change was rejected.',
         affectedIds: [],
         undoAvailable: false,
@@ -160,7 +175,12 @@ describe('editor command safety', () => {
     });
 
     expect(accepted).toMatchObject({ ok: true, projectId: 'project-a', revision: 4 });
-    expect(rejected).toMatchObject({ ok: false, projectId: 'project-a', revision: 4 });
+    expect(rejected).toMatchObject({
+      ok: false,
+      projectId: 'project-a',
+      revision: 4,
+      code: 'PROJECT_CHANGED',
+    });
     expect(read).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(rejected)).not.toContain('Private film plan');
   });
@@ -178,7 +198,7 @@ describe('editor command safety', () => {
       },
     });
 
-    expect(result).toMatchObject({ ok: false, summary: 'The command was cancelled.' });
+    expect(result).toMatchObject({ ok: false, code: 'CANCELLED', summary: 'The command was cancelled.' });
     expect(JSON.stringify(result)).not.toContain('must not be returned');
   });
 
@@ -245,7 +265,11 @@ describe('editor command safety', () => {
     const [firstResult, secondResult] = await Promise.all([first, second]);
 
     expect(firstResult.committed).toBe(true);
-    expect(secondResult).toMatchObject({ committed: false, revision: 1, result: { ok: false } });
+    expect(secondResult).toMatchObject({
+      committed: false,
+      revision: 1,
+      result: { ok: false, code: 'STALE_REVISION' },
+    });
     expect(secondCommand).not.toHaveBeenCalled();
     expect(order).toEqual(['first-start', 'first-end']);
   });
@@ -290,8 +314,46 @@ describe('editor command safety', () => {
     await first;
     const waitingResult = await waiting;
 
-    expect(waitingResult).toMatchObject({ committed: false, result: { summary: 'The command was cancelled.' } });
+    expect(waitingResult).toMatchObject({
+      committed: false,
+      result: { code: 'CANCELLED', summary: 'The command was cancelled.' },
+    });
     expect(waitingCommand).not.toHaveBeenCalled();
+  });
+
+  it('reports cancellation when an in-progress atomic commit is aborted', async () => {
+    const current = session({ revision: 0 });
+    const queue = new EditorCommandQueue();
+    const controller = new AbortController();
+    let commitStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      commitStarted = resolve;
+    });
+    const pending = queue.enqueue({
+      getSession: () => current,
+      request: {
+        projectId: 'project-a',
+        expectedRevision: 0,
+        signal: controller.signal,
+        command: createConceptCommand({ center: { x: 0, y: 0 }, createId: () => 'cancel-during-save' }),
+      },
+      commit: async () => {
+        commitStarted?.();
+        await new Promise<void>((_resolve, reject) => {
+          controller.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+        });
+      },
+    });
+    await started;
+    controller.abort();
+    const result = await pending;
+
+    expect(result).toMatchObject({
+      committed: false,
+      revision: 0,
+      result: { ok: false, code: 'CANCELLED' },
+    });
+    expect(result.nodes).toBe(current.state.nodes);
   });
 
   it('contains atomic commit failures without exposing persistence details', async () => {
@@ -312,7 +374,7 @@ describe('editor command safety', () => {
     expect(result).toMatchObject({
       committed: false,
       revision: 0,
-      result: { ok: false, summary: 'The command could not be saved safely.' },
+      result: { ok: false, code: 'PERSISTENCE_FAILED', summary: 'The command could not be saved safely.' },
     });
     expect(result.nodes).toBe(current.state.nodes);
     expect(JSON.stringify(result)).not.toContain('IndexedDB private path');

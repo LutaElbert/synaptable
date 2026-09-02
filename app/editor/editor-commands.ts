@@ -35,13 +35,31 @@ export type EditorCommandState = {
   edges: EditorEdge[];
 };
 
-export type EditorCommandResult = {
-  ok: boolean;
+export const EDITOR_COMMAND_ERROR_CODES = [
+  'CANCELLED',
+  'PROJECT_CHANGED',
+  'STALE_REVISION',
+  'INVALID_INPUT',
+  'NOT_FOUND',
+  'PROTECTED_CONTENT',
+  'LIMIT_EXCEEDED',
+  'CONFLICT',
+  'PERSISTENCE_FAILED',
+  'INTERNAL_ERROR',
+] as const;
+
+export type EditorCommandErrorCode = (typeof EDITOR_COMMAND_ERROR_CODES)[number];
+
+type EditorCommandResultBase = {
   summary: string;
   affectedIds: string[];
   undoAvailable: boolean;
   warnings?: string[];
 };
+
+export type EditorCommandResult =
+  | (EditorCommandResultBase & { ok: true })
+  | (EditorCommandResultBase & { ok: false; code: EditorCommandErrorCode });
 
 export type EditorCommandOutcome = EditorCommandState & {
   result: EditorCommandResult;
@@ -73,11 +91,15 @@ function defaultIdFactory() {
   return crypto.randomUUID();
 }
 
-function failure(state: Readonly<EditorCommandState>, summary: string): EditorCommandOutcome {
+function failure(
+  state: Readonly<EditorCommandState>,
+  code: EditorCommandErrorCode,
+  summary: string,
+): EditorCommandOutcome {
   return {
     nodes: state.nodes,
     edges: state.edges,
-    result: { ok: false, summary, affectedIds: [], undoAvailable: false },
+    result: { ok: false, code, summary, affectedIds: [], undoAvailable: false },
   };
 }
 
@@ -251,18 +273,18 @@ export function createConceptCommand({
 }): EditorCommand {
   return (state) => {
     const normalizedTitle = title.trim() || 'Untitled concept';
-    if (!finitePosition(center)) return failure(state, 'Choose a valid canvas position.');
+    if (!finitePosition(center)) return failure(state, 'INVALID_INPUT', 'Choose a valid canvas position.');
     if (normalizedTitle.length > MAX_CONCEPT_TITLE) {
-      return failure(state, `Concept titles can contain at most ${MAX_CONCEPT_TITLE} characters.`);
+      return failure(state, 'LIMIT_EXCEEDED', `Concept titles can contain at most ${MAX_CONCEPT_TITLE} characters.`);
     }
     if (body.length > MAX_CONCEPT_BODY) {
-      return failure(state, `Concept bodies can contain at most ${MAX_CONCEPT_BODY.toLocaleString()} characters.`);
+      return failure(state, 'LIMIT_EXCEEDED', `Concept bodies can contain at most ${MAX_CONCEPT_BODY.toLocaleString()} characters.`);
     }
     if (eyebrow.length > MAX_CONCEPT_TITLE) {
-      return failure(state, `Concept labels can contain at most ${MAX_CONCEPT_TITLE} characters.`);
+      return failure(state, 'LIMIT_EXCEEDED', `Concept labels can contain at most ${MAX_CONCEPT_TITLE} characters.`);
     }
     const id = availableId(state, createId);
-    if (!id) return failure(state, 'A unique concept ID could not be created.');
+    if (!id) return failure(state, 'CONFLICT', 'A unique concept ID could not be created.');
     const node = createConceptNode({
       id,
       position: { x: center.x - 94, y: center.y - 39 },
@@ -295,31 +317,31 @@ export function createTableCommand({
   createId?: IdFactory;
 }): EditorCommand {
   return (state) => {
-    if (!finitePosition(center)) return failure(state, 'Choose a valid canvas position.');
+    if (!finitePosition(center)) return failure(state, 'INVALID_INPUT', 'Choose a valid canvas position.');
     if (!Number.isInteger(rows) || rows < 1 || rows > TABLE_MAX_ROWS) {
-      return failure(state, `Tables can contain between 1 and ${TABLE_MAX_ROWS} rows.`);
+      return failure(state, 'LIMIT_EXCEEDED', `Tables can contain between 1 and ${TABLE_MAX_ROWS} rows.`);
     }
     if (!Number.isInteger(columns) || columns < 1 || columns > TABLE_MAX_COLUMNS) {
-      return failure(state, `Tables can contain between 1 and ${TABLE_MAX_COLUMNS} columns.`);
+      return failure(state, 'LIMIT_EXCEEDED', `Tables can contain between 1 and ${TABLE_MAX_COLUMNS} columns.`);
     }
     if (rows * columns > TABLE_MAX_CELLS) {
-      return failure(state, `A table can contain at most ${TABLE_MAX_CELLS.toLocaleString()} cells.`);
+      return failure(state, 'LIMIT_EXCEEDED', `A table can contain at most ${TABLE_MAX_CELLS.toLocaleString()} cells.`);
     }
     if (values.length > rows || values.some((row) => row.length > columns)) {
-      return failure(state, 'Initial values exceed the requested table dimensions.');
+      return failure(state, 'INVALID_INPUT', 'Initial values exceed the requested table dimensions.');
     }
     if (values.some((row) => row.some((cell) => typeof cell !== 'string'))) {
-      return failure(state, 'Every initial table value must be text.');
+      return failure(state, 'INVALID_INPUT', 'Every initial table value must be text.');
     }
     if (values.some((row) => row.some((cell) => cell.length > TABLE_MAX_CELL_TEXT))) {
-      return failure(state, `Table cells can contain at most ${TABLE_MAX_CELL_TEXT.toLocaleString()} characters.`);
+      return failure(state, 'LIMIT_EXCEEDED', `Table cells can contain at most ${TABLE_MAX_CELL_TEXT.toLocaleString()} characters.`);
     }
     const normalizedName = name?.trim() || nextTableName(state.nodes);
     if (normalizedName.length > MAX_CONCEPT_TITLE) {
-      return failure(state, `Table names can contain at most ${MAX_CONCEPT_TITLE} characters.`);
+      return failure(state, 'LIMIT_EXCEEDED', `Table names can contain at most ${MAX_CONCEPT_TITLE} characters.`);
     }
     const id = availableId(state, createId);
-    if (!id) return failure(state, 'A unique table ID could not be created.');
+    if (!id) return failure(state, 'CONFLICT', 'A unique table ID could not be created.');
     const data = createTableData({ name: normalizedName, rows, columns, values, headerRow });
     const dimensions = tableDimensions(data);
     const node: EditorNode = {
@@ -350,22 +372,22 @@ export function organizeLayersIntoTableCommand({
 }): EditorCommand {
   return (state) => {
     const uniqueIds = [...new Set(layerIds)];
-    if (!uniqueIds.length) return failure(state, 'Choose at least one layer to organize.');
-    if (uniqueIds.length !== layerIds.length) return failure(state, 'Each layer can be organized only once.');
+    if (!uniqueIds.length) return failure(state, 'INVALID_INPUT', 'Choose at least one layer to organize.');
+    if (uniqueIds.length !== layerIds.length) return failure(state, 'CONFLICT', 'Each layer can be organized only once.');
     if (uniqueIds.length > Math.min(MAX_LAYER_IDS, TABLE_MAX_ROWS - 1)) {
-      return failure(state, `Organize no more than ${Math.min(MAX_LAYER_IDS, TABLE_MAX_ROWS - 1)} layers at a time.`);
+      return failure(state, 'LIMIT_EXCEEDED', `Organize no more than ${Math.min(MAX_LAYER_IDS, TABLE_MAX_ROWS - 1)} layers at a time.`);
     }
     const selected = uniqueIds.map((id) => state.nodes.find((node) => node.id === id));
-    if (selected.some((node) => !node)) return failure(state, 'One or more selected layers no longer exist.');
+    if (selected.some((node) => !node)) return failure(state, 'NOT_FOUND', 'One or more selected layers no longer exist.');
     const layers = selected as EditorNode[];
-    if (layers.some((node) => node.data.locked)) return failure(state, 'Unlock the selected layers before organizing them.');
-    if (layers.some((node) => node.hidden)) return failure(state, 'Reveal hidden layers before organizing them.');
+    if (layers.some((node) => node.data.locked)) return failure(state, 'PROTECTED_CONTENT', 'Unlock the selected layers before organizing them.');
+    if (layers.some((node) => node.hidden)) return failure(state, 'PROTECTED_CONTENT', 'Reveal hidden layers before organizing them.');
     const normalizedName = name.trim() || 'Organized ideas';
     if (normalizedName.length > MAX_CONCEPT_TITLE) {
-      return failure(state, `Table names can contain at most ${MAX_CONCEPT_TITLE} characters.`);
+      return failure(state, 'LIMIT_EXCEEDED', `Table names can contain at most ${MAX_CONCEPT_TITLE} characters.`);
     }
     const id = availableId(state, createId);
-    if (!id) return failure(state, 'A unique table ID could not be created.');
+    if (!id) return failure(state, 'CONFLICT', 'A unique table ID could not be created.');
     const readingOrder = [...layers].sort((left, right) => (
       left.position.y - right.position.y || left.position.x - right.position.x
     ));
@@ -403,18 +425,21 @@ export function createCanvasNodesFromRowsCommand({
 }): EditorCommand {
   return (state) => {
     const source = state.nodes.find((node) => node.id === tableId);
-    if (!source) return failure(state, 'Choose an existing table.');
+    if (!source) return failure(state, 'NOT_FOUND', 'Choose an existing table.');
     const data = source.data;
-    if (data.kind !== 'table') return failure(state, 'Choose an existing table.');
-    if (data.locked) return failure(state, 'Unlock the table before creating canvas nodes.');
-    if (source.hidden) return failure(state, 'Reveal the table before creating canvas nodes.');
-    if (rowIds && new Set(rowIds).size !== rowIds.length) return failure(state, 'Each table row can be selected only once.');
-    if (columnIds && new Set(columnIds).size !== columnIds.length) return failure(state, 'Each table column can be selected only once.');
+    if (data.kind !== 'table') return failure(state, 'NOT_FOUND', 'Choose an existing table.');
+    if (data.locked) return failure(state, 'PROTECTED_CONTENT', 'Unlock the table before creating canvas nodes.');
+    if (source.hidden) return failure(state, 'PROTECTED_CONTENT', 'Reveal the table before creating canvas nodes.');
+    if (rowIds && new Set(rowIds).size !== rowIds.length) return failure(state, 'CONFLICT', 'Each table row can be selected only once.');
+    if (columnIds && new Set(columnIds).size !== columnIds.length) return failure(state, 'CONFLICT', 'Each table column can be selected only once.');
+    if (data.headerRow && rowIds?.includes(data.rows[0]?.id ?? '')) {
+      return failure(state, 'INVALID_INPUT', 'Header rows cannot be converted into canvas nodes.');
+    }
     if (rowIds?.some((id) => !data.rows.some((row) => row.id === id))) {
-      return failure(state, 'One or more selected table rows no longer exist.');
+      return failure(state, 'NOT_FOUND', 'One or more selected table rows no longer exist.');
     }
     if (columnIds?.some((id) => !data.columns.some((column) => column.id === id))) {
-      return failure(state, 'One or more selected table columns no longer exist.');
+      return failure(state, 'NOT_FOUND', 'One or more selected table columns no longer exist.');
     }
     let generated: EditorNode[];
     try {
@@ -425,10 +450,10 @@ export function createCanvasNodesFromRowsCommand({
         uniqueIdFactory(state, createId),
       );
     } catch (error) {
-      return failure(state, error instanceof Error ? error.message : 'Unique canvas node IDs could not be created.');
+      return failure(state, 'CONFLICT', error instanceof Error ? error.message : 'Unique canvas node IDs could not be created.');
     }
     if (!generated.length) {
-      return failure(state, 'Select at least one data row and column to create canvas nodes.');
+      return failure(state, 'INVALID_INPUT', 'Select at least one data row and column to create canvas nodes.');
     }
     return success({
       nodes: [...state.nodes.map((node) => ({ ...node, selected: false })), ...generated],
@@ -450,12 +475,21 @@ export function connectLayersCommand({
 }): EditorCommand {
   return (state) => {
     const issue = connectionIssue(state.nodes, state.edges, connection);
-    if (issue) return failure(state, connectionIssueMessage(issue));
+    if (issue) {
+      const code: EditorCommandErrorCode = issue === 'unknown-endpoint'
+        ? 'NOT_FOUND'
+        : issue === 'locked-endpoint'
+          ? 'PROTECTED_CONTENT'
+          : issue === 'duplicate-connection'
+            ? 'CONFLICT'
+            : 'INVALID_INPUT';
+      return failure(state, code, connectionIssueMessage(issue));
+    }
     if (label.length > MAX_CONCEPT_TITLE) {
-      return failure(state, `Connector labels can contain at most ${MAX_CONCEPT_TITLE} characters.`);
+      return failure(state, 'LIMIT_EXCEEDED', `Connector labels can contain at most ${MAX_CONCEPT_TITLE} characters.`);
     }
     const id = availableId(state, createId);
-    if (!id) return failure(state, 'A unique connector ID could not be created.');
+    if (!id) return failure(state, 'CONFLICT', 'A unique connector ID could not be created.');
     const edge: EditorEdge = {
       id,
       source: connection.source!,
@@ -484,16 +518,16 @@ export function createRelativeConceptCommand({
 }): EditorCommand {
   return (state) => {
     const source = state.nodes.find((node) => node.id === sourceId);
-    if (!source) return failure(state, 'The source layer no longer exists.');
-    if (source.data.locked) return failure(state, 'Unlock the source layer before adding a related concept.');
-    if (source.hidden) return failure(state, 'Reveal the source layer before adding a related concept.');
+    if (!source) return failure(state, 'NOT_FOUND', 'The source layer no longer exists.');
+    if (source.data.locked) return failure(state, 'PROTECTED_CONTENT', 'Unlock the source layer before adding a related concept.');
+    if (source.hidden) return failure(state, 'PROTECTED_CONTENT', 'Reveal the source layer before adding a related concept.');
     const newId = availableId(state, createId);
-    if (!newId) return failure(state, 'A unique concept ID could not be created.');
+    if (!newId) return failure(state, 'CONFLICT', 'A unique concept ID could not be created.');
     const layout = relativeConceptLayout(state.nodes, state.edges, sourceId, relation, newId);
     const position = layout.positions.get(newId);
-    if (!position) return failure(state, 'A position for the new concept could not be calculated.');
+    if (!position) return failure(state, 'INTERNAL_ERROR', 'A position for the new concept could not be calculated.');
     const parent = layout.parentId ? state.nodes.find((node) => node.id === layout.parentId) : null;
-    if (parent?.data.locked) return failure(state, 'Unlock the parent layer before adding a related concept.');
+    if (parent?.data.locked) return failure(state, 'PROTECTED_CONTENT', 'Unlock the parent layer before adding a related concept.');
     const nextNode = createConceptNode({
       id: newId,
       position,
@@ -512,14 +546,23 @@ export function createRelativeConceptCommand({
       return success({ nodes, edges: deselectEdges(state.edges) }, 'Related concept added.', [newId]);
     }
     const edgeId = availableId({ nodes, edges: state.edges }, createId);
-    if (!edgeId) return failure(state, 'A unique connector ID could not be created.');
+    if (!edgeId) return failure(state, 'CONFLICT', 'A unique connector ID could not be created.');
     const connection = {
       source: layout.parentId,
       target: newId,
       ...(layout.direction === 'vertical' ? { sourceHandle: 'bottom', targetHandle: 'top' } : {}),
     };
     const issue = connectionIssue(nodes, state.edges, connection);
-    if (issue) return failure(state, connectionIssueMessage(issue));
+    if (issue) {
+      const code: EditorCommandErrorCode = issue === 'unknown-endpoint'
+        ? 'NOT_FOUND'
+        : issue === 'locked-endpoint'
+          ? 'PROTECTED_CONTENT'
+          : issue === 'duplicate-connection'
+            ? 'CONFLICT'
+            : 'INVALID_INPUT';
+      return failure(state, code, connectionIssueMessage(issue));
+    }
     const edge: EditorEdge = {
       id: edgeId,
       ...connection,

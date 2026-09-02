@@ -93,7 +93,13 @@ import {
   type EditorCommand,
   type EditorCommandOutcome,
 } from './editor-commands';
-import { executeEditorCommandSafely } from './editor-command-safety';
+import {
+  EditorCommandQueue,
+  executeEditorCommandSafely,
+  type EditorCommandRequest,
+  type EditorCommandSession,
+  type SafeEditorCommandExecution,
+} from './editor-command-safety';
 import {
   downloadBlob,
   pngToPdfBlob,
@@ -108,6 +114,8 @@ import {
 } from './export-file';
 import { buildSvgExport } from './export-svg';
 import { EDITOR_FEATURES } from './features';
+import { getWebMcpModelContext } from './webmcp/webmcp-feature';
+import type { WebMcpToolRuntime } from './webmcp/webmcp-tools';
 import { fileToDataUrl, validateImageFile } from './image-file';
 import {
   canConnect,
@@ -603,7 +611,7 @@ function connectorPresentation(kind: 'default' | 'dashed' | 'emphasis') {
 
 const ONBOARDING_PREFERENCE = 'onboardingCanvasTableV1Dismissed';
 
-function EditorInner() {
+function EditorInner({ webMcpEnabled }: { webMcpEnabled: boolean }) {
   const [nodes, setNodes] = useState<EditorNode[]>(initialDocument.nodes);
   const [edges, setEdges] = useState<EditorEdge[]>(initialDocument.edges);
   const [title, setTitle] = useState(initialDocument.title);
@@ -679,7 +687,11 @@ function EditorInner() {
   const edgesRef = useRef(edges);
   const titleRef = useRef(title);
   const documentRevisionRef = useRef(0);
-  const guardedCommandStateRef = useRef<{ nodes: EditorNode[]; edges: EditorEdge[] } | null>(null);
+  const guardedCommandStateRef = useRef<{
+    nodes: EditorNode[];
+    edges: EditorEdge[];
+    persisted?: boolean;
+  } | null>(null);
   const pastRef = useRef<EditorSnapshot[]>([]);
   const futureRef = useRef<EditorSnapshot[]>([]);
   const dragOriginRef = useRef<EditorSnapshot | null>(null);
@@ -693,6 +705,7 @@ function EditorInner() {
   const dragDepthRef = useRef(0);
   const conversionControllerRef = useRef<AbortController | null>(null);
   const saveQueueRef = useRef(Promise.resolve());
+  const webMcpCommandQueueRef = useRef(new EditorCommandQueue());
   const saveTicketRef = useRef(0);
   const saveFailureRef = useRef<'quota' | 'unknown' | null>(null);
   const autosaveInputRef = useRef<PersistableEditorState>({ title, nodes, edges });
@@ -757,9 +770,16 @@ function EditorInner() {
     autosaveInputRef.current = next;
     const guardedState = guardedCommandStateRef.current;
     const isGuardedCommandCommit = guardedState?.nodes === nodes && guardedState.edges === edges;
+    const isPersistedCommandCommit = isGuardedCommandCommit && guardedState.persisted === true;
     if (isGuardedCommandCommit) guardedCommandStateRef.current = null;
     if (!persistableEditorStateEqual(previous, next)) {
       if (!isGuardedCommandCommit) documentRevisionRef.current += 1;
+      if (isPersistedCommandCommit) {
+        saveFailureRef.current = null;
+        setSaveFailure(null);
+        setSaveState('saved');
+        return;
+      }
       // Mark the document dirty before the changed canvas is painted. This
       // prevents an older queued write from presenting a stale "saved" state.
       saveTicketRef.current += 1;
@@ -921,6 +941,109 @@ function EditorInner() {
       });
     return nextSave;
   }, [announce]);
+
+  const getEditorCommandSession = useCallback((): EditorCommandSession => ({
+    projectId: activeProjectIdRef.current ?? '',
+    revision: documentRevisionRef.current,
+    state: { nodes: nodesRef.current, edges: edgesRef.current },
+  }), []);
+
+  const executeWebMcpCommand = useCallback((request: EditorCommandRequest) => (
+    webMcpCommandQueueRef.current.enqueue({
+      getSession: getEditorCommandSession,
+      request,
+      commit: async (execution: SafeEditorCommandExecution) => {
+        if (request.signal?.aborted) throw new DOMException('The command was cancelled.', 'AbortError');
+        if (activeProjectIdRef.current !== execution.projectId) {
+          throw new Error('The active project changed before the command could be saved.');
+        }
+        const updatedAt = Date.now();
+        const document: EditorDocument = {
+          schemaVersion: 6,
+          title: titleRef.current,
+          nodes: execution.nodes.map((node) => ({ ...node, selected: false })),
+          edges: execution.edges.map((edge) => ({ ...edge, selected: false })),
+          updatedAt,
+        };
+        saveTicketRef.current += 1;
+        setSaveState('saving');
+        const save = saveQueueRef.current
+          .catch(() => undefined)
+          .then(() => saveLocalDocument(execution.projectId, document, request.signal));
+        saveQueueRef.current = save;
+        try {
+          await save;
+        } catch (error) {
+          if (request.signal?.aborted) {
+            setSaveState('saved');
+          } else {
+            saveFailureRef.current = 'unknown';
+            setSaveFailure('unknown');
+            setSaveState('error');
+          }
+          throw error;
+        }
+
+        recordHistory();
+        nodesRef.current = execution.nodes;
+        edgesRef.current = execution.edges;
+        documentRevisionRef.current = execution.revision;
+        guardedCommandStateRef.current = {
+          nodes: execution.nodes,
+          edges: execution.edges,
+          persisted: true,
+        };
+        autosaveInputRef.current = {
+          title: titleRef.current,
+          nodes: execution.nodes,
+          edges: execution.edges,
+        };
+        setNodes(execution.nodes);
+        setEdges(execution.edges);
+        setProjects((current) => current
+          .map((project) => project.id === execution.projectId
+            ? { ...project, title: titleRef.current, updatedAt }
+            : project)
+          .sort((left, right) => right.updatedAt - left.updatedAt));
+        saveFailureRef.current = null;
+        setSaveFailure(null);
+        setSaveState('saved');
+      },
+    })
+  ), [getEditorCommandSession, recordHistory]);
+
+  const webMcpRuntime = useMemo<WebMcpToolRuntime>(() => ({
+    getSession: getEditorCommandSession,
+    getProjectName: () => titleRef.current,
+    getCanvasCenter: () => screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    }),
+    executeCommand: executeWebMcpCommand,
+    notify: (summary, tone) => announce(summary, tone),
+  }), [announce, executeWebMcpCommand, getEditorCommandSession, screenToFlowPosition]);
+
+  useEffect(() => {
+    if (!webMcpEnabled || !hydrated || !activeProjectIdRef.current) return;
+    const modelContext = getWebMcpModelContext();
+    if (!modelContext) return;
+    const controller = new AbortController();
+    void import('./webmcp/webmcp-registration')
+      .then(({ registerApprovedWebMcpTools }) => {
+        if (controller.signal.aborted) return;
+        return registerApprovedWebMcpTools({
+          modelContext,
+          runtime: webMcpRuntime,
+          signal: controller.signal,
+        });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          announce('Agent tools could not be initialized safely.', 'error');
+        }
+      });
+    return () => controller.abort();
+  }, [announce, hydrated, webMcpEnabled, webMcpRuntime]);
 
   useEffect(() => {
     let active = true;
@@ -4679,10 +4802,10 @@ function PathInspector({
   );
 }
 
-export default function Editor() {
+export default function Editor({ webMcpEnabled = false }: { webMcpEnabled?: boolean }) {
   return (
     <ReactFlowProvider>
-      <EditorInner />
+      <EditorInner webMcpEnabled={webMcpEnabled} />
     </ReactFlowProvider>
   );
 }
