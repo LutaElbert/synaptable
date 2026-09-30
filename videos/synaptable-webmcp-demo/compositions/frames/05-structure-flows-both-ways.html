@@ -1,0 +1,228 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      color: #18191d;
+    }
+    #root * { box-sizing: border-box; }
+    .clip { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .frame-05-structure-flows-both-ways-ground { background: #f3f4f6; }
+    .frame-05-structure-flows-both-ways-video-wash { background: rgba(243, 244, 246, 0.38); }
+    .frame-05-structure-flows-both-ways-stage { overflow: hidden; }
+    .frame-05-structure-flows-both-ways-world {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+    .frame-05-structure-flows-both-ways-product {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      opacity: 0;
+    }
+    .frame-05-structure-flows-both-ways-ring {
+      position: absolute;
+      z-index: 1;
+      left: -7.5cqw;
+      top: 18cqh;
+      width: 26cqw;
+      aspect-ratio: 1;
+      border: 1px solid rgba(93, 88, 237, 0.26);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .frame-05-structure-flows-both-ways-ring::before {
+      content: "";
+      position: absolute;
+      inset: 16%;
+      border: 1px dashed rgba(93, 88, 237, 0.22);
+      border-radius: 50%;
+    }
+    .frame-05-structure-flows-both-ways-caption {
+      position: absolute;
+      z-index: 4;
+      left: 28cqw;
+      top: 7cqh;
+      width: 44cqw;
+      padding: 2.2cqh 2cqw;
+      border: 1px solid #5d58ed;
+      background: rgba(255, 255, 255, 0.92);
+      text-align: center;
+    }
+    .frame-05-structure-flows-both-ways-label {
+      margin: 0 0 0.7cqh;
+      color: #4d47ce;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+    }
+    .frame-05-structure-flows-both-ways-title {
+      margin: 0;
+      font-size: 2.7cqw;
+      line-height: 1.05;
+      font-weight: 400;
+      letter-spacing: -0.035em;
+    }
+    .frame-05-structure-flows-both-ways-sub {
+      margin: 1cqh 0 0;
+      color: #5a5a5a;
+      font-size: 0.9cqw;
+      line-height: 1.45;
+    }
+    .frame-05-structure-flows-both-ways-journey {
+      position: absolute;
+      z-index: 3;
+      left: 31cqw;
+      top: 33cqh;
+      width: 38cqw;
+      height: 1px;
+      background: #5d58ed;
+      transform-origin: left center;
+    }
+    .frame-05-structure-flows-both-ways-journey::after {
+      content: "";
+      position: absolute;
+      right: -5px;
+      top: -4px;
+      width: 9px;
+      height: 9px;
+      border: 1px solid #5d58ed;
+      border-radius: 50%;
+      background: #f3f4f6;
+    }
+    .frame-05-structure-flows-both-ways-nodes {
+      position: absolute;
+      z-index: 3;
+      left: 55cqw;
+      top: 40cqh;
+      width: 30cqw;
+      height: 41cqh;
+      pointer-events: none;
+    }
+    .frame-05-structure-flows-both-ways-node-edge {
+      position: absolute;
+      background: #5d58ed;
+      transform-origin: left top;
+    }
+    .frame-05-structure-flows-both-ways-node-edge-top,
+    .frame-05-structure-flows-both-ways-node-edge-bottom {
+      left: 0;
+      width: 100%;
+      height: 1px;
+    }
+    .frame-05-structure-flows-both-ways-node-edge-top { top: 0; }
+    .frame-05-structure-flows-both-ways-node-edge-bottom { bottom: 0; }
+    .frame-05-structure-flows-both-ways-node-edge-left,
+    .frame-05-structure-flows-both-ways-node-edge-right {
+      top: 0;
+      width: 1px;
+      height: 100%;
+    }
+    .frame-05-structure-flows-both-ways-node-edge-left { left: 0; }
+    .frame-05-structure-flows-both-ways-node-edge-right { right: 0; }
+    .frame-05-structure-flows-both-ways-node-tag {
+      position: absolute;
+      right: 0;
+      top: -3.4cqh;
+      padding: 0.7cqh 0.7cqw;
+      border: 1px solid #5d58ed;
+      background: rgba(243, 244, 246, 0.94);
+      color: #4d47ce;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .frame-05-structure-flows-both-ways-proof {
+      position: absolute;
+      z-index: 4;
+      right: 2cqw;
+      top: 79cqh;
+      padding-top: 0.9cqh;
+      border-top: 1px solid #5d58ed;
+      color: #4d47ce;
+      font-size: 12px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+  </style>
+
+  <div data-hf-id="hf-f05-root" id="root" data-composition-id="05-structure-flows-both-ways" data-width="1920" data-height="1080" data-duration="10.583">
+    <div data-hf-id="hf-f05-ground" class="clip frame-05-structure-flows-both-ways-ground" data-start="0" data-duration="10.583" data-track-index="0"></div>
+
+    <!-- approved frame video hoisted by assemble-index -->
+
+    <div data-hf-id="hf-f05-wash" class="clip frame-05-structure-flows-both-ways-video-wash" data-start="0" data-duration="10.583" data-track-index="2"></div>
+
+    <main data-hf-id="hf-f05-stage" class="clip frame-05-structure-flows-both-ways-stage" data-start="0" data-duration="10.583" data-track-index="3">
+      <div data-hf-id="hf-f05-world" class="frame-05-structure-flows-both-ways-world" data-layout-allow-overflow>
+        <img data-hf-id="hf-f05-product" class="frame-05-structure-flows-both-ways-product" src="assets/source/product-demo-06.png" width="1280" height="720" alt="Real SynapTable canvas after selected rows became connected nodes">
+        <div data-hf-id="hf-f05-ring" class="frame-05-structure-flows-both-ways-ring" aria-hidden="true"></div>
+        <header data-hf-id="hf-f05-caption" class="frame-05-structure-flows-both-ways-caption">
+          <p data-hf-id="hf-f05-label" class="frame-05-structure-flows-both-ways-label">create_canvas_nodes_from_rows</p>
+          <h1 data-hf-id="hf-f05-title" class="frame-05-structure-flows-both-ways-title">Structure flows both ways.</h1>
+          <p data-hf-id="hf-f05-sub" class="frame-05-structure-flows-both-ways-sub">The source table remains. Its selected rows become new concepts.</p>
+        </header>
+        <div data-hf-id="hf-f05-journey" class="frame-05-structure-flows-both-ways-journey" aria-hidden="true"></div>
+        <div data-hf-id="hf-f05-nodes" class="frame-05-structure-flows-both-ways-nodes" aria-hidden="true">
+          <span data-hf-id="hf-f05-edge-top" class="frame-05-structure-flows-both-ways-node-edge frame-05-structure-flows-both-ways-node-edge-top"></span>
+          <span data-hf-id="hf-f05-edge-right" class="frame-05-structure-flows-both-ways-node-edge frame-05-structure-flows-both-ways-node-edge-right"></span>
+          <span data-hf-id="hf-f05-edge-bottom" class="frame-05-structure-flows-both-ways-node-edge frame-05-structure-flows-both-ways-node-edge-bottom"></span>
+          <span data-hf-id="hf-f05-edge-left" class="frame-05-structure-flows-both-ways-node-edge frame-05-structure-flows-both-ways-node-edge-left"></span>
+          <span data-hf-id="hf-f05-node-tag" class="frame-05-structure-flows-both-ways-node-tag">Rows returned as canvas nodes</span>
+        </div>
+        <span data-hf-id="hf-f05-proof" class="frame-05-structure-flows-both-ways-proof">05 / 07 · Real WebMCP result</span>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    window.__timelines = window.__timelines || {};
+    const frame05Timeline = gsap.timeline({ paused: true });
+    const frame05World = document.querySelector(".frame-05-structure-flows-both-ways-world");
+    const frame05Camera = { x: 54, y: 0, scale: 1.025, drift: 0, driftMix: 1 };
+
+    function frame05ApplyCamera() {
+      const driftX = Math.sin(frame05Camera.drift) * 4 * frame05Camera.driftMix;
+      const driftY = Math.sin(frame05Camera.drift * 1.31) * 2 * frame05Camera.driftMix;
+      frame05World.style.transform = `translate(${frame05Camera.x + driftX}px, ${frame05Camera.y + driftY}px) scale(${frame05Camera.scale})`;
+    }
+
+    frame05ApplyCamera();
+    frame05Timeline.fromTo(".frame-05-structure-flows-both-ways-caption", { y: -26, opacity: 0 }, { y: 0, opacity: 1, duration: 0.48, ease: "power4.out" }, 0.02);
+    frame05Timeline.fromTo(".frame-05-structure-flows-both-ways-label", { y: 12, opacity: 0 }, { y: 0, opacity: 1, duration: 0.34, ease: "power3.out" }, 0.14);
+    frame05Timeline.fromTo(".frame-05-structure-flows-both-ways-title", { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.44, ease: "power4.out" }, 0.28);
+    frame05Timeline.fromTo(".frame-05-structure-flows-both-ways-ring", { scale: 0.94, opacity: 0 }, { scale: 1, opacity: 1, duration: 1.1, ease: "power2.out" }, 0.18);
+    frame05Timeline.fromTo(".frame-05-structure-flows-both-ways-proof", { x: 34, opacity: 0 }, { x: 0, opacity: 1, duration: 0.42, ease: "power4.out" }, 0.74);
+    frame05Timeline.set(".frame-05-structure-flows-both-ways-sub", { opacity: 0, y: 12 }, 0);
+    frame05Timeline.set(".frame-05-structure-flows-both-ways-journey", { scaleX: 0, opacity: 0 }, 0);
+    frame05Timeline.set(".frame-05-structure-flows-both-ways-node-edge-top, .frame-05-structure-flows-both-ways-node-edge-bottom", { scaleX: 0 }, 0);
+    frame05Timeline.set(".frame-05-structure-flows-both-ways-node-edge-left, .frame-05-structure-flows-both-ways-node-edge-right", { scaleY: 0 }, 0);
+    frame05Timeline.set(".frame-05-structure-flows-both-ways-node-tag", { opacity: 0, y: 10 }, 0);
+
+    frame05Timeline.to(frame05Camera, { drift: Math.PI * 1.35, duration: 3, ease: "none", onUpdate: frame05ApplyCamera }, 0);
+    frame05Timeline.fromTo(".frame-05-structure-flows-both-ways-journey", { scaleX: 0, opacity: 0.25 }, { scaleX: 1, opacity: 1, duration: 4.25, ease: "power2.inOut" }, 3.08);
+    frame05Timeline.to(frame05Camera, { x: 0, scale: 1, driftMix: 0, duration: 4.8, ease: "power2.inOut", onUpdate: frame05ApplyCamera }, 3);
+
+    frame05Timeline.fromTo(".frame-05-structure-flows-both-ways-product", { opacity: 0, scale: 1.035, filter: "blur(18px)" }, { opacity: 0.64, scale: 1, filter: "blur(0px)", duration: 0.58, ease: "expo.out" }, 7.72);
+    frame05Timeline.fromTo(".frame-05-structure-flows-both-ways-node-edge-top, .frame-05-structure-flows-both-ways-node-edge-bottom", { scaleX: 0 }, { scaleX: 1, duration: 0.48, stagger: 0.08, ease: "power3.out" }, 7.92);
+    frame05Timeline.fromTo(".frame-05-structure-flows-both-ways-node-edge-left, .frame-05-structure-flows-both-ways-node-edge-right", { scaleY: 0 }, { scaleY: 1, duration: 0.48, stagger: 0.08, ease: "power3.out" }, 8.04);
+    frame05Timeline.fromTo(".frame-05-structure-flows-both-ways-node-tag", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.42, ease: "power4.out" }, 8.25);
+    frame05Timeline.fromTo(".frame-05-structure-flows-both-ways-sub", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.46, ease: "power4.out" }, 8.48);
+
+    window.__timelines["05-structure-flows-both-ways"] = frame05Timeline;
+  </script>
+</template>

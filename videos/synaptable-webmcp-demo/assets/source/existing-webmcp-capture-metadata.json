@@ -1,0 +1,84 @@
+{
+  "framesDir": "/Users/elbert/Documents/ChatGPT/SynapTable/artifacts/webmcp-demo/frames-1788335795940",
+  "fps": 4,
+  "frameCount": 120,
+  "duration": 30,
+  "timeline": [
+    {
+      "label": "SynapTable + WebMCP",
+      "start": 0,
+      "end": 2.5
+    },
+    {
+      "label": "Agent discovers six typed canvas tools",
+      "start": 2.5,
+      "end": 4.5
+    },
+    {
+      "label": "create_concept — Opening image",
+      "start": 4.5,
+      "end": 6.5
+    },
+    {
+      "label": "create_concept — Unexpected ally",
+      "start": 6.5,
+      "end": 8.5
+    },
+    {
+      "label": "create_concept — Final choice",
+      "start": 8.5,
+      "end": 10.5
+    },
+    {
+      "label": "find_layers — safe IDs, no private bodies",
+      "start": 10.5,
+      "end": 12.5
+    },
+    {
+      "label": "organize_layers_into_table — originals preserved",
+      "start": 12.5,
+      "end": 15.5
+    },
+    {
+      "label": "create_table — structured production beats",
+      "start": 15.5,
+      "end": 18.5
+    },
+    {
+      "label": "create_canvas_nodes_from_rows — table to concepts",
+      "start": 18.5,
+      "end": 22
+    },
+    {
+      "label": "One undo removes the whole agent mutation",
+      "start": 22,
+      "end": 24.5
+    },
+    {
+      "label": "Redo restores all generated concepts",
+      "start": 24.5,
+      "end": 27
+    },
+    {
+      "label": "Reload — project persisted locally",
+      "start": 27,
+      "end": 30
+    }
+  ],
+  "validation": {
+    "summaryOk": true,
+    "createdConcepts": true,
+    "foundConcepts": 3,
+    "organizedOk": true,
+    "tableOk": true,
+    "tableMetadata": {
+      "columnCount": 3,
+      "headerRow": true,
+      "rowCount": 4
+    },
+    "convertedOk": true,
+    "convertedCount": 3,
+    "saved": true,
+    "finalNodes": 8
+  }
+}

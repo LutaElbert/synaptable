@@ -1,0 +1,119 @@
+[a] Skip to canvas
+[span] SynapTable
+[span] Document title
+[span] Saved on device
+[span] Projects
+[span] Export
+[span] Document
+[h1] Layers
+[label] Search layers, notes, and table cells
+[label] Quick template
+[option] Idea
+[option] Task checklist
+[option] Decision
+[option] Open question
+[option] Table 3 × 3
+[button] Add
+[p] Double-click an unlocked layer or press F2 while it is focused to rename it.
+[span] Editable layers
+[span] Explore tools
+[span] Research
+[strong] Local workspace
+[span] Images and edits stay on this device
+[span] Starting point
+[strong] Research
+[span] Next step
+[strong] Explore tools
+[span] Output
+[strong] Editable layers
+[title] Diagram overview
+[button] 231
+[strong] Drop an image anywhere
+[span] or paste with ⌘V
+[button] Browse files
+[a] React Flow
+[span] Selection
+[h2] Properties
+[strong] Select a layer
+[span] Choose an object on the canvas or in the layer list to edit it.
+[span] Getting started
+[h2] Move ideas between canvas and table
+[strong] Capture ideas
+[span] Add two or three concept layers.
+[strong] Organize them
+[span] Select the ideas and choose “Organize into table.”
+[strong] Shape the table
+[span] Edit cells, paste spreadsheet data, and resize rows or columns.
+[strong] Return to canvas
+[span] Select table rows and choose “Create canvas nodes.”
+[strong] Keep a copy
+[span] Use backup or export when you want a portable file.
+[span] New table
+[h2] Choose a table size
+[p] Use the grid, arrow keys, or number fields. You can add more rows and columns later.
+[div] rows ×
+[div] columns
+[label] Rows
+[label] Columns
+[button] Cancel
+[button] Create table
+[span] Saved on this device
+[h2] Local projects
+[p] Keep separate canvases in this browser. Projects and their checkpoints never leave this device.
+[h3] Create a project
+[p] Choose a useful starting point. You can add any layer afterward.
+[label] Starter
+[option] Blank canvas
+[option] Idea map
+[option] Table
+[button] New project
+[h3] Your projects
+[strong] Untitled concept map
+[span] Open now ·
+[span] Edited
+[span] 9/3/2026, 12:16:16 AM
+[p] Keep at least one local project. Create another project to enable deletion.
+[button] Close
+[span] Export
+[h2] Export canvas
+[p] Download a visual of your canvas or portable table data. Everything is processed on this device.
+[legend] Area
+[label] Canvas
+[label] Selection
+[label] Cells
+[legend] Format
+[label] PNG
+[label] SVG
+[label] PDF
+[label] CSV
+[label] Padding
+[option] None
+[option] Small
+[option] Medium
+[option] Large
+[label] Background
+[option] Transparent
+[option] White
+[label] Resolution
+[dt] Scope
+[dd] Full canvas
+[dt] Layers
+[dt] Processing
+[dd] On device
+[button] Cancel
+[button] Download PNG
+[span] Local project
+[h2] Backup and import
+[p] Your canvas is stored only in this browser. Download a portable backup before clearing browser data or changing devices.
+[button] Download backup
+[button] Import backup
+[p] Importing a valid backup creates and opens a separate local project. Your current project remains available.
+[span] Browser storage
+[h3] Local data protection
+[p] Storage estimates and persistent-storage requests are unavailable in this browser. Download backups regularly.
+[p] Browser storage can still be cleared by you, device policy, or browser settings. A downloaded backup is the safest portable copy.
+[span] On this device
+[h3] Version checkpoints
+[button] Save checkpoint
+[p] No checkpoints yet. Save one before a major edit.
+[button] Close

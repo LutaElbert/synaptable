@@ -1,0 +1,45 @@
+{
+  "appUrl": "http://localhost:3003",
+  "marks": [
+    {
+      "event": "empty-project-ready",
+      "seconds": 0.529
+    },
+    {
+      "event": "create-root",
+      "seconds": 3.892
+    },
+    {
+      "event": "child-audience-insight",
+      "seconds": 8.601
+    },
+    {
+      "event": "child-content-ideas",
+      "seconds": 11.12
+    },
+    {
+      "event": "child-success-signals",
+      "seconds": 13.638
+    },
+    {
+      "event": "connected-map",
+      "seconds": 13.67
+    },
+    {
+      "event": "organized-table",
+      "seconds": 16.887
+    },
+    {
+      "event": "edited-table-cell",
+      "seconds": 21.44
+    },
+    {
+      "event": "final-hold",
+      "seconds": 25.205
+    },
+    {
+      "event": "recording-end",
+      "seconds": 25.785
+    }
+  ]
+}

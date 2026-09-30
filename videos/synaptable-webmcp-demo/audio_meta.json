@@ -1,0 +1,944 @@
+{
+  "bgm": null,
+  "bgm_pending": false,
+  "voices": [
+    {
+      "frame": 1,
+      "path": "assets/audio/voice-frame-01.wav",
+      "duration_s": 11.913,
+      "words": [
+        {
+          "id": "f1w0",
+          "text": "Ideas",
+          "start": 0.28,
+          "end": 0.54
+        },
+        {
+          "id": "f1w1",
+          "text": "rarely",
+          "start": 0.54,
+          "end": 1.18
+        },
+        {
+          "id": "f1w2",
+          "text": "arrive",
+          "start": 1.18,
+          "end": 1.76
+        },
+        {
+          "id": "f1w3",
+          "text": "organized.",
+          "start": 1.82,
+          "end": 3.11
+        },
+        {
+          "id": "f1w4",
+          "text": "They",
+          "start": 3.41,
+          "end": 3.58
+        },
+        {
+          "id": "f1w5",
+          "text": "begin",
+          "start": 3.58,
+          "end": 4.11
+        },
+        {
+          "id": "f1w6",
+          "text": "as",
+          "start": 4.24,
+          "end": 4.35
+        },
+        {
+          "id": "f1w7",
+          "text": "fragments,",
+          "start": 4.35,
+          "end": 5.59
+        },
+        {
+          "id": "f1w8",
+          "text": "notes,",
+          "start": 5.59,
+          "end": 6.26
+        },
+        {
+          "id": "f1w9",
+          "text": "questions,",
+          "start": 6.84,
+          "end": 7.63
+        },
+        {
+          "id": "f1w10",
+          "text": "possibilities,",
+          "start": 7.8,
+          "end": 9.1
+        },
+        {
+          "id": "f1w11",
+          "text": "spread",
+          "start": 9.1,
+          "end": 9.46
+        },
+        {
+          "id": "f1w12",
+          "text": "across",
+          "start": 9.86,
+          "end": 10.48
+        },
+        {
+          "id": "f1w13",
+          "text": "a",
+          "start": 10.48,
+          "end": 10.59
+        },
+        {
+          "id": "f1w14",
+          "text": "canvas.",
+          "start": 10.96,
+          "end": 11.79
+        }
+      ]
+    },
+    {
+      "frame": 2,
+      "path": "assets/audio/voice-frame-02.wav",
+      "duration_s": 9.436,
+      "words": [
+        {
+          "id": "f2w0",
+          "text": "Synaptable",
+          "start": 0.167,
+          "end": 0.737
+        },
+        {
+          "id": "f2w1",
+          "text": "keeps",
+          "start": 0.737,
+          "end": 1.147
+        },
+        {
+          "id": "f2w2",
+          "text": "that",
+          "start": 1.147,
+          "end": 1.477
+        },
+        {
+          "id": "f2w3",
+          "text": "freedom,",
+          "start": 1.477,
+          "end": 2.187
+        },
+        {
+          "id": "f2w4",
+          "text": "then",
+          "start": 2.247,
+          "end": 2.577
+        },
+        {
+          "id": "f2w5",
+          "text": "adds",
+          "start": 2.577,
+          "end": 2.907
+        },
+        {
+          "id": "f2w6",
+          "text": "structure",
+          "start": 2.907,
+          "end": 3.687
+        },
+        {
+          "id": "f2w7",
+          "text": "when",
+          "start": 3.687,
+          "end": 3.977
+        },
+        {
+          "id": "f2w8",
+          "text": "you",
+          "start": 3.977,
+          "end": 4.197
+        },
+        {
+          "id": "f2w9",
+          "text": "need",
+          "start": 4.197,
+          "end": 4.417
+        },
+        {
+          "id": "f2w10",
+          "text": "it",
+          "start": 4.587,
+          "end": 4.647
+        },
+        {
+          "id": "f2w11",
+          "text": "on",
+          "start": 4.647,
+          "end": 4.887
+        },
+        {
+          "id": "f2w12",
+          "text": "a",
+          "start": 4.887,
+          "end": 4.917
+        },
+        {
+          "id": "f2w13",
+          "text": "local",
+          "start": 5.027,
+          "end": 5.177
+        },
+        {
+          "id": "f2w14",
+          "text": "first",
+          "start": 5.687,
+          "end": 5.947
+        },
+        {
+          "id": "f2w15",
+          "text": "visual",
+          "start": 6.267,
+          "end": 6.597
+        },
+        {
+          "id": "f2w16",
+          "text": "workspace",
+          "start": 6.597,
+          "end": 7.517
+        },
+        {
+          "id": "f2w17",
+          "text": "that",
+          "start": 7.517,
+          "end": 7.897
+        },
+        {
+          "id": "f2w18",
+          "text": "stays",
+          "start": 7.937,
+          "end": 8.437
+        },
+        {
+          "id": "f2w19",
+          "text": "editable.",
+          "start": 8.437,
+          "end": 9.436
+        }
+      ]
+    },
+    {
+      "frame": 3,
+      "path": "assets/audio/voice-frame-03.wav",
+      "duration_s": 11.977,
+      "words": [
+        {
+          "id": "f3w0",
+          "text": "editable.",
+          "start": 0,
+          "end": 0.151
+        },
+        {
+          "id": "f3w1",
+          "text": "Through",
+          "start": 0.431,
+          "end": 0.791
+        },
+        {
+          "id": "f3w2",
+          "text": "native",
+          "start": 0.791,
+          "end": 1.331
+        },
+        {
+          "id": "f3w3",
+          "text": "web",
+          "start": 1.331,
+          "end": 1.601
+        },
+        {
+          "id": "f3w4",
+          "text": "MCP",
+          "start": 1.601,
+          "end": 1.871
+        },
+        {
+          "id": "f3w5",
+          "text": "tools,",
+          "start": 1.871,
+          "end": 2.491
+        },
+        {
+          "id": "f3w6",
+          "text": "an",
+          "start": 2.571,
+          "end": 2.681
+        },
+        {
+          "id": "f3w7",
+          "text": "agent",
+          "start": 2.681,
+          "end": 3.131
+        },
+        {
+          "id": "f3w8",
+          "text": "can",
+          "start": 3.131,
+          "end": 3.271
+        },
+        {
+          "id": "f3w9",
+          "text": "understand",
+          "start": 3.851,
+          "end": 4.311
+        },
+        {
+          "id": "f3w10",
+          "text": "the",
+          "start": 4.311,
+          "end": 4.571
+        },
+        {
+          "id": "f3w11",
+          "text": "workspace,",
+          "start": 4.571,
+          "end": 5.401
+        },
+        {
+          "id": "f3w12",
+          "text": "find",
+          "start": 5.401,
+          "end": 5.911
+        },
+        {
+          "id": "f3w13",
+          "text": "the",
+          "start": 5.911,
+          "end": 5.951
+        },
+        {
+          "id": "f3w14",
+          "text": "right",
+          "start": 5.951,
+          "end": 6.161
+        },
+        {
+          "id": "f3w15",
+          "text": "layers,",
+          "start": 6.161,
+          "end": 7.211
+        },
+        {
+          "id": "f3w16",
+          "text": "and",
+          "start": 7.481,
+          "end": 7.511
+        },
+        {
+          "id": "f3w17",
+          "text": "create",
+          "start": 7.511,
+          "end": 8.101
+        },
+        {
+          "id": "f3w18",
+          "text": "new",
+          "start": 8.111,
+          "end": 8.421
+        },
+        {
+          "id": "f3w19",
+          "text": "concepts",
+          "start": 8.421,
+          "end": 9.231
+        },
+        {
+          "id": "f3w20",
+          "text": "without",
+          "start": 9.231,
+          "end": 9.931
+        },
+        {
+          "id": "f3w21",
+          "text": "scraping",
+          "start": 9.931,
+          "end": 10.321
+        },
+        {
+          "id": "f3w22",
+          "text": "the",
+          "start": 10.911,
+          "end": 11.051
+        },
+        {
+          "id": "f3w23",
+          "text": "interface.",
+          "start": 11.051,
+          "end": 11.977
+        }
+      ]
+    },
+    {
+      "frame": 4,
+      "path": "assets/audio/voice-frame-04.wav",
+      "duration_s": 14.943,
+      "words": [
+        {
+          "id": "f4w0",
+          "text": "interface.",
+          "start": 0,
+          "end": 0.354
+        },
+        {
+          "id": "f4w1",
+          "text": "One",
+          "start": 0.624,
+          "end": 0.654
+        },
+        {
+          "id": "f4w2",
+          "text": "command",
+          "start": 0.654,
+          "end": 1.334
+        },
+        {
+          "id": "f4w3",
+          "text": "turns",
+          "start": 1.454,
+          "end": 1.844
+        },
+        {
+          "id": "f4w4",
+          "text": "selected",
+          "start": 1.844,
+          "end": 2.554
+        },
+        {
+          "id": "f4w5",
+          "text": "concepts",
+          "start": 2.674,
+          "end": 3.384
+        },
+        {
+          "id": "f4w6",
+          "text": "into",
+          "start": 3.424,
+          "end": 3.474
+        },
+        {
+          "id": "f4w7",
+          "text": "a",
+          "start": 3.804,
+          "end": 3.924
+        },
+        {
+          "id": "f4w8",
+          "text": "structured",
+          "start": 4.064,
+          "end": 4.844
+        },
+        {
+          "id": "f4w9",
+          "text": "table.",
+          "start": 5.014,
+          "end": 5.604
+        },
+        {
+          "id": "f4w10",
+          "text": "The",
+          "start": 6.024,
+          "end": 6.034
+        },
+        {
+          "id": "f4w11",
+          "text": "canvas",
+          "start": 6.034,
+          "end": 6.594
+        },
+        {
+          "id": "f4w12",
+          "text": "changes",
+          "start": 6.594,
+          "end": 7.244
+        },
+        {
+          "id": "f4w13",
+          "text": "visibly.",
+          "start": 7.244,
+          "end": 8.194
+        },
+        {
+          "id": "f4w14",
+          "text": "The",
+          "start": 8.464,
+          "end": 8.534
+        },
+        {
+          "id": "f4w15",
+          "text": "result",
+          "start": 8.534,
+          "end": 9.174
+        },
+        {
+          "id": "f4w16",
+          "text": "persists,",
+          "start": 9.294,
+          "end": 10.374
+        },
+        {
+          "id": "f4w17",
+          "text": "and",
+          "start": 10.374,
+          "end": 10.714
+        },
+        {
+          "id": "f4w18",
+          "text": "the",
+          "start": 10.714,
+          "end": 11.004
+        },
+        {
+          "id": "f4w19",
+          "text": "whole",
+          "start": 11.064,
+          "end": 11.314
+        },
+        {
+          "id": "f4w20",
+          "text": "mutation",
+          "start": 11.904,
+          "end": 12.464
+        },
+        {
+          "id": "f4w21",
+          "text": "remains",
+          "start": 12.544,
+          "end": 13.344
+        },
+        {
+          "id": "f4w22",
+          "text": "one",
+          "start": 13.344,
+          "end": 13.444
+        },
+        {
+          "id": "f4w23",
+          "text": "undue",
+          "start": 13.954,
+          "end": 14.224
+        },
+        {
+          "id": "f4w24",
+          "text": "step.",
+          "start": 14.314,
+          "end": 14.943
+        }
+      ]
+    },
+    {
+      "frame": 5,
+      "path": "assets/audio/voice-frame-05.wav",
+      "duration_s": 10.083,
+      "words": [
+        {
+          "id": "f5w0",
+          "text": "step.",
+          "start": 0,
+          "end": 0.171
+        },
+        {
+          "id": "f5w1",
+          "text": "And",
+          "start": 0.171,
+          "end": 0.451
+        },
+        {
+          "id": "f5w2",
+          "text": "the",
+          "start": 0.451,
+          "end": 0.711
+        },
+        {
+          "id": "f5w3",
+          "text": "structure",
+          "start": 0.711,
+          "end": 1.531
+        },
+        {
+          "id": "f5w4",
+          "text": "is",
+          "start": 1.531,
+          "end": 1.711
+        },
+        {
+          "id": "f5w5",
+          "text": "not",
+          "start": 1.711,
+          "end": 1.931
+        },
+        {
+          "id": "f5w6",
+          "text": "a",
+          "start": 1.991,
+          "end": 2.071
+        },
+        {
+          "id": "f5w7",
+          "text": "dead",
+          "start": 2.071,
+          "end": 2.431
+        },
+        {
+          "id": "f5w8",
+          "text": "end.",
+          "start": 2.431,
+          "end": 2.981
+        },
+        {
+          "id": "f5w9",
+          "text": "Choose",
+          "start": 3.281,
+          "end": 3.451
+        },
+        {
+          "id": "f5w10",
+          "text": "the",
+          "start": 3.451,
+          "end": 3.671
+        },
+        {
+          "id": "f5w11",
+          "text": "rows",
+          "start": 3.671,
+          "end": 3.961
+        },
+        {
+          "id": "f5w12",
+          "text": "you",
+          "start": 3.961,
+          "end": 4.181
+        },
+        {
+          "id": "f5w13",
+          "text": "need,",
+          "start": 4.181,
+          "end": 4.611
+        },
+        {
+          "id": "f5w14",
+          "text": "then",
+          "start": 4.611,
+          "end": 4.901
+        },
+        {
+          "id": "f5w15",
+          "text": "bring",
+          "start": 4.901,
+          "end": 5.271
+        },
+        {
+          "id": "f5w16",
+          "text": "them",
+          "start": 5.271,
+          "end": 5.561
+        },
+        {
+          "id": "f5w17",
+          "text": "back",
+          "start": 5.561,
+          "end": 5.821
+        },
+        {
+          "id": "f5w18",
+          "text": "as",
+          "start": 5.851,
+          "end": 5.991
+        },
+        {
+          "id": "f5w19",
+          "text": "connected",
+          "start": 5.991,
+          "end": 6.121
+        },
+        {
+          "id": "f5w20",
+          "text": "canvas",
+          "start": 6.721,
+          "end": 7.091
+        },
+        {
+          "id": "f5w21",
+          "text": "notes,",
+          "start": 7.091,
+          "end": 7.501
+        },
+        {
+          "id": "f5w22",
+          "text": "ready",
+          "start": 7.671,
+          "end": 7.971
+        },
+        {
+          "id": "f5w23",
+          "text": "to",
+          "start": 8.111,
+          "end": 8.211
+        },
+        {
+          "id": "f5w24",
+          "text": "keep",
+          "start": 8.491,
+          "end": 8.751
+        },
+        {
+          "id": "f5w25",
+          "text": "evolving.",
+          "start": 8.751,
+          "end": 10.083
+        }
+      ]
+    },
+    {
+      "frame": 6,
+      "path": "assets/audio/voice-frame-06.wav",
+      "duration_s": 15.095,
+      "words": [
+        {
+          "id": "f6w0",
+          "text": "evolving.",
+          "start": 0,
+          "end": 0.168
+        },
+        {
+          "id": "f6w1",
+          "text": "Every",
+          "start": 0.438,
+          "end": 0.598
+        },
+        {
+          "id": "f6w2",
+          "text": "request",
+          "start": 0.598,
+          "end": 1.138
+        },
+        {
+          "id": "f6w3",
+          "text": "is",
+          "start": 1.268,
+          "end": 1.368
+        },
+        {
+          "id": "f6w4",
+          "text": "scheme",
+          "start": 1.368,
+          "end": 1.888
+        },
+        {
+          "id": "f6w5",
+          "text": "of",
+          "start": 1.888,
+          "end": 2.058
+        },
+        {
+          "id": "f6w6",
+          "text": "validated,",
+          "start": 2.058,
+          "end": 2.978
+        },
+        {
+          "id": "f6w7",
+          "text": "success",
+          "start": 2.978,
+          "end": 3.288
+        },
+        {
+          "id": "f6w8",
+          "text": "returns",
+          "start": 3.868,
+          "end": 4.208
+        },
+        {
+          "id": "f6w9",
+          "text": "only",
+          "start": 4.208,
+          "end": 4.548
+        },
+        {
+          "id": "f6w10",
+          "text": "after",
+          "start": 4.548,
+          "end": 4.978
+        },
+        {
+          "id": "f6w11",
+          "text": "persistence,",
+          "start": 4.978,
+          "end": 6.168
+        },
+        {
+          "id": "f6w12",
+          "text": "projects",
+          "start": 6.168,
+          "end": 7.128
+        },
+        {
+          "id": "f6w13",
+          "text": "stay",
+          "start": 7.398,
+          "end": 7.468
+        },
+        {
+          "id": "f6w14",
+          "text": "isolated,",
+          "start": 7.468,
+          "end": 8.318
+        },
+        {
+          "id": "f6w15",
+          "text": "cancellations",
+          "start": 8.318,
+          "end": 9.388
+        },
+        {
+          "id": "f6w16",
+          "text": "leave",
+          "start": 9.448,
+          "end": 9.838
+        },
+        {
+          "id": "f6w17",
+          "text": "no",
+          "start": 9.838,
+          "end": 9.958
+        },
+        {
+          "id": "f6w18",
+          "text": "partial",
+          "start": 9.998,
+          "end": 10.248
+        },
+        {
+          "id": "f6w19",
+          "text": "edits,",
+          "start": 10.828,
+          "end": 11.188
+        },
+        {
+          "id": "f6w20",
+          "text": "and",
+          "start": 11.188,
+          "end": 11.398
+        },
+        {
+          "id": "f6w21",
+          "text": "unsupported",
+          "start": 11.478,
+          "end": 12.358
+        },
+        {
+          "id": "f6w22",
+          "text": "browsers",
+          "start": 12.888,
+          "end": 13.108
+        },
+        {
+          "id": "f6w23",
+          "text": "keep",
+          "start": 13.108,
+          "end": 13.348
+        },
+        {
+          "id": "f6w24",
+          "text": "working",
+          "start": 13.628,
+          "end": 14.158
+        },
+        {
+          "id": "f6w25",
+          "text": "normally.",
+          "start": 14.158,
+          "end": 15.095
+        }
+      ]
+    },
+    {
+      "frame": 7,
+      "path": "assets/audio/voice-frame-07.wav",
+      "duration_s": 8.752,
+      "words": [
+        {
+          "id": "f7w0",
+          "text": "normally.",
+          "start": 0,
+          "end": 0.352
+        },
+        {
+          "id": "f7w1",
+          "text": "Think",
+          "start": 0.632,
+          "end": 0.932
+        },
+        {
+          "id": "f7w2",
+          "text": "freely,",
+          "start": 0.932,
+          "end": 1.862
+        },
+        {
+          "id": "f7w3",
+          "text": "structure",
+          "start": 1.862,
+          "end": 2.912
+        },
+        {
+          "id": "f7w4",
+          "text": "instantly,",
+          "start": 2.912,
+          "end": 4.192
+        },
+        {
+          "id": "f7w5",
+          "text": "synaptable,",
+          "start": 4.192,
+          "end": 5.602
+        },
+        {
+          "id": "f7w6",
+          "text": "built",
+          "start": 5.602,
+          "end": 6.112
+        },
+        {
+          "id": "f7w7",
+          "text": "for",
+          "start": 6.112,
+          "end": 6.362
+        },
+        {
+          "id": "f7w8",
+          "text": "people,",
+          "start": 6.362,
+          "end": 7.082
+        },
+        {
+          "id": "f7w9",
+          "text": "ready",
+          "start": 7.102,
+          "end": 7.552
+        },
+        {
+          "id": "f7w10",
+          "text": "for",
+          "start": 7.552,
+          "end": 7.722
+        },
+        {
+          "id": "f7w11",
+          "text": "agents.",
+          "start": 8.172,
+          "end": 8.422
+        }
+      ]
+    }
+  ],
+  "sfx": []
+}

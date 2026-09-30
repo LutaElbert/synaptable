@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "preferences": {
+    "destination": {
+      "value": "youtube",
+      "confirmed_in": [
+        "synaptable-webmcp-demo"
+      ],
+      "updated_at": "2026-09-02T16:15:41.653Z"
+    },
+    "aspect": {
+      "value": "1920x1080",
+      "confirmed_in": [
+        "synaptable-webmcp-demo"
+      ],
+      "updated_at": "2026-09-02T16:15:41.697Z"
+    },
+    "language": {
+      "value": "en",
+      "confirmed_in": [
+        "synaptable-webmcp-demo"
+      ],
+      "updated_at": "2026-09-02T16:15:41.741Z"
+    },
+    "flow": {
+      "value": "automation",
+      "confirmed_in": [
+        "synaptable-webmcp-demo"
+      ],
+      "updated_at": "2026-09-02T16:15:41.786Z"
+    },
+    "storyboard": {
+      "value": "yes",
+      "confirmed_in": [
+        "synaptable-webmcp-demo"
+      ],
+      "updated_at": "2026-09-02T16:15:41.831Z"
+    },
+    "voice": {
+      "value": "Orus",
+      "confirmed_in": [
+        "synaptable-webmcp-demo"
+      ],
+      "updated_at": "2026-09-02T16:15:41.874Z"
+    },
+    "style_preset.product-launch-video": {
+      "value": "cartesian",
+      "confirmed_in": [
+        "synaptable-webmcp-demo"
+      ],
+      "updated_at": "2026-09-02T16:15:41.921Z"
+    }
+  },
+  "sightings": {}
+}

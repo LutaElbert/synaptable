@@ -1,0 +1,46 @@
+1
+00:00:00,000 --> 00:00:02,500
+SynapTable + WebMCP
+Agentic visual thinking on the open web
+
+2
+00:00:02,500 --> 00:00:04,500
+Agent discovers 6 typed canvas tools
+
+3
+00:00:04,500 --> 00:00:10,500
+create_concept × 3
+Build storyboard ideas directly on the canvas
+
+4
+00:00:10,500 --> 00:00:12,500
+find_layers
+Returns safe IDs without exposing note bodies
+
+5
+00:00:12,500 --> 00:00:15,500
+organize_layers_into_table
+Original concepts remain unchanged
+
+6
+00:00:15,500 --> 00:00:18,500
+create_table
+Structured production beats from one agent call
+
+7
+00:00:18,500 --> 00:00:22,000
+create_canvas_nodes_from_rows
+Three rows become three canvas concepts atomically
+
+8
+00:00:22,000 --> 00:00:24,500
+One undo removes the complete agent mutation
+
+9
+00:00:24,500 --> 00:00:27,000
+Redo restores every generated concept
+
+10
+00:00:27,000 --> 00:00:30,000
+Reload complete
+The project persisted locally in the browser

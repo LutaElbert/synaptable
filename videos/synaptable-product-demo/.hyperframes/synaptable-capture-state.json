@@ -1,0 +1,918 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:3003",
+      "localStorage": [],
+      "indexedDB": [
+        {
+          "name": "synaptable-local",
+          "version": 4,
+          "stores": [
+            {
+              "name": "checkpoints",
+              "autoIncrement": false,
+              "keyPath": "id",
+              "records": [],
+              "indexes": [
+                {
+                  "name": "createdAt",
+                  "keyPath": "createdAt",
+                  "multiEntry": false,
+                  "unique": false
+                },
+                {
+                  "name": "projectCreatedAt",
+                  "keyPathArray": [
+                    "projectId",
+                    "createdAt"
+                  ],
+                  "multiEntry": false,
+                  "unique": false
+                },
+                {
+                  "name": "projectId",
+                  "keyPath": "projectId",
+                  "multiEntry": false,
+                  "unique": false
+                }
+              ]
+            },
+            {
+              "name": "documents",
+              "autoIncrement": false,
+              "keyPath": "id",
+              "records": [
+                {
+                  "valueEncoded": {
+                    "o": [
+                      {
+                        "k": "id",
+                        "v": "e0c3903e-24ce-4696-87b2-8026db30f8e9"
+                      },
+                      {
+                        "k": "title",
+                        "v": "Untitled concept map"
+                      },
+                      {
+                        "k": "updatedAt",
+                        "v": 1788369692401
+                      },
+                      {
+                        "k": "document",
+                        "v": {
+                          "o": [
+                            {
+                              "k": "schemaVersion",
+                              "v": 6
+                            },
+                            {
+                              "k": "title",
+                              "v": "Untitled concept map"
+                            },
+                            {
+                              "k": "nodes",
+                              "v": {
+                                "a": [
+                                  {
+                                    "o": [
+                                      {
+                                        "k": "id",
+                                        "v": "research"
+                                      },
+                                      {
+                                        "k": "position",
+                                        "v": {
+                                          "o": [
+                                            {
+                                              "k": "x",
+                                              "v": 130
+                                            },
+                                            {
+                                              "k": "y",
+                                              "v": 210
+                                            }
+                                          ],
+                                          "id": 5
+                                        }
+                                      },
+                                      {
+                                        "k": "style",
+                                        "v": {
+                                          "v": "undefined"
+                                        }
+                                      },
+                                      {
+                                        "k": "hidden",
+                                        "v": false
+                                      },
+                                      {
+                                        "k": "selected",
+                                        "v": false
+                                      },
+                                      {
+                                        "k": "draggable",
+                                        "v": true
+                                      },
+                                      {
+                                        "k": "deletable",
+                                        "v": true
+                                      },
+                                      {
+                                        "k": "type",
+                                        "v": "concept"
+                                      },
+                                      {
+                                        "k": "data",
+                                        "v": {
+                                          "o": [
+                                            {
+                                              "k": "kind",
+                                              "v": "concept"
+                                            },
+                                            {
+                                              "k": "name",
+                                              "v": "Research"
+                                            },
+                                            {
+                                              "k": "opacity",
+                                              "v": 1
+                                            },
+                                            {
+                                              "k": "locked",
+                                              "v": false
+                                            },
+                                            {
+                                              "k": "label",
+                                              "v": "Research"
+                                            },
+                                            {
+                                              "k": "title",
+                                              "v": {
+                                                "o": [
+                                                  {
+                                                    "k": "type",
+                                                    "v": "doc"
+                                                  },
+                                                  {
+                                                    "k": "content",
+                                                    "v": {
+                                                      "a": [
+                                                        {
+                                                          "o": [
+                                                            {
+                                                              "k": "type",
+                                                              "v": "paragraph"
+                                                            },
+                                                            {
+                                                              "k": "content",
+                                                              "v": {
+                                                                "a": [
+                                                                  {
+                                                                    "o": [
+                                                                      {
+                                                                        "k": "type",
+                                                                        "v": "text"
+                                                                      },
+                                                                      {
+                                                                        "k": "text",
+                                                                        "v": "Research"
+                                                                      },
+                                                                      {
+                                                                        "k": "marks",
+                                                                        "v": {
+                                                                          "a": [
+                                                                            {
+                                                                              "o": [
+                                                                                {
+                                                                                  "k": "type",
+                                                                                  "v": "bold"
+                                                                                }
+                                                                              ],
+                                                                              "id": 13
+                                                                            }
+                                                                          ],
+                                                                          "id": 12
+                                                                        }
+                                                                      }
+                                                                    ],
+                                                                    "id": 11
+                                                                  }
+                                                                ],
+                                                                "id": 10
+                                                              }
+                                                            }
+                                                          ],
+                                                          "id": 9
+                                                        }
+                                                      ],
+                                                      "id": 8
+                                                    }
+                                                  }
+                                                ],
+                                                "id": 7
+                                              }
+                                            },
+                                            {
+                                              "k": "body",
+                                              "v": {
+                                                "o": [
+                                                  {
+                                                    "k": "type",
+                                                    "v": "doc"
+                                                  },
+                                                  {
+                                                    "k": "content",
+                                                    "v": {
+                                                      "a": [
+                                                        {
+                                                          "o": [
+                                                            {
+                                                              "k": "type",
+                                                              "v": "paragraph"
+                                                            }
+                                                          ],
+                                                          "id": 16
+                                                        }
+                                                      ],
+                                                      "id": 15
+                                                    }
+                                                  }
+                                                ],
+                                                "id": 14
+                                              }
+                                            },
+                                            {
+                                              "k": "eyebrow",
+                                              "v": "Starting point"
+                                            },
+                                            {
+                                              "k": "tone",
+                                              "v": "indigo"
+                                            },
+                                            {
+                                              "k": "collapsed",
+                                              "v": false
+                                            },
+                                            {
+                                              "k": "horizontalAlign",
+                                              "v": "left"
+                                            },
+                                            {
+                                              "k": "verticalAlign",
+                                              "v": "top"
+                                            }
+                                          ],
+                                          "id": 6
+                                        }
+                                      }
+                                    ],
+                                    "id": 4
+                                  },
+                                  {
+                                    "o": [
+                                      {
+                                        "k": "id",
+                                        "v": "explore"
+                                      },
+                                      {
+                                        "k": "position",
+                                        "v": {
+                                          "o": [
+                                            {
+                                              "k": "x",
+                                              "v": 450
+                                            },
+                                            {
+                                              "k": "y",
+                                              "v": 115
+                                            }
+                                          ],
+                                          "id": 18
+                                        }
+                                      },
+                                      {
+                                        "k": "style",
+                                        "v": {
+                                          "v": "undefined"
+                                        }
+                                      },
+                                      {
+                                        "k": "hidden",
+                                        "v": false
+                                      },
+                                      {
+                                        "k": "selected",
+                                        "v": false
+                                      },
+                                      {
+                                        "k": "draggable",
+                                        "v": true
+                                      },
+                                      {
+                                        "k": "deletable",
+                                        "v": true
+                                      },
+                                      {
+                                        "k": "type",
+                                        "v": "concept"
+                                      },
+                                      {
+                                        "k": "data",
+                                        "v": {
+                                          "o": [
+                                            {
+                                              "k": "kind",
+                                              "v": "concept"
+                                            },
+                                            {
+                                              "k": "name",
+                                              "v": "Explore tools"
+                                            },
+                                            {
+                                              "k": "opacity",
+                                              "v": 1
+                                            },
+                                            {
+                                              "k": "locked",
+                                              "v": false
+                                            },
+                                            {
+                                              "k": "label",
+                                              "v": "Explore tools"
+                                            },
+                                            {
+                                              "k": "title",
+                                              "v": {
+                                                "o": [
+                                                  {
+                                                    "k": "type",
+                                                    "v": "doc"
+                                                  },
+                                                  {
+                                                    "k": "content",
+                                                    "v": {
+                                                      "a": [
+                                                        {
+                                                          "o": [
+                                                            {
+                                                              "k": "type",
+                                                              "v": "paragraph"
+                                                            },
+                                                            {
+                                                              "k": "content",
+                                                              "v": {
+                                                                "a": [
+                                                                  {
+                                                                    "o": [
+                                                                      {
+                                                                        "k": "type",
+                                                                        "v": "text"
+                                                                      },
+                                                                      {
+                                                                        "k": "text",
+                                                                        "v": "Explore tools"
+                                                                      },
+                                                                      {
+                                                                        "k": "marks",
+                                                                        "v": {
+                                                                          "a": [
+                                                                            {
+                                                                              "o": [
+                                                                                {
+                                                                                  "k": "type",
+                                                                                  "v": "bold"
+                                                                                }
+                                                                              ],
+                                                                              "id": 26
+                                                                            }
+                                                                          ],
+                                                                          "id": 25
+                                                                        }
+                                                                      }
+                                                                    ],
+                                                                    "id": 24
+                                                                  }
+                                                                ],
+                                                                "id": 23
+                                                              }
+                                                            }
+                                                          ],
+                                                          "id": 22
+                                                        }
+                                                      ],
+                                                      "id": 21
+                                                    }
+                                                  }
+                                                ],
+                                                "id": 20
+                                              }
+                                            },
+                                            {
+                                              "k": "body",
+                                              "v": {
+                                                "o": [
+                                                  {
+                                                    "k": "type",
+                                                    "v": "doc"
+                                                  },
+                                                  {
+                                                    "k": "content",
+                                                    "v": {
+                                                      "a": [
+                                                        {
+                                                          "o": [
+                                                            {
+                                                              "k": "type",
+                                                              "v": "paragraph"
+                                                            }
+                                                          ],
+                                                          "id": 29
+                                                        }
+                                                      ],
+                                                      "id": 28
+                                                    }
+                                                  }
+                                                ],
+                                                "id": 27
+                                              }
+                                            },
+                                            {
+                                              "k": "eyebrow",
+                                              "v": "Next step"
+                                            },
+                                            {
+                                              "k": "tone",
+                                              "v": "ink"
+                                            },
+                                            {
+                                              "k": "collapsed",
+                                              "v": false
+                                            },
+                                            {
+                                              "k": "horizontalAlign",
+                                              "v": "left"
+                                            },
+                                            {
+                                              "k": "verticalAlign",
+                                              "v": "top"
+                                            }
+                                          ],
+                                          "id": 19
+                                        }
+                                      }
+                                    ],
+                                    "id": 17
+                                  },
+                                  {
+                                    "o": [
+                                      {
+                                        "k": "id",
+                                        "v": "layers"
+                                      },
+                                      {
+                                        "k": "position",
+                                        "v": {
+                                          "o": [
+                                            {
+                                              "k": "x",
+                                              "v": 470
+                                            },
+                                            {
+                                              "k": "y",
+                                              "v": 340
+                                            }
+                                          ],
+                                          "id": 31
+                                        }
+                                      },
+                                      {
+                                        "k": "style",
+                                        "v": {
+                                          "v": "undefined"
+                                        }
+                                      },
+                                      {
+                                        "k": "hidden",
+                                        "v": false
+                                      },
+                                      {
+                                        "k": "selected",
+                                        "v": false
+                                      },
+                                      {
+                                        "k": "draggable",
+                                        "v": true
+                                      },
+                                      {
+                                        "k": "deletable",
+                                        "v": true
+                                      },
+                                      {
+                                        "k": "type",
+                                        "v": "concept"
+                                      },
+                                      {
+                                        "k": "data",
+                                        "v": {
+                                          "o": [
+                                            {
+                                              "k": "kind",
+                                              "v": "concept"
+                                            },
+                                            {
+                                              "k": "name",
+                                              "v": "Editable layers"
+                                            },
+                                            {
+                                              "k": "opacity",
+                                              "v": 1
+                                            },
+                                            {
+                                              "k": "locked",
+                                              "v": false
+                                            },
+                                            {
+                                              "k": "label",
+                                              "v": "Editable layers"
+                                            },
+                                            {
+                                              "k": "title",
+                                              "v": {
+                                                "o": [
+                                                  {
+                                                    "k": "type",
+                                                    "v": "doc"
+                                                  },
+                                                  {
+                                                    "k": "content",
+                                                    "v": {
+                                                      "a": [
+                                                        {
+                                                          "o": [
+                                                            {
+                                                              "k": "type",
+                                                              "v": "paragraph"
+                                                            },
+                                                            {
+                                                              "k": "content",
+                                                              "v": {
+                                                                "a": [
+                                                                  {
+                                                                    "o": [
+                                                                      {
+                                                                        "k": "type",
+                                                                        "v": "text"
+                                                                      },
+                                                                      {
+                                                                        "k": "text",
+                                                                        "v": "Editable layers"
+                                                                      },
+                                                                      {
+                                                                        "k": "marks",
+                                                                        "v": {
+                                                                          "a": [
+                                                                            {
+                                                                              "o": [
+                                                                                {
+                                                                                  "k": "type",
+                                                                                  "v": "bold"
+                                                                                }
+                                                                              ],
+                                                                              "id": 39
+                                                                            }
+                                                                          ],
+                                                                          "id": 38
+                                                                        }
+                                                                      }
+                                                                    ],
+                                                                    "id": 37
+                                                                  }
+                                                                ],
+                                                                "id": 36
+                                                              }
+                                                            }
+                                                          ],
+                                                          "id": 35
+                                                        }
+                                                      ],
+                                                      "id": 34
+                                                    }
+                                                  }
+                                                ],
+                                                "id": 33
+                                              }
+                                            },
+                                            {
+                                              "k": "body",
+                                              "v": {
+                                                "o": [
+                                                  {
+                                                    "k": "type",
+                                                    "v": "doc"
+                                                  },
+                                                  {
+                                                    "k": "content",
+                                                    "v": {
+                                                      "a": [
+                                                        {
+                                                          "o": [
+                                                            {
+                                                              "k": "type",
+                                                              "v": "paragraph"
+                                                            }
+                                                          ],
+                                                          "id": 42
+                                                        }
+                                                      ],
+                                                      "id": 41
+                                                    }
+                                                  }
+                                                ],
+                                                "id": 40
+                                              }
+                                            },
+                                            {
+                                              "k": "eyebrow",
+                                              "v": "Output"
+                                            },
+                                            {
+                                              "k": "tone",
+                                              "v": "mint"
+                                            },
+                                            {
+                                              "k": "collapsed",
+                                              "v": false
+                                            },
+                                            {
+                                              "k": "horizontalAlign",
+                                              "v": "left"
+                                            },
+                                            {
+                                              "k": "verticalAlign",
+                                              "v": "top"
+                                            }
+                                          ],
+                                          "id": 32
+                                        }
+                                      }
+                                    ],
+                                    "id": 30
+                                  }
+                                ],
+                                "id": 3
+                              }
+                            },
+                            {
+                              "k": "edges",
+                              "v": {
+                                "a": [
+                                  {
+                                    "o": [
+                                      {
+                                        "k": "id",
+                                        "v": "research-explore"
+                                      },
+                                      {
+                                        "k": "source",
+                                        "v": "research"
+                                      },
+                                      {
+                                        "k": "target",
+                                        "v": "explore"
+                                      },
+                                      {
+                                        "k": "sourceHandle",
+                                        "v": {
+                                          "v": "undefined"
+                                        }
+                                      },
+                                      {
+                                        "k": "targetHandle",
+                                        "v": {
+                                          "v": "undefined"
+                                        }
+                                      },
+                                      {
+                                        "k": "type",
+                                        "v": "smoothstep"
+                                      },
+                                      {
+                                        "k": "animated",
+                                        "v": false
+                                      },
+                                      {
+                                        "k": "style",
+                                        "v": {
+                                          "o": [
+                                            {
+                                              "k": "stroke",
+                                              "v": "#a9adb7"
+                                            },
+                                            {
+                                              "k": "strokeWidth",
+                                              "v": 1.5
+                                            },
+                                            {
+                                              "k": "strokeDasharray",
+                                              "v": {
+                                                "v": "undefined"
+                                              }
+                                            }
+                                          ],
+                                          "id": 45
+                                        }
+                                      },
+                                      {
+                                        "k": "markerEnd",
+                                        "v": {
+                                          "o": [
+                                            {
+                                              "k": "type",
+                                              "v": "arrowclosed"
+                                            }
+                                          ],
+                                          "id": 46
+                                        }
+                                      },
+                                      {
+                                        "k": "label",
+                                        "v": ""
+                                      },
+                                      {
+                                        "k": "data",
+                                        "v": {
+                                          "o": [
+                                            {
+                                              "k": "label",
+                                              "v": ""
+                                            },
+                                            {
+                                              "k": "kind",
+                                              "v": "default"
+                                            }
+                                          ],
+                                          "id": 47
+                                        }
+                                      },
+                                      {
+                                        "k": "selected",
+                                        "v": false
+                                      }
+                                    ],
+                                    "id": 44
+                                  },
+                                  {
+                                    "o": [
+                                      {
+                                        "k": "id",
+                                        "v": "research-layers"
+                                      },
+                                      {
+                                        "k": "source",
+                                        "v": "research"
+                                      },
+                                      {
+                                        "k": "target",
+                                        "v": "layers"
+                                      },
+                                      {
+                                        "k": "sourceHandle",
+                                        "v": {
+                                          "v": "undefined"
+                                        }
+                                      },
+                                      {
+                                        "k": "targetHandle",
+                                        "v": {
+                                          "v": "undefined"
+                                        }
+                                      },
+                                      {
+                                        "k": "type",
+                                        "v": "smoothstep"
+                                      },
+                                      {
+                                        "k": "animated",
+                                        "v": false
+                                      },
+                                      {
+                                        "k": "style",
+                                        "v": {
+                                          "o": [
+                                            {
+                                              "k": "stroke",
+                                              "v": "#a9adb7"
+                                            },
+                                            {
+                                              "k": "strokeWidth",
+                                              "v": 1.5
+                                            },
+                                            {
+                                              "k": "strokeDasharray",
+                                              "v": {
+                                                "v": "undefined"
+                                              }
+                                            }
+                                          ],
+                                          "id": 49
+                                        }
+                                      },
+                                      {
+                                        "k": "markerEnd",
+                                        "v": {
+                                          "o": [
+                                            {
+                                              "k": "type",
+                                              "v": "arrowclosed"
+                                            }
+                                          ],
+                                          "id": 50
+                                        }
+                                      },
+                                      {
+                                        "k": "label",
+                                        "v": ""
+                                      },
+                                      {
+                                        "k": "data",
+                                        "v": {
+                                          "o": [
+                                            {
+                                              "k": "label",
+                                              "v": ""
+                                            },
+                                            {
+                                              "k": "kind",
+                                              "v": "default"
+                                            }
+                                          ],
+                                          "id": 51
+                                        }
+                                      },
+                                      {
+                                        "k": "selected",
+                                        "v": false
+                                      }
+                                    ],
+                                    "id": 48
+                                  }
+                                ],
+                                "id": 43
+                              }
+                            },
+                            {
+                              "k": "updatedAt",
+                              "v": 1788369692401
+                            }
+                          ],
+                          "id": 2
+                        }
+                      }
+                    ],
+                    "id": 1
+                  }
+                },
+                {
+                  "value": {
+                    "id": "e18a591e-abfd-4d37-a700-07560eda1896",
+                    "title": "Launch system",
+                    "updatedAt": 1788369692938,
+                    "document": {
+                      "schemaVersion": 6,
+                      "title": "Launch system",
+                      "nodes": [],
+                      "edges": [],
+                      "updatedAt": 1788369692938
+                    }
+                  }
+                }
+              ],
+              "indexes": []
+            },
+            {
+              "name": "preferences",
+              "autoIncrement": false,
+              "keyPath": "name",
+              "records": [
+                {
+                  "value": {
+                    "name": "activeProjectId",
+                    "value": "e18a591e-abfd-4d37-a700-07560eda1896"
+                  }
+                },
+                {
+                  "value": {
+                    "name": "onboardingCanvasTableV1Dismissed",
+                    "value": "true"
+                  }
+                }
+              ],
+              "indexes": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

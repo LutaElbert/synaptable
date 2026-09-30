@@ -1,0 +1,10 @@
+{"id":"video_001","type":"video","path":"assets/source/existing-webmcp-demo-captioned.mp4","source":"existing","description":"existing webmcp demo captioned","duration":30,"width":1280,"height":720,"provenance":{"provider":"local","adopted":true}}
+{"id":"image_001","type":"image","path":"assets/source/existing-webmcp-demo-contact-sheet.jpg","source":"existing","description":"existing webmcp demo contact sheet","width":1920,"height":720,"provenance":{"provider":"local","adopted":true}}
+{"id":"image_002","type":"image","path":"assets/source/public-preview-full-page.png","source":"existing","description":"public preview full page","width":1920,"height":1080,"provenance":{"provider":"local","adopted":true}}
+{"id":"image_003","type":"image","path":"assets/source/product-demo-01.png","source":"existing","description":"product demo 01","width":1280,"height":720,"provenance":{"provider":"local","adopted":true}}
+{"id":"image_004","type":"image","path":"assets/source/product-demo-02.png","source":"existing","description":"product demo 02","width":1280,"height":720,"provenance":{"provider":"local","adopted":true}}
+{"id":"image_005","type":"image","path":"assets/source/product-demo-03.png","source":"existing","description":"product demo 03","width":1280,"height":720,"provenance":{"provider":"local","adopted":true}}
+{"id":"image_006","type":"image","path":"assets/source/product-demo-04.png","source":"existing","description":"product demo 04","width":1280,"height":720,"provenance":{"provider":"local","adopted":true}}
+{"id":"image_007","type":"image","path":"assets/source/product-demo-05.png","source":"existing","description":"product demo 05","width":1280,"height":720,"provenance":{"provider":"local","adopted":true}}
+{"id":"image_008","type":"image","path":"assets/source/product-demo-06.png","source":"existing","description":"product demo 06","width":1280,"height":720,"provenance":{"provider":"local","adopted":true}}
+{"id":"image_009","type":"image","path":"assets/source/product-live-workspace.png","source":"existing","description":"product live workspace","width":1912,"height":1080,"provenance":{"provider":"local","adopted":true}}

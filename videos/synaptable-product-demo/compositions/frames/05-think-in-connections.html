@@ -1,0 +1,230 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Inter";
+      src: url("assets/fonts/Inter-400.woff2") format("woff2");
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: "Inter";
+      src: url("assets/fonts/Inter-600.woff2") format("woff2");
+      font-style: normal;
+      font-weight: 600;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: "Inter";
+      src: url("assets/fonts/Inter-700.woff2") format("woff2");
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+    }
+
+    #root {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      container-type: size;
+      color: #18191d;
+      font-family: "Inter", sans-serif;
+    }
+
+    .clip {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    [id="05-think-in-connections-proof-frame"] {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+      display: block;
+    }
+
+    [id="05-think-in-connections-neutral-veil"] {
+      position: absolute;
+      inset: 0;
+      background: rgba(243, 244, 246, 0.34);
+    }
+
+    [id="05-think-in-connections-card-stage"] {
+      display: grid;
+      place-items: start center;
+      padding-top: 22.7cqh;
+      box-sizing: border-box;
+    }
+
+    [id="05-think-in-connections-card"] {
+      position: relative;
+      width: 41.15cqw;
+      height: 35.2cqh;
+      min-width: 720px;
+      max-width: 820px;
+      min-height: 350px;
+      max-height: 390px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-sizing: border-box;
+      padding: 5.3cqh 4.1cqw 4.1cqh;
+      border: 1.5px solid rgba(93, 88, 237, 0.2);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.94);
+      transform-origin: 50% 50%;
+    }
+
+    [id="05-think-in-connections-brand"] {
+      margin: 0;
+      color: #18191d;
+      font-size: 2.75cqw;
+      font-weight: 700;
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+      text-align: center;
+    }
+
+    [id="05-think-in-connections-line-stage"] {
+      position: relative;
+      width: 100%;
+      height: 7.4cqh;
+      margin-top: 4.4cqh;
+      overflow: hidden;
+    }
+
+    [id="05-think-in-connections-think"],
+    [id="05-think-in-connections-work"] {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #18191d;
+      font-size: 2.05cqw;
+      font-weight: 600;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    [id="05-think-in-connections-proof"] {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5cqh;
+      margin-top: auto;
+    }
+
+    [id="05-think-in-connections-rule"] {
+      width: 60px;
+      height: 4px;
+      border-radius: 2px;
+      background: #5d58ed;
+      transform-origin: 50% 50%;
+    }
+
+    [id="05-think-in-connections-proof-line"] {
+      color: #4d47ce;
+      font-size: 1.05cqw;
+      font-weight: 600;
+      line-height: 1.4;
+      letter-spacing: 0.04em;
+      text-align: center;
+    }
+  </style>
+
+  <div data-hf-id="hf-eo16" id="root" data-composition-id="05-think-in-connections" data-width="1920" data-height="1080" data-duration="7.39">
+    <div data-hf-id="hf-263o" id="05-think-in-connections-background" class="clip" data-start="0" data-duration="7.39" data-track-index="0">
+      <img data-hf-id="hf-su2j" id="05-think-in-connections-proof-frame" src="assets/synaptable-empty-to-table-final.png" alt="SynapTable workspace with a connected map and organized table">
+      <div data-hf-id="hf-bxnr" id="05-think-in-connections-neutral-veil" aria-hidden="true"></div>
+    </div>
+
+    <div data-hf-id="hf-lifq" id="05-think-in-connections-card-stage" class="clip" data-start="0" data-duration="7.39" data-track-index="1">
+      <section data-hf-id="hf-88tv" id="05-think-in-connections-card" aria-label="SynapTable end card">
+        <h1 data-hf-id="hf-rd22" id="05-think-in-connections-brand">SynapTable</h1>
+
+        <div data-hf-id="hf-fbgb" id="05-think-in-connections-line-stage" aria-live="off">
+          <div data-hf-id="hf-42da" id="05-think-in-connections-think" data-layout-allow-overlap="">Think in connections.</div>
+          <div data-hf-id="hf-73zs" id="05-think-in-connections-work" data-layout-allow-overlap="">Work in structure.</div>
+        </div>
+
+        <div data-hf-id="hf-bu2g" id="05-think-in-connections-proof">
+          <div data-hf-id="hf-fwsb" id="05-think-in-connections-rule" aria-hidden="true"></div>
+          <div data-hf-id="hf-qu8f" id="05-think-in-connections-proof-line">Local by design.</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const card = document.getElementById("05-think-in-connections-card");
+      const brand = document.getElementById("05-think-in-connections-brand");
+      const thinkLine = document.getElementById("05-think-in-connections-think");
+      const workLine = document.getElementById("05-think-in-connections-work");
+      const rule = document.getElementById("05-think-in-connections-rule");
+      const proofLine = document.getElementById("05-think-in-connections-proof-line");
+
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      window.__timelines["05-think-in-connections"] = tl;
+
+      tl.fromTo(
+        card,
+        { opacity: 0, y: 22, scale: 0.97 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.62, ease: "back.out(1.4)" },
+        1.5,
+      );
+
+      tl.fromTo(
+        brand,
+        { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.48, ease: "power3.out" },
+        1.68,
+      );
+
+      tl.fromTo(
+        thinkLine,
+        { opacity: 0, y: 22 },
+        { opacity: 1, y: 0, duration: 0.54, ease: "power3.out" },
+        2.48,
+      );
+
+      tl.to(
+        thinkLine,
+        { opacity: 0, y: -22, duration: 0.38, ease: "power3.in" },
+        4.16,
+      );
+
+      tl.fromTo(
+        workLine,
+        { opacity: 0, y: 22 },
+        { opacity: 1, y: 0, duration: 0.52, ease: "power3.out" },
+        4.34,
+      );
+
+      tl.fromTo(
+        rule,
+        { opacity: 0, scaleX: 0.35 },
+        { opacity: 1, scaleX: 1, duration: 0.45, ease: "power3.out" },
+        5.24,
+      );
+
+      tl.fromTo(
+        proofLine,
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.42, ease: "power3.out" },
+        5.38,
+      );
+    })();
+  </script>
+</template>

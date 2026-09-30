@@ -1,0 +1,247 @@
+<template>
+  <div data-hf-id="hf-p379" id="root" data-composition-id="02-follow-the-connections" data-width="1920" data-height="1080" data-duration="11.312">
+    <div data-hf-id="hf-m48f" id="02-follow-the-connections-ground" class="clip" data-start="0" data-duration="11.312" data-track-index="0" aria-hidden="true"></div>
+
+    <!-- approved frame video hoisted by assemble-index -->
+
+    <div data-hf-id="hf-x6rx" id="02-follow-the-connections-overlay" class="clip" data-start="0" data-duration="11.312" data-track-index="2">
+      <div data-hf-id="hf-okh9" id="02-follow-the-connections-veil" aria-hidden="true"></div>
+
+      <div data-hf-id="hf-75ek" id="02-follow-the-connections-brand-tag" aria-label="SynapTable">
+        <span data-hf-id="hf-ibt5" id="02-follow-the-connections-brand-word" data-word="synaptable">SynapTable</span>
+      </div>
+
+      <div data-hf-id="hf-bfgv" id="02-follow-the-connections-payoff">
+        <span data-hf-id="hf-z5ek" id="02-follow-the-connections-payoff-accent" aria-hidden="true"></span>
+        <span data-hf-id="hf-hm8q">One thought → a working map</span>
+      </div>
+    </div>
+
+    <style>
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        container-type: size;
+        color: #18191d;
+      }
+
+      #root > .clip {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      [id="02-follow-the-connections-ground"] {
+        z-index: 0;
+        background: transparent;
+      }
+
+      [id="02-follow-the-connections-world"] {
+        z-index: 1;
+        display: block;
+        object-fit: cover;
+        object-position: 50% 50%;
+        transform-origin: 50% 50%;
+        will-change: transform;
+      }
+
+      [id="02-follow-the-connections-overlay"] {
+        z-index: 2;
+        overflow: hidden;
+        pointer-events: none;
+      }
+
+      [id="02-follow-the-connections-veil"] {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(
+            ellipse 60% 58% at 50% 47%,
+            rgba(24, 25, 29, 0) 0%,
+            rgba(24, 25, 29, 0.025) 58%,
+            rgba(24, 25, 29, 0.1) 100%
+          ),
+          linear-gradient(
+            180deg,
+            rgba(243, 244, 246, 0.02) 0%,
+            rgba(93, 88, 237, 0.035) 100%
+          );
+      }
+
+      [id="02-follow-the-connections-brand-tag"] {
+        position: absolute;
+        top: 6.8cqh;
+        left: 5cqw;
+        display: inline-flex;
+        align-items: center;
+        min-height: 42px;
+        padding: 0 18px;
+        border: 1.5px solid rgba(93, 88, 237, 0.2);
+        border-radius: 100px;
+        background: rgba(243, 244, 246, 0.94);
+      }
+
+      [id="02-follow-the-connections-brand-word"] {
+        display: inline-block;
+        color: #18191d;
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: -0.02em;
+        transform-origin: 50% 50%;
+        text-shadow: 0 0 0 rgba(93, 88, 237, 0);
+        will-change: transform, color, text-shadow;
+      }
+
+      [id="02-follow-the-connections-payoff"] {
+        position: absolute;
+        top: 73.4cqh;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        width: max-content;
+        max-width: 74cqw;
+        min-height: 68px;
+        margin: 0 auto;
+        padding: 0 28px 0 22px;
+        border: 1.5px solid rgba(93, 88, 237, 0.2);
+        border-radius: 100px;
+        background: rgba(243, 244, 246, 0.96);
+        color: #18191d;
+        font-size: 1.46cqw;
+        font-weight: 600;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+        white-space: nowrap;
+        will-change: transform, opacity;
+      }
+
+      [id="02-follow-the-connections-payoff-accent"] {
+        display: block;
+        flex: 0 0 auto;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #5d58ed;
+      }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+    <script>
+      (() => {
+        const FRAME_ID = "02-follow-the-connections";
+        const DURATION = 10.862;
+        const REVEAL_START = 2.6;
+        const REVEAL_DURATION = 5.8;
+
+        const heroVideo = document.getElementById("f02-product-video");
+        const brandWord = document.getElementById(`${FRAME_ID}-brand-word`);
+        const payoff = document.getElementById(`${FRAME_ID}-payoff`);
+
+        const tl = gsap.timeline({ paused: true });
+        window.__timelines = window.__timelines || {};
+        window.__timelines[FRAME_ID] = tl;
+
+        /*
+         * The opening concept card center was measured in the 1920x1080 capture at
+         * (758, 458). With a centered transform origin, T = -offset x S keeps that
+         * real raster detail centered at the 1.14x opening crop.
+         */
+        const cam = {
+          scale: 1.14,
+          x: 230.28,
+          y: 93.48,
+        };
+
+        function applyCamera() {
+          if (!heroVideo) return;
+          heroVideo.style.transformOrigin = "960px 540px";
+          heroVideo.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.scale})`;
+        }
+
+        if (heroVideo) {
+          heroVideo.style.filter = "brightness(0.88) saturate(0.92) contrast(0.99)";
+        }
+        applyCamera();
+
+        tl.fromTo(
+          cam,
+          { scale: 1.14, x: 230.28, y: 93.48 },
+          {
+            scale: 1,
+            x: 0,
+            y: 0,
+            duration: REVEAL_DURATION,
+            ease: "expo.out",
+            immediateRender: true,
+            onUpdate: applyCamera,
+          },
+          REVEAL_START,
+        );
+
+        const keywordClock = { t: 0 };
+        const keywordTiming = { start: 0.18, end: 0.92 };
+        const ATTACK_DUR = 0.16;
+        const RELEASE = 0.42;
+        const REST_LEVEL = 0.18;
+
+        function envelope(time, start, end) {
+          if (time < start) return 0;
+          if (time < end) return Math.min((time - start) / ATTACK_DUR, 1);
+          const releaseEnd = end + RELEASE;
+          if (time < releaseEnd) {
+            return 1 - ((time - end) / RELEASE) * (1 - REST_LEVEL);
+          }
+          return REST_LEVEL;
+        }
+
+        function lerpChannel(a, b, amount) {
+          return Math.round(a + (b - a) * amount);
+        }
+
+        function updateKeyword() {
+          if (!brandWord) return;
+          const amount = envelope(
+            keywordClock.t,
+            keywordTiming.start,
+            keywordTiming.end,
+          );
+          brandWord.style.color = `rgb(${lerpChannel(24, 93, amount)}, ${lerpChannel(25, 88, amount)}, ${lerpChannel(29, 237, amount)})`;
+          brandWord.style.textShadow = `0 0 ${24 * amount}px rgba(93, 88, 237, ${0.48 * amount})`;
+          brandWord.style.transform = `scale(${1 + 0.08 * amount})`;
+        }
+
+        updateKeyword();
+        tl.to(
+          keywordClock,
+          {
+            t: DURATION,
+            duration: DURATION,
+            ease: "none",
+            onUpdate: updateKeyword,
+          },
+          0,
+        );
+
+        tl.fromTo(
+          payoff,
+          { opacity: 0, y: 30, scale: 0.96 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.62,
+            ease: "power3.out",
+            immediateRender: true,
+          },
+          8.4,
+        );
+      })();
+    </script>
+  </div>
+</template>

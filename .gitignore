@@ -1,5 +1,6 @@
 # dependencies
 /node_modules
+**/node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -39,3 +40,7 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# generated video caches and duplicate render outputs
+**/.thumbnails/
+**/renders/

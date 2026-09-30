@@ -1,0 +1,217 @@
+<template id="captions-template" data-composition-id="captions" data-width="1920" data-height="1080">
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+
+
+<style data-brand-tokens="">
+      @font-face { font-family: 'Inter'; src: url('assets/fonts/Inter-400.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
+      @font-face { font-family: 'Inter'; src: url('assets/fonts/Inter-600.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: block; }
+      @font-face { font-family: 'Inter'; src: url('assets/fonts/Inter-700.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
+      :root {
+      --bg: #F3F4F6;
+      --primary: #5D58ED;
+      --text: #18191D;
+      --text-muted: #4D47CE;
+      --text-light: #9A9A9A;
+      --accent-light: rgba(93, 88, 237, 0.08);
+      --accent-medium: rgba(93, 88, 237, 0.15);
+      --border: rgba(93, 88, 237, 0.2);
+      --card-bg: rgba(93, 88, 237, 0.04);
+      --positive: #059669;
+      --negative: #dc2626;
+      --cap-ink: #18191D;
+      --cap-canvas: #F3F4F6;
+      --cap-accent: #5D58ED;
+      --cap-accent-2: #4D47CE;
+      --font-display: "Inter", system-ui, serif;
+      --font-body: "Inter", system-ui, sans-serif;
+      --cap-band-top: 900px;
+      --cap-band-height: 180px;
+      }
+    </style>
+
+<style>
+  #captions-root {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .caption-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    pointer-events: none;
+  }
+  /* the keep-out band, from captionBand(H) — frame content stays above it */
+  .caption-stage {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: var(--cap-band-top, 900px);
+    height: var(--cap-band-height, 180px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .caption-group {
+    /* every group is absolutely stacked over the SAME band — exactly one shown at a
+       time via opacity. Must be absolute: in-flow groups would lay out side-by-side. */
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+  }
+
+  /* THE tinted card — 4% cobalt fill, 1.5px 20%-cobalt border, soft 14px corners,
+     NO shadow (the tinted card does the lift; cast depth is forbidden) */
+  .caption-pill {
+    max-width: 78%;
+    padding: 20px 44px 24px;
+    background: color-mix(in srgb, var(--cap-accent, #1e2bfa) 4%, var(--cap-canvas, #fdfae7));
+    border: 1.5px solid color-mix(in srgb, var(--cap-accent, #1e2bfa) 20%, transparent);
+    border-radius: 14px;
+  }
+  .caption-line {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.1em 0.34em;
+    font-family: "Inter", system-ui, sans-serif;
+    font-weight: 600;
+    font-size: clamp(40px, 4.4vw, 58px);
+    line-height: 1.16;
+    letter-spacing: -0.02em;
+  }
+
+  /* upcoming — muted gray, no chip */
+  .caption-word {
+    display: inline-block;
+    padding: 0 0.18em;
+    border-radius: 0.32em;
+    color: color-mix(in srgb, var(--cap-ink, #111111) 52%, var(--cap-canvas, #fdfae7));
+  }
+  /* current word — THE solid cobalt chip (the single-accent gesture; pill-rounded
+     fill, NO shadow), cream reading on top */
+  .caption-word.is-active {
+    color: var(--cap-canvas, #fdfae7);
+    background: var(--cap-accent, #1e2bfa);
+    box-shadow: none;
+  }
+  /* already spoken — solid near-black ink, chip cleared */
+  .caption-word.is-spoken {
+    color: var(--cap-ink, #111111);
+    background: transparent;
+    box-shadow: none;
+  }
+
+  /* optional per-word accents (dormant until a word-classer tags them) */
+  /* brand / key term — cobalt, the system's one accent on a key word */
+  .caption-word.cap-brand {
+    color: var(--cap-accent, #1e2bfa);
+  }
+  /* numerals / data — cobalt 700, the figure voice */
+  .caption-word.cap-num {
+    font-family: "Inter", system-ui, sans-serif;
+    font-weight: 700;
+    color: var(--cap-accent, #1e2bfa);
+  }
+  /* emphasis — a directional-red hairline underline (inline only, never a fill) */
+  .caption-word.cap-cta {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-decoration-color: var(--cap-accent-2, #dc2626);
+    text-underline-offset: 0.1em;
+  }
+
+  @media (max-aspect-ratio: 9/16) {
+    .caption-pill {
+      max-width: 92%;
+    }
+    .caption-line {
+      font-size: clamp(34px, 5.4vw, 48px);
+    }
+  }
+</style>
+
+<div data-hf-id="hf-psv1" id="captions-root" data-composition-id="captions" data-timeline-locked="" data-start="0" data-duration="38.255" data-fps="30" data-width="1920" data-height="1080">
+  <div data-hf-id="hf-9flp" class="caption-layer" aria-hidden="true">
+    <div data-hf-id="hf-ajrg" id="caption-stage" class="caption-stage"></div>
+  </div>
+</div>
+
+<script>
+  // captions.mjs injects the engine's scene-aware groups + real duration here.
+  var GROUPS = [{"id":"caption-group-0","frame":1,"start":0,"end":3.86,"text":"Ideas rarely arrive organized.","words":[{"id":"caption-word-0-0","text":"Ideas","start":0,"end":0.57},{"id":"caption-word-0-1","text":"rarely","start":0.57,"end":1.26},{"id":"caption-word-0-2","text":"arrive","start":1.26,"end":1.95},{"id":"caption-word-0-3","text":"organized.","start":1.95,"end":3.86}]},{"id":"caption-group-1","frame":1,"start":3.86,"end":4.49,"text":"That is","words":[{"id":"caption-word-1-0","text":"That","start":3.86,"end":4.28},{"id":"caption-word-1-1","text":"is","start":4.28,"end":4.49}]},{"id":"caption-group-2","frame":1,"start":4.49,"end":5.69,"text":"the point.","words":[{"id":"caption-word-2-0","text":"the","start":4.49,"end":4.81},{"id":"caption-word-2-1","text":"point.","start":4.81,"end":5.57}]},{"id":"caption-group-3","frame":2,"start":5.749,"end":7.289,"text":"In SynapTable,","words":[{"id":"caption-word-3-0","text":"In","start":5.749,"end":5.969},{"id":"caption-word-3-1","text":"SynapTable,","start":5.969,"end":7.289}]},{"id":"caption-group-4","frame":2,"start":7.289,"end":8.929,"text":"start with one","words":[{"id":"caption-word-4-0","text":"start","start":7.289,"end":7.849},{"id":"caption-word-4-1","text":"with","start":7.949,"end":8.419},{"id":"caption-word-4-2","text":"one","start":8.529,"end":8.809}]},{"id":"caption-group-5","frame":2,"start":9.819,"end":9.909,"text":"thought,","words":[{"id":"caption-word-5-0","text":"thought,","start":9.819,"end":9.909}]},{"id":"caption-group-6","frame":2,"start":9.909,"end":12.269,"text":"branch into audience,","words":[{"id":"caption-word-6-0","text":"branch","start":9.909,"end":10.179},{"id":"caption-word-6-1","text":"into","start":10.189,"end":10.369},{"id":"caption-word-6-2","text":"audience,","start":10.489,"end":12.229}]},{"id":"caption-group-7","frame":2,"start":12.269,"end":14.049,"text":"content,","words":[{"id":"caption-word-7-0","text":"content,","start":12.269,"end":14.049}]},{"id":"caption-group-8","frame":2,"start":14.049,"end":14.189,"text":"and the","words":[{"id":"caption-word-8-0","text":"and","start":14.049,"end":14.089},{"id":"caption-word-8-1","text":"the","start":14.089,"end":14.169}]},{"id":"caption-group-9","frame":2,"start":14.189,"end":15.549,"text":"signals that matter.","words":[{"id":"caption-word-9-0","text":"signals","start":14.189,"end":14.669},{"id":"caption-word-9-1","text":"that","start":14.669,"end":14.959},{"id":"caption-word-9-2","text":"matter.","start":14.959,"end":15.429}]},{"id":"caption-group-10","frame":3,"start":16.611,"end":17.841,"text":"When the pattern","words":[{"id":"caption-word-10-0","text":"When","start":16.611,"end":16.871},{"id":"caption-word-10-1","text":"the","start":16.971,"end":17.191},{"id":"caption-word-10-2","text":"pattern","start":17.221,"end":17.841}]},{"id":"caption-group-11","frame":3,"start":17.841,"end":18.091,"text":"is","words":[{"id":"caption-word-11-0","text":"is","start":17.841,"end":17.971}]},{"id":"caption-group-12","frame":3,"start":18.491,"end":18.551,"text":"clear,","words":[{"id":"caption-word-12-0","text":"clear,","start":18.491,"end":18.551}]},{"id":"caption-group-13","frame":3,"start":18.551,"end":19.911,"text":"turn those ideas","words":[{"id":"caption-word-13-0","text":"turn","start":18.551,"end":18.811},{"id":"caption-word-13-1","text":"those","start":18.941,"end":19.451},{"id":"caption-word-13-2","text":"ideas","start":19.451,"end":19.911}]},{"id":"caption-group-14","frame":3,"start":19.911,"end":21.351,"text":"into an editable","words":[{"id":"caption-word-14-0","text":"into","start":19.911,"end":20.481},{"id":"caption-word-14-1","text":"an","start":20.481,"end":20.551},{"id":"caption-word-14-2","text":"editable","start":20.611,"end":21.351}]},{"id":"caption-group-15","frame":3,"start":21.351,"end":22.171,"text":"table.","words":[{"id":"caption-word-15-0","text":"table.","start":21.351,"end":22.141}]},{"id":"caption-group-16","frame":3,"start":22.171,"end":24.129,"text":"The map stays.","words":[{"id":"caption-word-16-0","text":"The","start":22.171,"end":22.431},{"id":"caption-word-16-1","text":"map","start":22.561,"end":22.971},{"id":"caption-word-16-2","text":"stays.","start":22.971,"end":24.051}]},{"id":"caption-group-17","frame":4,"start":24.129,"end":26.689,"text":"Visual thinking and structured","words":[{"id":"caption-word-17-0","text":"Visual","start":24.129,"end":24.779},{"id":"caption-word-17-1","text":"thinking","start":24.779,"end":25.649},{"id":"caption-word-17-2","text":"and","start":25.649,"end":25.949},{"id":"caption-word-17-3","text":"structured","start":25.969,"end":26.689}]},{"id":"caption-group-18","frame":4,"start":26.689,"end":28.029,"text":"work on one","words":[{"id":"caption-word-18-0","text":"work","start":26.689,"end":27.409},{"id":"caption-word-18-1","text":"on","start":27.409,"end":27.659},{"id":"caption-word-18-2","text":"one","start":27.659,"end":28.029}]},{"id":"caption-group-19","frame":4,"start":28.029,"end":29.539,"text":"local canvas.","words":[{"id":"caption-word-19-0","text":"local","start":28.029,"end":28.649},{"id":"caption-word-19-1","text":"canvas.","start":28.649,"end":29.419}]},{"id":"caption-group-20","frame":5,"start":30.875,"end":33.235,"text":"SynapTable.","words":[{"id":"caption-word-20-0","text":"SynapTable.","start":30.875,"end":33.115}]},{"id":"caption-group-21","frame":5,"start":33.345,"end":35.445,"text":"Think in connections.","words":[{"id":"caption-word-21-0","text":"Think","start":33.345,"end":33.615},{"id":"caption-word-21-1","text":"in","start":33.615,"end":33.805},{"id":"caption-word-21-2","text":"connections.","start":33.805,"end":35.425}]},{"id":"caption-group-22","frame":5,"start":35.445,"end":35.955,"text":"Work","words":[{"id":"caption-word-22-0","text":"Work","start":35.445,"end":35.835}]},{"id":"caption-group-23","frame":5,"start":36.295,"end":38.375,"text":"in structure.","words":[{"id":"caption-word-23-0","text":"in","start":36.295,"end":36.395},{"id":"caption-word-23-1","text":"structure.","start":36.395,"end":38.255}]}];
+  var DURATION = 38.255;
+
+  (function () {
+    var stage = document.getElementById("caption-stage");
+
+    // build DOM: one .caption-group per group, .caption-word per word
+    GROUPS.forEach(function (group, g) {
+      var groupEl = document.createElement("div");
+      groupEl.className = "caption-group";
+      groupEl.id = "caption-group-" + g;
+      var pill = document.createElement("div");
+      pill.className = "caption-pill";
+      var line = document.createElement("div");
+      line.className = "caption-line";
+      (group.words || []).forEach(function (w, i) {
+        var span = document.createElement("span");
+        span.className = "caption-word";
+        span.id = "caption-word-" + g + "-" + i;
+        span.textContent = String(w.text);
+        line.appendChild(span);
+      });
+      pill.appendChild(line);
+      groupEl.appendChild(pill);
+      stage.appendChild(groupEl);
+    });
+
+    window.__timelines = window.__timelines || {};
+    var tl = gsap.timeline({ paused: true });
+
+    GROUPS.forEach(function (group, g) {
+      var groupEl = document.getElementById("caption-group-" + g);
+      var words = group.words || [];
+      var next = GROUPS[g + 1];
+      var isLast = g === GROUPS.length - 1;
+      var start = Math.max(0, Number(group.start));
+      var end = isLast ? DURATION : Math.min(Number(next.start), Number(group.end) + 0.3);
+      if (end <= start) end = start + 0.01;
+
+      // group on/off — exactly one group visible at a time
+      tl.set(groupEl, { opacity: 1 }, start);
+      tl.set(groupEl, { opacity: 0 }, end);
+
+      // 3-state karaoke via className SETS — seek-safe (gsap.set applies on the
+      // engine's frame-by-frame seek; .call callbacks would NOT fire).
+      words.forEach(function (w, i) {
+        var el = document.getElementById("caption-word-" + g + "-" + i);
+        var at = Math.max(start, Number(w.start));
+        tl.set(el, { className: "caption-word" }, start); // upcoming (also resets on reverse-seek)
+        tl.set(el, { className: "caption-word is-active" }, at); // current
+        tl.fromTo(el, { scale: 0.985 }, { scale: 1, duration: 0.18, ease: "power1.out" }, at);
+        if (i + 1 < words.length) {
+          var nextAt = Math.max(start, Number(words[i + 1].start));
+          tl.set(el, { className: "caption-word is-spoken" }, nextAt); // demote when next activates
+        }
+      });
+      if (words.length) {
+        var lastEl = document.getElementById("caption-word-" + g + "-" + (words.length - 1));
+        var lastSpoken = Math.min(end, Number(words[words.length - 1].end) + 0.1);
+        tl.set(lastEl, { className: "caption-word is-spoken" }, lastSpoken);
+      }
+    });
+
+    // full-span anchor so the sub-comp timeline spans the whole video
+    tl.to({}, { duration: DURATION }, 0);
+    window.__timelines["captions"] = tl;
+  })();
+</script>
+
+<style>
+  .caption-line { line-height: 1.1 !important; }
+</style>
+</template>

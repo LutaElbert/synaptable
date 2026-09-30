@@ -1,0 +1,366 @@
+{
+  "bgm": null,
+  "bgm_pending": false,
+  "voices": [
+    {
+      "frame": 1,
+      "path": "assets/audio/voice-frame-01.wav",
+      "duration_s": 5.749,
+      "words": [
+        {
+          "id": "f1w0",
+          "text": "Ideas",
+          "start": 0,
+          "end": 0.57
+        },
+        {
+          "id": "f1w1",
+          "text": "rarely",
+          "start": 0.57,
+          "end": 1.26
+        },
+        {
+          "id": "f1w2",
+          "text": "arrive",
+          "start": 1.26,
+          "end": 1.95
+        },
+        {
+          "id": "f1w3",
+          "text": "organized.",
+          "start": 1.95,
+          "end": 3.86
+        },
+        {
+          "id": "f1w4",
+          "text": "That",
+          "start": 3.86,
+          "end": 4.28
+        },
+        {
+          "id": "f1w5",
+          "text": "is",
+          "start": 4.28,
+          "end": 4.49
+        },
+        {
+          "id": "f1w6",
+          "text": "the",
+          "start": 4.49,
+          "end": 4.81
+        },
+        {
+          "id": "f1w7",
+          "text": "point.",
+          "start": 4.81,
+          "end": 5.57
+        }
+      ]
+    },
+    {
+      "frame": 2,
+      "path": "assets/audio/voice-frame-02.wav",
+      "duration_s": 10.862,
+      "words": [
+        {
+          "id": "f2w0",
+          "text": "In",
+          "start": 0,
+          "end": 0.22
+        },
+        {
+          "id": "f2w1",
+          "text": "SynapTable,",
+          "start": 0.22,
+          "end": 1.54
+        },
+        {
+          "id": "f2w2",
+          "text": "start",
+          "start": 1.54,
+          "end": 2.1
+        },
+        {
+          "id": "f2w3",
+          "text": "with",
+          "start": 2.2,
+          "end": 2.67
+        },
+        {
+          "id": "f2w4",
+          "text": "one",
+          "start": 2.78,
+          "end": 3.06
+        },
+        {
+          "id": "f2w5",
+          "text": "thought,",
+          "start": 4.07,
+          "end": 4.16
+        },
+        {
+          "id": "f2w6",
+          "text": "branch",
+          "start": 4.16,
+          "end": 4.43
+        },
+        {
+          "id": "f2w7",
+          "text": "into",
+          "start": 4.44,
+          "end": 4.62
+        },
+        {
+          "id": "f2w8",
+          "text": "audience,",
+          "start": 4.74,
+          "end": 6.48
+        },
+        {
+          "id": "f2w9",
+          "text": "content,",
+          "start": 6.52,
+          "end": 8.3
+        },
+        {
+          "id": "f2w10",
+          "text": "and",
+          "start": 8.3,
+          "end": 8.34
+        },
+        {
+          "id": "f2w11",
+          "text": "the",
+          "start": 8.34,
+          "end": 8.42
+        },
+        {
+          "id": "f2w12",
+          "text": "signals",
+          "start": 8.44,
+          "end": 8.92
+        },
+        {
+          "id": "f2w13",
+          "text": "that",
+          "start": 8.92,
+          "end": 9.21
+        },
+        {
+          "id": "f2w14",
+          "text": "matter.",
+          "start": 9.21,
+          "end": 9.68
+        }
+      ]
+    },
+    {
+      "frame": 3,
+      "path": "assets/audio/voice-frame-03.wav",
+      "duration_s": 7.518,
+      "words": [
+        {
+          "id": "f3w0",
+          "text": "When",
+          "start": 0,
+          "end": 0.26
+        },
+        {
+          "id": "f3w1",
+          "text": "the",
+          "start": 0.36,
+          "end": 0.58
+        },
+        {
+          "id": "f3w2",
+          "text": "pattern",
+          "start": 0.61,
+          "end": 1.23
+        },
+        {
+          "id": "f3w3",
+          "text": "is",
+          "start": 1.23,
+          "end": 1.36
+        },
+        {
+          "id": "f3w4",
+          "text": "clear,",
+          "start": 1.88,
+          "end": 1.94
+        },
+        {
+          "id": "f3w5",
+          "text": "turn",
+          "start": 1.94,
+          "end": 2.2
+        },
+        {
+          "id": "f3w6",
+          "text": "those",
+          "start": 2.33,
+          "end": 2.84
+        },
+        {
+          "id": "f3w7",
+          "text": "ideas",
+          "start": 2.84,
+          "end": 3.3
+        },
+        {
+          "id": "f3w8",
+          "text": "into",
+          "start": 3.3,
+          "end": 3.87
+        },
+        {
+          "id": "f3w9",
+          "text": "an",
+          "start": 3.87,
+          "end": 3.94
+        },
+        {
+          "id": "f3w10",
+          "text": "editable",
+          "start": 4,
+          "end": 4.74
+        },
+        {
+          "id": "f3w11",
+          "text": "table.",
+          "start": 4.74,
+          "end": 5.53
+        },
+        {
+          "id": "f3w12",
+          "text": "The",
+          "start": 5.56,
+          "end": 5.82
+        },
+        {
+          "id": "f3w13",
+          "text": "map",
+          "start": 5.95,
+          "end": 6.36
+        },
+        {
+          "id": "f3w14",
+          "text": "stays.",
+          "start": 6.36,
+          "end": 7.44
+        }
+      ]
+    },
+    {
+      "frame": 4,
+      "path": "assets/audio/voice-frame-04.wav",
+      "duration_s": 6.736,
+      "words": [
+        {
+          "id": "f4w0",
+          "text": "Visual",
+          "start": 0,
+          "end": 0.65
+        },
+        {
+          "id": "f4w1",
+          "text": "thinking",
+          "start": 0.65,
+          "end": 1.52
+        },
+        {
+          "id": "f4w2",
+          "text": "and",
+          "start": 1.52,
+          "end": 1.82
+        },
+        {
+          "id": "f4w3",
+          "text": "structured",
+          "start": 1.84,
+          "end": 2.56
+        },
+        {
+          "id": "f4w4",
+          "text": "work",
+          "start": 2.56,
+          "end": 3.28
+        },
+        {
+          "id": "f4w5",
+          "text": "on",
+          "start": 3.28,
+          "end": 3.53
+        },
+        {
+          "id": "f4w6",
+          "text": "one",
+          "start": 3.53,
+          "end": 3.9
+        },
+        {
+          "id": "f4w7",
+          "text": "local",
+          "start": 3.9,
+          "end": 4.52
+        },
+        {
+          "id": "f4w8",
+          "text": "canvas.",
+          "start": 4.52,
+          "end": 5.29
+        }
+      ]
+    },
+    {
+      "frame": 5,
+      "path": "assets/audio/voice-frame-05.wav",
+      "duration_s": 7.39,
+      "words": [
+        {
+          "id": "f5w0",
+          "text": "SynapTable.",
+          "start": 0.01,
+          "end": 2.25
+        },
+        {
+          "id": "f5w1",
+          "text": "Think",
+          "start": 2.48,
+          "end": 2.75
+        },
+        {
+          "id": "f5w2",
+          "text": "in",
+          "start": 2.75,
+          "end": 2.94
+        },
+        {
+          "id": "f5w3",
+          "text": "connections.",
+          "start": 2.94,
+          "end": 4.56
+        },
+        {
+          "id": "f5w4",
+          "text": "Work",
+          "start": 4.58,
+          "end": 4.97
+        },
+        {
+          "id": "f5w5",
+          "text": "in",
+          "start": 5.43,
+          "end": 5.53
+        },
+        {
+          "id": "f5w6",
+          "text": "structure.",
+          "start": 5.53,
+          "end": 7.39
+        }
+      ]
+    }
+  ],
+  "sfx": []
+}

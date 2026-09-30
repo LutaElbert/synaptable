@@ -1,0 +1,203 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      color: #18191d;
+      font-family: sans-serif;
+    }
+
+    #root * { box-sizing: border-box; }
+    .clip { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+    [id="f01-ideas-arrive-messy-ground"] { background: #f3f4f6; }
+    [id="f01-ideas-arrive-messy-product-stage"] { overflow: hidden; }
+
+    [id="f01-ideas-arrive-messy-world"] {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+
+    [id="f01-ideas-arrive-messy-product"] {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0.76;
+    }
+
+    [id="f01-ideas-arrive-messy-target"] {
+      position: absolute;
+      left: 830px;
+      top: 360px;
+      width: 300px;
+      height: 180px;
+      pointer-events: none;
+    }
+
+    [id="f01-ideas-arrive-messy-copy"] {
+      position: absolute;
+      left: 4.6cqw;
+      top: 21cqh;
+      width: 31cqw;
+      padding: 3cqh 2.2cqw;
+      border: 1px solid #5d58ed;
+      background: rgba(243, 244, 246, 0.94);
+    }
+
+    [id="f01-ideas-arrive-messy-copy"]::after {
+      content: "";
+      position: absolute;
+      right: -4.2cqw;
+      top: -5.6cqh;
+      width: 11cqw;
+      aspect-ratio: 1;
+      border: 1px solid rgba(93, 88, 237, 0.34);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    [id="f01-ideas-arrive-messy-copy"]::before {
+      content: "";
+      position: absolute;
+      right: -2.7cqw;
+      top: -2.9cqh;
+      width: 7cqw;
+      aspect-ratio: 1;
+      border: 1px dashed rgba(93, 88, 237, 0.26);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    [id="f01-ideas-arrive-messy-label"] {
+      margin: 0 0 1.3cqh;
+      color: #4d47ce;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+
+    [id="f01-ideas-arrive-messy-headline"] {
+      margin: 0;
+      max-width: 27cqw;
+      color: #18191d;
+      font-size: 4.2cqw;
+      font-weight: 400;
+      letter-spacing: -0.045em;
+      line-height: 1.02;
+      text-wrap: balance;
+    }
+
+    [id="f01-ideas-arrive-messy-sub"] {
+      margin: 2cqh 0 0;
+      max-width: 25cqw;
+      color: #5a5a5a;
+      font-size: 1.1cqw;
+      font-weight: 400;
+      line-height: 1.5;
+    }
+
+    [id="f01-ideas-arrive-messy-proof"] {
+      position: absolute;
+      right: 2cqw;
+      bottom: 18cqh;
+      color: #4d47ce;
+      font-size: 12px;
+      font-weight: 400;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+  </style>
+
+  <div data-hf-id="hf-t0d6" id="root" data-composition-id="01-ideas-arrive-messy" data-width="1920" data-height="1080" data-duration="12.313">
+    <div data-hf-id="hf-paur" id="f01-ideas-arrive-messy-ground" class="clip" data-start="0" data-duration="12.313" data-track-index="0"></div>
+
+    <div data-hf-id="hf-4411" id="f01-ideas-arrive-messy-product-stage" class="clip" data-start="0" data-duration="12.313" data-track-index="1">
+      <div data-hf-id="hf-7284" id="f01-ideas-arrive-messy-world">
+        <img data-hf-id="hf-t77a" id="f01-ideas-arrive-messy-product" src="assets/source/product-demo-01.png" width="1280" height="720" alt="Real SynapTable canvas">
+        <div data-hf-id="hf-o91k" id="f01-ideas-arrive-messy-target" aria-hidden="true"></div>
+      </div>
+    </div>
+
+    <div data-hf-id="hf-b9o6" id="f01-ideas-arrive-messy-copy-stage" class="clip" data-start="0" data-duration="12.313" data-track-index="2">
+      <section data-hf-id="hf-8xrv" id="f01-ideas-arrive-messy-copy">
+        <p data-hf-id="hf-gp6m" id="f01-ideas-arrive-messy-label">Actual product · starting state</p>
+        <h1 data-hf-id="hf-c9b9" id="f01-ideas-arrive-messy-headline" data-layout-allow-overlap>Ideas begin on the canvas.</h1>
+        <p data-hf-id="hf-2ytz" id="f01-ideas-arrive-messy-sub">No mock interface. This is SynapTable running.</p>
+      </section>
+      <span data-hf-id="hf-kgcj" id="f01-ideas-arrive-messy-proof">01 / 07 · Real capture</span>
+    </div>
+  </div>
+
+  <script>
+    window.__timelines = window.__timelines || {};
+
+    const world = document.getElementById("f01-ideas-arrive-messy-world");
+    const target = document.getElementById("f01-ideas-arrive-messy-target");
+    const root = document.getElementById("root");
+    const rootRect = root.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const targetOffsetX = targetRect.left + targetRect.width / 2 - (rootRect.left + rootRect.width / 2);
+    const targetOffsetY = targetRect.top + targetRect.height / 2 - (rootRect.top + rootRect.height / 2);
+    const openingScale = 4.5;
+    const cam = {
+      scale: openingScale,
+      x: -targetOffsetX * openingScale,
+      y: -targetOffsetY * openingScale
+    };
+
+    function applyCamera() {
+      world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.scale})`;
+    }
+
+    applyCamera();
+
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo(
+      "#f01-ideas-arrive-messy-copy",
+      { opacity: 0, x: -22 },
+      { opacity: 1, x: 0, duration: 0.55, ease: "power2.out" },
+      0.12
+    );
+    tl.fromTo(
+      "#f01-ideas-arrive-messy-label",
+      { opacity: 0, y: 10 },
+      { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" },
+      0.2
+    );
+    tl.fromTo(
+      "#f01-ideas-arrive-messy-headline",
+      { opacity: 0, y: 24 },
+      { opacity: 1, y: 0, duration: 0.75, ease: "power3.out" },
+      1.65
+    );
+    tl.to(
+      cam,
+      { scale: 1, x: 0, y: 0, duration: 4.3, ease: "expo.out", onUpdate: applyCamera },
+      1.2
+    );
+    tl.fromTo(
+      "#f01-ideas-arrive-messy-sub",
+      { opacity: 0, y: 18 },
+      { opacity: 1, y: 0, duration: 0.7, ease: "power3.out" },
+      3.75
+    );
+    tl.fromTo(
+      "#f01-ideas-arrive-messy-proof",
+      { opacity: 0, x: 18 },
+      { opacity: 1, x: 0, duration: 0.6, ease: "power2.out" },
+      5.6
+    );
+
+    window.__timelines["01-ideas-arrive-messy"] = tl;
+  </script>
+</template>

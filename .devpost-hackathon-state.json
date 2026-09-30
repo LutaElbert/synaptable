@@ -1,0 +1,43 @@
+{
+  "plugin": "devpost-hackathon",
+  "version": 2,
+  "hackathon": {
+    "slug": "webmcp",
+    "name": "The WebMCP Challenge",
+    "url": "https://webmcp.devpost.com",
+    "selected": true,
+    "source": "known"
+  },
+  "participant": {
+    "name": "Elbert Luta",
+    "display_name": "Elbert Luta"
+  },
+  "project": {
+    "name": "SynapTable",
+    "summary": "A local-first visual thinking canvas with WebMCP tools for organizing ideas and tables alongside an agent.",
+    "ai_usage": "WebMCP exposes six bounded tools so an agent can summarize the active workspace, find layers, create concepts and tables, organize layers into rows, and turn rows back into canvas nodes.",
+    "codex_usage": "Codex was used for product auditing, WebMCP architecture and implementation, schema and test generation, native browser debugging, cross-browser validation, and demo/submission preparation."
+  },
+  "current_stage": "submit-project",
+  "completed_stages": [
+    "start-hackathon",
+    "review",
+    "resources",
+    "submit-project"
+  ],
+  "rules_acknowledged": true,
+  "learning": {
+    "status": "not-started",
+    "current_step": "",
+    "completed_steps": [],
+    "plan_file": "WEBMCP_COMPLETION_IMPLEMENTATION_PLAN.md",
+    "checklist_file": ""
+  },
+  "submission": {
+    "draft_file": "devpost-submission.md",
+    "status": "submitted",
+    "confirmation_id": 1167329,
+    "url": "https://devpost.com/software/synaptable"
+  },
+  "next_command": "hackathon-map"
+}

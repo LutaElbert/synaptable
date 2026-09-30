@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "preferences": {
+    "voice": {
+      "value": "Orus",
+      "confirmed_in": [
+        "synaptable-product-demo"
+      ],
+      "updated_at": "2026-09-02T17:15:01.173Z"
+    },
+    "style_preset.product-launch-video": {
+      "value": "blue-professional",
+      "confirmed_in": [
+        "synaptable-product-demo"
+      ],
+      "updated_at": "2026-09-02T17:17:33.976Z"
+    }
+  },
+  "sightings": {}
+}

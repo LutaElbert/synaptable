@@ -1,0 +1,47 @@
+[
+  {
+    "text": "Visual",
+    "start": 0,
+    "end": 0.65
+  },
+  {
+    "text": "thinking",
+    "start": 0.65,
+    "end": 1.52
+  },
+  {
+    "text": "and",
+    "start": 1.52,
+    "end": 1.82
+  },
+  {
+    "text": "structured",
+    "start": 1.84,
+    "end": 2.56
+  },
+  {
+    "text": "work",
+    "start": 2.56,
+    "end": 3.28
+  },
+  {
+    "text": "on",
+    "start": 3.28,
+    "end": 3.53
+  },
+  {
+    "text": "one",
+    "start": 3.53,
+    "end": 3.9
+  },
+  {
+    "text": "local",
+    "start": 3.9,
+    "end": 4.52
+  },
+  {
+    "text": "canvas.",
+    "start": 4.52,
+    "end": 5.29
+  }
+]
